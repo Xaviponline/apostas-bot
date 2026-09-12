@@ -2,25 +2,24 @@
 # -*- coding: utf-8 -*-
 
 """
-BOT APOSTAS INTELIGENTES - VERSÃO FINAL ROBUSTA
-Com tratamento de erros e fallback
+BOT APOSTAS INTELIGENTES - VERSÃO RÁPIDA
+Sem APIs lentas - Responde em < 1 segundo
 """
 
 import requests
 import time
 from datetime import datetime
-from analista_robusto import AnalistaRobusto
+from analista_simples import AnalistaRapido
 
 TELEGRAM_TOKEN = "8630778306:AAHyZHgyYyvz93jJCkQ5yiQgXjVOvfptgUg"
-ODDS_API_KEY = "6d8b199647b759a1a5380376780807ad"
 BASE_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 CHATS_ATIVOS = set()
 
-class BotFinal:
+class BotRapido:
     
     def __init__(self):
-        self.analista = AnalistaRobusto(ODDS_API_KEY)
+        self.analista = AnalistaRapido()
         self.ultima_analise = None
         self.offset = 0
     
@@ -63,16 +62,15 @@ class BotFinal:
                                 chat_id,
                                 "🎯 <b>BOT APOSTAS INTELIGENTES</b>\n\n"
                                 "✅ Bot ativado com sucesso!\n"
-                                "📊 Análise com APIs + Fallback\n"
+                                "📊 Análise profissional 24/7\n"
                                 "🔔 Receberás análises diárias às 08:00\n\n"
                                 "<b>Comandos:</b>\n"
-                                "/analisa - Análise do dia agora\n"
+                                "/analisa - Análise do dia (TODAS as apostas)\n"
                                 "/status - Status\n"
                                 "/ajuda - Ajuda"
                             )
                         
                         elif text == "/analisa":
-                            self.enviar_mensagem(chat_id, "⏳ Analisando jogos...")
                             relatorio = self.analista.gerar_relatorio()
                             self.enviar_mensagem(chat_id, relatorio)
                         
@@ -81,8 +79,9 @@ class BotFinal:
                                 chat_id,
                                 "✅ <b>Status</b>\n\n"
                                 "🟢 Bot ATIVO\n"
-                                "📊 Análise com APIs\n"
+                                "📊 Análise profissional\n"
                                 f"👥 Chats: {len(CHATS_ATIVOS)}\n"
+                                "⚡ Resposta: <1 segundo\n"
                                 "🕐 Próxima: 08:00"
                             )
                         
@@ -91,17 +90,18 @@ class BotFinal:
                                 chat_id,
                                 "<b>📖 AJUDA</b>\n\n"
                                 "/start - Inicia\n"
-                                "/analisa - Análise manual\n"
+                                "/analisa - Análise COMPLETA\n"
                                 "/status - Status\n\n"
-                                "<b>Filtros:</b>\n"
-                                "✅ Prob: 55%+\n"
+                                "<b>Filtros Rígidos:</b>\n"
+                                "✅ Probabilidade: 55%+\n"
                                 "✅ ROI: +2%+\n"
-                                "✅ Conf: ⭐⭐⭐+\n"
-                                "✅ Odds: 1.65+"
+                                "✅ Confiança: ⭐⭐⭐+\n"
+                                "✅ Odds: 1.65+\n\n"
+                                "<b>Mostra TODAS as apostas que passam!</b>"
                             )
         
         except Exception as e:
-            print(f"❌ Erro updates: {e}")
+            print(f"❌ Erro: {e}")
     
     def verificar_hora_analise(self):
         """Verifica hora"""
@@ -131,7 +131,8 @@ class BotFinal:
     
     def run(self):
         """Loop principal"""
-        print("🤖 Bot Apostas Inteligentes - VERSÃO ROBUSTA")
+        print("🤖 Bot Apostas Inteligentes - VERSÃO RÁPIDA")
+        print(f"⚡ Resposta em < 1 segundo")
         print(f"🕐 {datetime.now().strftime('%H:%M:%S')}\n")
         
         contador = 0
@@ -157,7 +158,7 @@ class BotFinal:
                 time.sleep(5)
 
 def main():
-    bot = BotFinal()
+    bot = BotRapido()
     bot.run()
 
 if __name__ == "__main__":
