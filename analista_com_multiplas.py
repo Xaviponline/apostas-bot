@@ -209,8 +209,8 @@ class AnalistaComMultiplas:
                 prob_multipla = (aposta1["probabilidade"] / 100) * (aposta2["probabilidade"] / 100)
                 roi_multipla = (odds_multipla * prob_multipla) - 1
                 
-                # Só aceita múltiplas com ROI 150%+ e prob 70%+
-                if roi_multipla >= 1.50 and prob_multipla >= 0.70:
+                # Só aceita múltiplas com ROI 100%+ e prob 65%+
+                if roi_multipla >= 1.00 and prob_multipla >= 0.65:
                     risco = self._calcular_risco(prob_multipla, roi_multipla)
                     
                     multiplas.append({
@@ -231,9 +231,9 @@ class AnalistaComMultiplas:
     @staticmethod
     def _calcular_risco(prob: float, roi: float) -> str:
         """Classifica risco"""
-        if prob >= 0.75 and roi >= 1.50:
+        if prob >= 0.70 and roi >= 1.20:
             return "🟢 BAIXO"
-        elif prob >= 0.70 and roi >= 1.50:
+        elif prob >= 0.65 and roi >= 1.00:
             return "🟡 MÉDIO"
         else:
             return "🟠 MÉDIO-ALTO"
