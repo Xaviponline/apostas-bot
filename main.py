@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 
 """
-BOT APOSTAS INTELIGENTES - COM APIs REAIS
-SofaScore + OddsAPI
+BOT APOSTAS INTELIGENTES - VERSÃO FINAL ROBUSTA
+Com tratamento de erros e fallback
 """
 
 import requests
 import time
 from datetime import datetime
-from analista_api import AnalistaAPI
+from analista_robusto import AnalistaRobusto
 
 TELEGRAM_TOKEN = "8630778306:AAHyZHgyYyvz93jJCkQ5yiQgXjVOvfptgUg"
 ODDS_API_KEY = "6d8b199647b759a1a5380376780807ad"
@@ -17,15 +17,15 @@ BASE_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 CHATS_ATIVOS = set()
 
-class BotApostasAPI:
+class BotFinal:
     
     def __init__(self):
-        self.analista = AnalistaAPI(ODDS_API_KEY)
+        self.analista = AnalistaRobusto(ODDS_API_KEY)
         self.ultima_analise = None
         self.offset = 0
     
     def enviar_mensagem(self, chat_id, texto):
-        """Envia mensagem para Telegram"""
+        """Envia mensagem"""
         url = f"{BASE_URL}/sendMessage"
         data = {
             "chat_id": chat_id,
@@ -34,12 +34,12 @@ class BotApostasAPI:
         }
         try:
             requests.post(url, data=data, timeout=10)
-            print(f"✅ Mensagem enviada para {chat_id}")
+            print(f"✅ Mensagem para {chat_id}")
         except Exception as e:
-            print(f"❌ Erro ao enviar: {e}")
+            print(f"❌ Erro: {e}")
     
     def processar_updates(self):
-        """Processa mensagens recebidas"""
+        """Processa mensagens"""
         url = f"{BASE_URL}/getUpdates"
         params = {"offset": self.offset, "timeout": 10}
         
@@ -62,52 +62,49 @@ class BotApostasAPI:
                             self.enviar_mensagem(
                                 chat_id,
                                 "🎯 <b>BOT APOSTAS INTELIGENTES</b>\n\n"
-                                "✅ Bot com APIs REAIS ativado!\n"
-                                "📊 Análise de SofaScore + OddsAPI\n"
+                                "✅ Bot ativado com sucesso!\n"
+                                "📊 Análise com APIs + Fallback\n"
                                 "🔔 Receberás análises diárias às 08:00\n\n"
                                 "<b>Comandos:</b>\n"
                                 "/analisa - Análise do dia agora\n"
-                                "/status - Status do bot\n"
+                                "/status - Status\n"
                                 "/ajuda - Ajuda"
                             )
                         
                         elif text == "/analisa":
-                            self.enviar_mensagem(chat_id, "⏳ Analisando jogos (pode demorar)...")
+                            self.enviar_mensagem(chat_id, "⏳ Analisando jogos...")
                             relatorio = self.analista.gerar_relatorio()
                             self.enviar_mensagem(chat_id, relatorio)
                         
                         elif text == "/status":
                             self.enviar_mensagem(
                                 chat_id,
-                                "✅ <b>Status do Bot</b>\n\n"
+                                "✅ <b>Status</b>\n\n"
                                 "🟢 Bot ATIVO\n"
-                                "📊 Análise com APIs REAIS\n"
-                                "🔌 SofaScore + OddsAPI integrados\n"
-                                f"👥 Chats ativos: {len(CHATS_ATIVOS)}\n"
-                                "🕐 Próxima análise: 08:00"
+                                "📊 Análise com APIs\n"
+                                f"👥 Chats: {len(CHATS_ATIVOS)}\n"
+                                "🕐 Próxima: 08:00"
                             )
                         
                         elif text == "/ajuda":
                             self.enviar_mensagem(
                                 chat_id,
                                 "<b>📖 AJUDA</b>\n\n"
-                                "<b>Comandos:</b>\n"
-                                "/start - Inicia bot\n"
+                                "/start - Inicia\n"
                                 "/analisa - Análise manual\n"
-                                "/status - Ver status\n"
-                                "/ajuda - Esta mensagem\n\n"
-                                "<b>Filtros Rígidos:</b>\n"
-                                "✅ Probabilidade: 55%+\n"
+                                "/status - Status\n\n"
+                                "<b>Filtros:</b>\n"
+                                "✅ Prob: 55%+\n"
                                 "✅ ROI: +2%+\n"
-                                "✅ Confiança: ⭐⭐⭐+\n"
+                                "✅ Conf: ⭐⭐⭐+\n"
                                 "✅ Odds: 1.65+"
                             )
         
         except Exception as e:
-            print(f"❌ Erro ao processar updates: {e}")
+            print(f"❌ Erro updates: {e}")
     
     def verificar_hora_analise(self):
-        """Verifica se é hora de enviar análise (08:00)"""
+        """Verifica hora"""
         hora_agora = datetime.now()
         
         if self.ultima_analise is None or \
@@ -119,10 +116,9 @@ class BotApostasAPI:
         return False
     
     def enviar_analise_diaria(self):
-        """Envia análise diária para todos os chats"""
+        """Envia análise"""
         
         if not CHATS_ATIVOS:
-            print("❌ Nenhum chat ativo")
             return
         
         print("📊 Enviando análise diária...")
@@ -135,9 +131,8 @@ class BotApostasAPI:
     
     def run(self):
         """Loop principal"""
-        print("🤖 Bot Apostas Inteligentes (APIs REAIS) iniciado!")
-        print(f"📊 SofaScore + OddsAPI integrados")
-        print(f"🕐 Hora: {datetime.now().strftime('%H:%M:%S')}")
+        print("🤖 Bot Apostas Inteligentes - VERSÃO ROBUSTA")
+        print(f"🕐 {datetime.now().strftime('%H:%M:%S')}\n")
         
         contador = 0
         
@@ -162,7 +157,7 @@ class BotApostasAPI:
                 time.sleep(5)
 
 def main():
-    bot = BotApostasAPI()
+    bot = BotFinal()
     bot.run()
 
 if __name__ == "__main__":
