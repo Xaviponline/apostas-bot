@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-ANALISTA 100% DINÂMICO
-Gera apostas automaticamente cada dia baseado em data
+ANALISTA DINÂMICO CORRIGIDO
+Ligas SEMPRE corretas associadas aos times
 """
 
 from datetime import datetime
@@ -18,42 +18,65 @@ class AnistaDinamicoTotal:
         self.min_confianca = 3
         self.min_odds = 1.65
         
-        # Seed com data de HOJE para gerar dados consistentes
+        # Seed com data de HOJE
         self.data_hoje = datetime.now().strftime("%d/%m/%Y")
         self.seed = int(datetime.now().strftime("%d%m%Y"))
         random.seed(self.seed)
+        
+        # Jogos com ligas CORRETAS (cada jogo tem sua liga)
+        self.todos_jogos = [
+            # Premier League
+            ("Liverpool", "Fulham", "🏴 Premier League"),
+            ("Manchester City", "Brighton", "🏴 Premier League"),
+            ("Arsenal", "Ipswich", "🏴 Premier League"),
+            ("Chelsea", "Luton", "🏴 Premier League"),
+            ("Tottenham", "Nottingham", "🏴 Premier League"),
+            
+            # La Liga
+            ("Real Madrid", "Rayo", "🇪🇸 La Liga"),
+            ("Barcelona", "Getafe", "🇪🇸 La Liga"),
+            ("Valencia", "Sevilla", "🇪🇸 La Liga"),
+            ("Atletico Madrid", "Villarreal", "🇪🇸 La Liga"),
+            ("Real Sociedad", "Almeria", "🇪🇸 La Liga"),
+            
+            # Serie A
+            ("Napoli", "Roma", "🇮🇹 Serie A"),
+            ("Inter", "Monza", "🇮🇹 Serie A"),
+            ("AC Milan", "Lazio", "🇮🇹 Serie A"),
+            ("Juventus", "Sassuolo", "🇮🇹 Serie A"),
+            ("Fiorentina", "Venezia", "🇮🇹 Serie A"),
+            
+            # Bundesliga
+            ("Bayern Munich", "Frankfurt", "🇩🇪 Bundesliga"),
+            ("Dortmund", "Cologne", "🇩🇪 Bundesliga"),
+            ("RB Leipzig", "Wolfsburg", "🇩🇪 Bundesliga"),
+            ("Leverkusen", "Stuttgart", "🇩🇪 Bundesliga"),
+            ("Hamburg", "Hannover", "🇩🇪 Bundesliga"),
+            
+            # Ligue 1
+            ("PSG", "Toulouse", "🇫🇷 Ligue 1"),
+            ("Marseille", "Nice", "🇫🇷 Ligue 1"),
+            ("Lyon", "Nantes", "🇫🇷 Ligue 1"),
+            ("Monaco", "Rennes", "🇫🇷 Ligue 1"),
+            ("Lens", "Strasbourg", "🇫🇷 Ligue 1"),
+            
+            # Liga Portugal
+            ("Benfica", "Gil Vicente", "🇵🇹 Liga Portugal"),
+            ("Porto", "Guimaraes", "🇵🇹 Liga Portugal"),
+            ("Sporting", "Estoril", "🇵🇹 Liga Portugal"),
+            ("Braga", "Arouca", "🇵🇹 Liga Portugal"),
+            ("Boavista", "Santa Clara", "🇵🇹 Liga Portugal"),
+            
+            # Brasileirão
+            ("Flamengo", "Vasco", "🇧🇷 Brasileirão"),
+            ("Sao Paulo", "Corinthians", "🇧🇷 Brasileirão"),
+            ("Palmeiras", "Santos", "🇧🇷 Brasileirão"),
+            ("Botafogo", "Cruzeiro", "🇧🇷 Brasileirão"),
+            ("Gremio", "Internacional", "🇧🇷 Brasileirão"),
+        ]
     
     def gerar_apostas_simples(self) -> List[Dict]:
-        """Gera 15 apostas de HOJE dinamicamente"""
-        
-        # Dados base
-        ligas = [
-            "🏴 Premier League",
-            "🇪🇸 La Liga",
-            "🇮🇹 Serie A",
-            "🇩🇪 Bundesliga",
-            "🇫🇷 Ligue 1",
-            "🇵🇹 Liga Portugal",
-            "🇧🇷 Brasileirão"
-        ]
-        
-        times = [
-            ("Liverpool", "Fulham"),
-            ("Manchester City", "Brighton"),
-            ("Arsenal", "Ipswich"),
-            ("Real Madrid", "Rayo"),
-            ("Barcelona", "Getafe"),
-            ("Bayern Munich", "Frankfurt"),
-            ("PSG", "Toulouse"),
-            ("Napoli", "Roma"),
-            ("Benfica", "Gil Vicente"),
-            ("Inter", "Monza"),
-            ("Dortmund", "Cologne"),
-            ("Flamengo", "Vasco"),
-            ("Chelsea", "Luton"),
-            ("Valencia", "Sevilla"),
-            ("AC Milan", "Lazio"),
-        ]
+        """Gera 15 apostas de HOJE dinamicamente COM LIGAS CORRETAS"""
         
         tipos_aposta = [
             "Ambas Marcam",
@@ -74,31 +97,31 @@ class AnistaDinamicoTotal:
         apostas = []
         
         for i in range(15):
-            # Seleciona aleatoriamente (mas consistente para a mesma data)
-            time_idx = (i * 3 + self.seed) % len(times)
-            liga_idx = (i * 2 + self.seed) % len(ligas)
-            tipo_idx = (i + self.seed) % len(tipos_aposta)
-            hora_idx = (i * 4 + self.seed) % len(horarios)
+            # Seleciona jogo (com liga CORRECTA associada)
+            jogo_idx = (i * 2 + self.seed) % len(self.todos_jogos)
+            casa, fora, liga = self.todos_jogos[jogo_idx]
             
-            casa, fora = times[time_idx]
-            liga = ligas[liga_idx]
+            # Tipo de aposta
+            tipo_idx = (i + self.seed) % len(tipos_aposta)
             tipo = tipos_aposta[tipo_idx]
+            
+            # Horário
+            hora_idx = (i * 4 + self.seed) % len(horarios)
             horario = horarios[hora_idx]
             
-            # Gera odds e probabilidades variadas mas com qualidade
-            base_prob = 55 + (i % 10) * 2  # 55-75%
-            odds_base = 1.65 + (i % 6) * 0.15  # 1.65-2.55
+            # Gera odds e probabilidades
+            base_prob = 55 + (i % 10) * 2
+            odds_base = 1.65 + (i % 6) * 0.15
             
             prob = base_prob + random.randint(-5, 10)
             odds = round(odds_base + random.uniform(-0.10, 0.20), 2)
             
-            # Garante odds mínimo 1.65
             if odds < 1.65:
                 odds = 1.65
             
             roi = (odds * (prob / 100)) - 1
             
-            # Filtra qualidade mínima
+            # Filtra qualidade
             if prob >= self.min_probabilidade and roi >= self.min_roi and odds >= self.min_odds:
                 confianca = self._calcular_confianca(prob / 100, roi)
                 risco = self._calcular_risco(prob / 100, roi)
@@ -108,7 +131,7 @@ class AnistaDinamicoTotal:
                         "data": self.data_hoje,
                         "horario": horario,
                         "jogo": f"{casa} vs {fora}",
-                        "liga": liga,
+                        "liga": liga,  # AQUI: Liga CORRETA!
                         "tipo": tipo,
                         "probabilidade": prob,
                         "odds": odds,
@@ -117,17 +140,16 @@ class AnistaDinamicoTotal:
                         "risco": risco
                     })
         
-        # Se gerar menos de 15, regenera com critérios mais baixos
+        # Se gerar menos de 15, adiciona mais
         while len(apostas) < 15:
             i = len(apostas)
-            time_idx = (i * 3 + self.seed) % len(times)
-            liga_idx = (i * 2 + self.seed) % len(ligas)
-            tipo_idx = (i + self.seed) % len(tipos_aposta)
-            hora_idx = (i * 4 + self.seed) % len(horarios)
+            jogo_idx = (i * 3 + self.seed) % len(self.todos_jogos)
+            casa, fora, liga = self.todos_jogos[jogo_idx]
             
-            casa, fora = times[time_idx]
-            liga = ligas[liga_idx]
+            tipo_idx = (i + self.seed) % len(tipos_aposta)
             tipo = tipos_aposta[tipo_idx]
+            
+            hora_idx = (i * 5 + self.seed) % len(horarios)
             horario = horarios[hora_idx]
             
             prob = 52 + random.randint(0, 25)
@@ -142,7 +164,7 @@ class AnistaDinamicoTotal:
                 "data": self.data_hoje,
                 "horario": horario,
                 "jogo": f"{casa} vs {fora}",
-                "liga": liga,
+                "liga": liga,  # AQUI TAMBÉM: Liga CORRETA!
                 "tipo": tipo,
                 "probabilidade": prob,
                 "odds": odds,
@@ -225,7 +247,7 @@ class AnistaDinamicoTotal:
             return "🟠 MÉDIO-ALTO"
     
     def gerar_relatorio(self) -> str:
-        """Gera relatório com apostas de HOJE (dinâmicas)"""
+        """Gera relatório com apostas de HOJE (dinâmicas e com ligas corretas)"""
         
         apostas = self.gerar_apostas_simples()
         
