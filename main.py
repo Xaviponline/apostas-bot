@@ -9,7 +9,7 @@ BOT APOSTAS INTELIGENTES - VERSÃO FINAL COM MÚLTIPLAS PREMIUM
 import requests
 import time
 from datetime import datetime
-from analista_dinamico import AnalistaDinamico
+from analista_dinamico_total import AnistaDinamicoTotal
 
 TELEGRAM_TOKEN = "8630778306:AAHyZHgyYyvz93jJCkQ5yiQgXjVOvfptgUg"
 BASE_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
@@ -19,7 +19,7 @@ CHATS_ATIVOS = set()
 class BotPremium:
     
     def __init__(self):
-        self.analista = AnalistaDinamico()
+        self.analista = AnistaDinamicoTotal()
         self.ultima_analise = None
         self.offset = 0
     
