@@ -97,15 +97,16 @@ Subscreve para receber análises diárias! 🔥
             CHATS_ATIVOS.add(chat_id)
         
         elif texto.startswith("/score "):
-            # Formato: /score ID CASA-FORA
-            # Exemplo: /score 1 2-1
+            # Suporta 2 formatos:
+            # 1. /score ID CASA-FORA (análise automática)
+            #    Exemplo: /score 1 2-1
+            # 2. /score ID ganhou/perdeu (registar manual)
+            #    Exemplo: /score 1 ganhou
             try:
                 partes = texto.split()
                 if len(partes) >= 3:
                     aposta_id = int(partes[1])
-                    placar = partes[2]
-                    
-                    casa, fora = map(int, placar.split("-"))
+                    param = partes[2].lower()
                     
                     # Obtém aposta
                     aposta = self.gestor.obter_aposta(aposta_id)
@@ -113,30 +114,51 @@ Subscreve para receber análises diárias! 🔥
                         self.enviar_mensagem(chat_id, f"❌ Aposta #{aposta_id} não encontrada!")
                         return
                     
-                    # Simula análise de resultado
-                    tipo = aposta["tipo"]
                     resultado = None
+                    placar_str = ""
                     
-                    if tipo == "Ambas Marcam":
-                        resultado = "ganhou" if casa > 0 and fora > 0 else "perdeu"
-                    elif tipo == "Over 2.5 Golos":
-                        resultado = "ganhou" if casa + fora >= 3 else "perdeu"
-                    elif tipo == "Over 3.5 Golos":
-                        resultado = "ganhou" if casa + fora >= 4 else "perdeu"
-                    elif tipo == "Vitória Casa":
-                        resultado = "ganhou" if casa > fora else "perdeu"
-                    elif tipo == "Vitória Fora":
-                        resultado = "ganhou" if fora > casa else "perdeu"
+                    # Verifica se é "ganhou" ou "perdeu"
+                    if param in ["ganhou", "won", "g"]:
+                        resultado = "ganhou"
+                    elif param in ["perdeu", "lost", "p"]:
+                        resultado = "perdeu"
+                    
+                    # Se não, tenta analisar como placar
+                    elif "-" in param:
+                        try:
+                            casa, fora = map(int, param.split("-"))
+                            placar_str = f"Placar: {casa}-{fora}"
+                            
+                            # Simula análise de resultado
+                            tipo = aposta["tipo"]
+                            
+                            if tipo == "Ambas Marcam":
+                                resultado = "ganhou" if casa > 0 and fora > 0 else "perdeu"
+                            elif tipo == "Over 2.5 Golos":
+                                resultado = "ganhou" if casa + fora >= 3 else "perdeu"
+                            elif tipo == "Over 3.5 Golos":
+                                resultado = "ganhou" if casa + fora >= 4 else "perdeu"
+                            elif tipo == "Vitória Casa":
+                                resultado = "ganhou" if casa > fora else "perdeu"
+                            elif tipo == "Vitória Fora":
+                                resultado = "ganhou" if fora > casa else "perdeu"
+                            # Para outros tipos, deixa como análise manual
+                            
+                        except:
+                            pass
                     
                     if resultado:
                         self.gestor.registar_resultado(aposta_id, resultado)
                         status = "✅ GANHOU!" if resultado == "ganhou" else "❌ PERDEU!"
-                        self.enviar_mensagem(chat_id, f"{status}\n\n{aposta['jogo']}\n{tipo} @{aposta['odds']}\nPlacar: {casa}-{fora}")
+                        msg = f"{status}\n\n{aposta['jogo']}\n{aposta['tipo']} @{aposta['odds']}"
+                        if placar_str:
+                            msg += f"\n{placar_str}"
+                        self.enviar_mensagem(chat_id, msg)
                     else:
-                        self.enviar_mensagem(chat_id, "⚠️ Tipo de aposta não suportado para análise manual")
+                        self.enviar_mensagem(chat_id, f"⚠️ Formato inválido!\n\nUsa:\n/score {aposta_id} ganhou\n/score {aposta_id} perdeu\n/score {aposta_id} 2-1")
             
             except Exception as e:
-                self.enviar_mensagem(chat_id, f"❌ Erro: Use /score ID CASA-FORA (Ex: /score 1 2-1)")
+                self.enviar_mensagem(chat_id, f"❌ Erro: {str(e)}\n\nUsa:\n/score ID ganhou\n/score ID perdeu\n/score ID CASA-FORA")
         
         elif texto == "/status":
             stats = self.gestor.calcular_estatisticas()
