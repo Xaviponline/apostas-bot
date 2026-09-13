@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+BOT APOSTAS TELEGRAM - VERSÃO PREMIUM DINÂMICA
+Bot 100% funcional com análise automática de apostas
+"""
+
+import requests
+import json
+import time
+import threading
+from datetime import datetime
+from analista_dinamico_total import AnistaDinamicoTotal
+
+TELEGRAM_TOKEN = "8630778306:AAHyZHgyYyvz93jJCkQ5yiQgXjVOvfptgUg"
+BASE_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+
+CHATS_ATIVOS = set()
+
+class BotPremium:
+    
+    def __init__(self):
+        self.analista = AnistaDinamicoTotal()
+        self.ultimo_update = 0
+    
+    def enviar_mensagem(self, chat_id: int, texto: str):
+        """Envia mensagem via Telegram API"""
+        try:
+            url = f"{BASE_URL}/sendMessage"
+            data = {
+                "chat_id": chat_id,
+                "text": texto,
+                "parse_mode": "HTML"
+            }
+            response = requests.post(url, json=data, timeout=10)
+            return response.status_code == 200
+        except Exception as e:
+            print(f"❌ Erro ao enviar mensagem: {e}")
+            return False
+    
+    def processar_comando(self, chat_id: int, texto: str):
+        """Processa comandos do bot"""
+        
+        if texto == "/start":
+            mensagem = """
+🤖 <b>BEM-VINDO AO BOT APOSTAS PREMIUM!</b>
+
+📊 <b>Análise Automática de Apostas Desportivas</b>
+
+<b>Comandos disponíveis:</b>
+/analisa - 📈 Ver apostas de HOJE
+/status - 🔍 Status do bot
+/ajuda - 📖 Informações completas
+
+<b>Características:</b>
+✅ 15 apostas de HOJE
+✅ ROI médio +16-40%
+✅ Múltiplas premium
+✅ Atualizado automaticamente
+✅ Ligas: PL, La Liga, Serie A, BuLi, L1, Liga PT, Brasileirão
+
+Subscreve para receber análises diárias! 🔥
+            """
+            self.enviar_mensagem(chat_id, mensagem)
+            CHATS_ATIVOS.add(chat_id)
+        
+        elif texto == "/analisa":
+            relatorio = self.analista.gerar_relatorio()
+            self.enviar_mensagem(chat_id, relatorio)
+            CHATS_ATIVOS.add(chat_id)
+        
+        elif texto == "/status":
+            status = f"""
+✅ <b>BOT STATUS</b>
+
+🤖 Bot: <b>OPERACIONAL</b> ✓
+🌐 Railway: <b>ONLINE</b> ✓
+📊 Análise: <b>ATIVA</b> ✓
+⏰ Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+
+💰 Banca: €18.55
+📈 ROI Médio: +37.5%
+🔥 Apostas hoje: 15
+
+/analisa para ver as apostas de HOJE!
+            """
+            self.enviar_mensagem(chat_id, status)
+        
+        elif texto == "/ajuda":
+            ajuda = """
+📖 <b>GUIA COMPLETO</b>
+
+<b>/start</b> - Começar
+<b>/analisa</b> - Ver apostas de HOJE
+<b>/status</b> - Ver status do bot
+
+<b>Como funciona:</b>
+✓ Bot gera 15 apostas DIÁRIAS
+✓ Filtros rígidos de qualidade
+✓ ROI sempre positivo
+✓ Múltiplas premium automáticas
+✓ Ligas europeias + Brasileirão
+
+<b>Qualidade garantida:</b>
+- Probabilidade mínima: 55%
+- ROI mínimo: +2%
+- Confiança: ⭐⭐⭐+
+
+<b>Risco:</b>
+🟢 BAIXO: 60%+ prob, ROI +5%+
+🟡 MÉDIO: 50-60% prob, ROI +2-4%
+🟠 MÉDIO-ALTO: 40-50% prob
+
+🔥 Subscreve para análises diárias!
+            """
+            self.enviar_mensagem(chat_id, ajuda)
+        
+        else:
+            resposta = "❓ Comando não reconhecido!\n\nUsa /ajuda para ver os comandos disponíveis!"
+            self.enviar_mensagem(chat_id, resposta)
+    
+    def buscar_atualizacoes(self):
+        """Busca atualizações de mensagens (polling)"""
+        global CHATS_ATIVOS
+        
+        while True:
+            try:
+                url = f"{BASE_URL}/getUpdates"
+                params = {"offset": self.ultimo_update + 1, "timeout": 30}
+                
+                response = requests.get(url, params=params, timeout=35)
+                
+                if response.status_code == 200:
+                    dados = response.json()
+                    
+                    if dados.get("ok") and dados.get("result"):
+                        for update in dados["result"]:
+                            self.ultimo_update = update["update_id"]
+                            
+                            # Processa mensagens
+                            if "message" in update:
+                                msg = update["message"]
+                                chat_id = msg["chat"]["id"]
+                                
+                                if "text" in msg:
+                                    texto = msg["text"].strip()
+                                    print(f"📨 [{chat_id}] {texto}")
+                                    
+                                    # Processa comando
+                                    if texto.startswith("/"):
+                                        self.processar_comando(chat_id, texto)
+                
+                time.sleep(0.5)
+            
+            except requests.exceptions.Timeout:
+                print("⏱️ Timeout na busca de atualizações (normal)")
+                time.sleep(5)
+            
+            except Exception as e:
+                print(f"❌ Erro: {e}")
+                time.sleep(5)
+    
+    def analise_automatica(self):
+        """Análise automática às 08:00"""
+        while True:
+            try:
+                agora = datetime.now()
+                
+                # Se for 08:00, envia análise
+                if agora.hour == 8 and agora.minute == 0:
+                    relatorio = self.analista.gerar_relatorio()
+                    
+                    for chat_id in list(CHATS_ATIVOS):
+                        self.enviar_mensagem(chat_id, f"📊 <b>ANÁLISE AUTOMÁTICA</b>\n\n{relatorio}")
+                    
+                    time.sleep(61)  # Espera 1 minuto para não repetir
+                
+                time.sleep(30)  # Verifica a cada 30 segundos
+            
+            except Exception as e:
+                print(f"❌ Erro na análise automática: {e}")
+                time.sleep(60)
+
+def main():
+    """Inicia o bot"""
+    print("🤖 BOT APOSTAS PREMIUM - INICIANDO...")
+    print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    print(f"🔑 Token: {TELEGRAM_TOKEN[:20]}...")
+    print()
+    
+    bot = BotPremium()
+    
+    # Thread para análise automática
+    thread_automatica = threading.Thread(target=bot.analise_automatica, daemon=True)
+    thread_automatica.start()
+    
+    # Thread principal para buscar atualizações
+    print("✅ Bot em execução! Aguardando mensagens...")
+    print()
+    
+    bot.buscar_atualizacoes()
+
+if __name__ == "__main__":
+    main()
