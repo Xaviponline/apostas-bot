@@ -192,9 +192,10 @@ class AnalisadorInteligente:
         if selecoes is None:
             selecoes = self.gerar_todas_apostas(jogos)
         r = self.ultimo_resumo
+        nome_selecoes = "SELEÇÃO" if r["selecoes"] == 1 else "SELEÇÕES"
         linhas = [
             f"🎯 ANÁLISE PREMIUM — {self.data_hoje}",
-            f"📊 {r['selecoes']} SELEÇÃO{'ÕES' if r['selecoes'] != 1 else ''} PARA HOJE",
+            f"📊 {r['selecoes']} {nome_selecoes} PARA HOJE",
             "🧠 Modelo V1 • Probabilidade conservadora",
         ]
 
@@ -217,7 +218,9 @@ class AnalisadorInteligente:
         numero = 1
         for hora, itens in grupos.items():
             linhas.extend(["", f"⏰ {hora} — JOGOS"])
-            for s in itens:
+            for indice_item, s in enumerate(itens):
+                if indice_item:
+                    linhas.append("")
                 j = s["jogo"]
                 risco, estrelas = self._risco_e_estrelas(s["confianca"])
                 liga = j.get("liga") or "Competição"
