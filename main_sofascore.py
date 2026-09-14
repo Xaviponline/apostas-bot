@@ -9,11 +9,14 @@ from gestor_apostas import GestorApostas
 from rastreador_resultados import RastreadorResultados
 from analisador_inteligente import AnalisadorInteligente
 from buscador_jogos_reais import BuscadorJogosReais
+from odds_betano import OddsBetano
 
 AJUDA = '''🤖 BOT DE APOSTAS — VERSÃO DE MANUTENÇÃO
 /start ou /ajuda — Ajuda
 /id — Ver o teu ID e o ID desta conversa
 /jogos — Consultar jogos reais de hoje no SofaScore
+/odds — Listar eventos de hoje com odds Betano disponíveis
+/odds ID — Consultar mercados/odds Betano desse evento
 /analisa — Estado da análise automática
 /add_aposta "Jogo" "Mercado" ODD VALOR — Registar uma aposta já feita
 /resultados — Histórico e contas
@@ -31,7 +34,7 @@ Usa /score apenas depois da liquidação da aposta.
 As apostas não são colocadas na Betano pelo bot.'''
 
 class BotPremiumReal:
-    def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None):
+    def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None):
         self.token = token or (os.getenv('TELEGRAM_BOT_TOKEN') or os.getenv('TELEGRAM_TOKEN', '')).strip()
         if not self.token:
             raise ValueError('Configura TELEGRAM_BOT_TOKEN nas variáveis do serviço.')
@@ -42,10 +45,10 @@ class BotPremiumReal:
         self.rastreador = RastreadorResultados()
         self.session = session or requests.Session()
         self.buscador = buscador or BuscadorJogosReais()
+        self.odds = odds or OddsBetano()
         self.username = None
 
     def api(self, metodo, data):
-        # Não registar exceções requests: podem incluir o token no URL.
         r = self.session.post(f'{self.base_url}/{metodo}', json=data, timeout=(5, 40))
         if r.status_code != 200:
             raise RuntimeError(f'Telegram HTTP {r.status_code}')
@@ -55,7 +58,6 @@ class BotPremiumReal:
         return payload['result']
 
     def enviar_mensagem(self, chat_id, texto):
-        # Texto simples; blocos pequenos também com emojis de duas unidades UTF-16.
         for i in range(0, len(texto), 1800):
             self.api('sendMessage', {'chat_id': chat_id, 'text': texto[i:i+1800]})
 
@@ -76,18 +78,34 @@ class BotPremiumReal:
             elif comando == '/jogos':
                 jogos = self.buscador.buscar_todos_jogos_hoje()
                 resposta = self.buscador.formatar_jogos(jogos)
+            elif comando == '/odds':
+                if not self.odds.configurada:
+                    resposta = (
+                        'Odds Betano ainda não configuradas. '
+                        'Falta definir ODDS_API_IO_KEY no Railway.'
+                    )
+                elif argumentos.strip():
+                    resposta = self.odds.formatar_odds(
+                        self.odds.odds_evento(int(argumentos.strip()))
+                    )
+                else:
+                    resposta = self.odds.formatar_eventos(self.odds.eventos_hoje())
             elif comando == '/analisa':
                 resposta = (
                     AnalisadorInteligente.motivo_indisponivel
                     + '\n\nJá existe um conector SofaScore para validar jogos reais com /jogos. '
-                    'A fase seguinte é integrar odds Betano Portugal e o modelo estatístico.'
+                    + (
+                        'A fonte de odds Betano está configurada; falta validar o modelo estatístico.'
+                        if self.odds.configurada
+                        else 'A fase seguinte exige configurar a fonte de odds Betano e validar o modelo estatístico.'
+                    )
                 )
             elif comando == '/status':
                 resposta = (
                     'Bot de manutenção ativo.\n'
                     'Registo manual ativo.\n'
                     'SofaScore: conector instalado; valida com /jogos.\n'
-                    'Odds Betano: ainda não configuradas.\n'
+                    f'Odds Betano: {"configuradas" if self.odds.configurada else "não configuradas"}.\n'
                     'Análise automática: ainda suspensa até validar odds e modelo.\n'
                     'Liquidação automática: desativada.'
                 )
@@ -118,7 +136,6 @@ class BotPremiumReal:
             else:
                 resposta = 'Comando desconhecido. Usa /ajuda.'
         except (ValueError, KeyError, ArithmeticError):
-            # Mensagem fixa: nenhum dado sensível em detalhes de erros.
             resposta = 'Não foi possível aceitar o comando. Verifica o formato em /ajuda, o ID e se o resultado já foi registado. O histórico não foi alterado.'
         self.enviar_mensagem(chat_id, resposta)
 
