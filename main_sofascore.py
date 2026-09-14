@@ -83,12 +83,11 @@ class BotPremiumReal:
                 if not self.odds.configurada:
                     resposta = (
                         'Odds Betano ainda não configuradas. '
-                        'Falta definir ODDS_API_IO_KEY no Railway.'
+                        'Define ODDS_PAPI_KEY (preferido) ou ODDS_API_IO_KEY no Railway.'
                     )
                 elif argumentos.strip():
-                    resposta = self.odds.formatar_odds(
-                        self.odds.odds_evento(int(argumentos.strip()))
-                    )
+                    evento_id = argumentos.strip()
+                    resposta = self.odds.formatar_odds(self.odds.odds_evento(evento_id))
                 else:
                     resposta = self.odds.formatar_eventos(self.odds.eventos_hoje())
             elif comando == '/analisa':
@@ -96,7 +95,7 @@ class BotPremiumReal:
                     AnalisadorInteligente.motivo_indisponivel
                     + '\n\nJá existe um conector de jogos reais ESPN com fallback SofaScore para /jogos. '
                     + (
-                        'A fonte de odds Betano está configurada; falta validar o modelo estatístico.'
+                        f'A fonte de odds Betano está configurada ({self.odds.nome_fonte}); falta validar o modelo estatístico.'
                         if self.odds.configurada
                         else 'A fase seguinte exige configurar a fonte de odds Betano e validar o modelo estatístico.'
                     )
@@ -106,7 +105,7 @@ class BotPremiumReal:
                     'Bot de manutenção ativo.\n'
                     'Registo manual ativo.\n'
                     f'Jogos reais: {self.buscador.fonte or "ESPN principal + SofaScore fallback"}.\n'
-                    f'Odds Betano: {"configuradas" if self.odds.configurada else "não configuradas"}.\n'
+                    f'Odds Betano: {self.odds.nome_fonte if self.odds.configurada else "não configuradas"}.\n'
                     'Análise automática: ainda suspensa até validar odds e modelo.\n'
                     'Liquidação automática: desativada.'
                 )
