@@ -18,7 +18,8 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /start ou /ajuda — Ajuda
 /id — Ver o teu ID e o ID desta conversa
 /jogos — Consultar jogos reais de hoje (hora de Portugal; ESPN + fallback SofaScore)
-/analisa — Analisar os jogos de hoje com estatísticas reais e modelo Poisson
+/analisa — Relatório premium compacto dos jogos de hoje
+/analisa_full — Relatório técnico completo do mesmo modelo
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /odds — Listar eventos com odds Betano, se uma fonte de odds estiver configurada
 /odds ID — Consultar mercados/odds Betano desse evento
@@ -29,7 +30,8 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /status — Estado do bot
 
 No /analisa, a odd mínima é o preço a partir do qual o modelo aponta para uma margem teórica de 5%.
-As previsões do /analisa ficam guardadas antes do jogo para auditoria; não são reescritas depois.
+As previsões ficam guardadas antes do jogo para auditoria; não são reescritas depois.
+ROI/EV só serão mostrados quando existirem odds reais guardadas no momento da previsão.
 As probabilidades são estimativas estatísticas e não garantias.
 As apostas não são colocadas na Betano pelo bot.'''
 
@@ -136,6 +138,20 @@ class BotPremiumReal:
         jogos = self.buscador.buscar_todos_jogos_hoje(data_iso)
         return self._filtrar_data_portugal(jogos, data_iso)
 
+    def _executar_analise(self, tecnica=False):
+        jogos = self._jogos_hoje_portugal()
+        if not jogos:
+            return self.buscador.formatar_jogos(jogos)
+        selecoes = self.analisador.gerar_todas_apostas(jogos)
+        if tecnica:
+            resposta = self.analisador.gerar_relatorio_tecnico(jogos, selecoes=selecoes)
+        else:
+            resposta = self.analisador.gerar_relatorio(jogos, selecoes=selecoes)
+        novas = self.previsoes.registar(selecoes)
+        if novas:
+            resposta += f'\n\n🧾 Auditoria: {novas} nova(s) previsão(ões) guardada(s) antes dos jogos.'
+        return resposta
+
     def enviar_mensagem(self, chat_id, texto):
         for parte in self._dividir_texto(texto):
             self.api('sendMessage', {'chat_id': chat_id, 'text': parte})
@@ -158,15 +174,9 @@ class BotPremiumReal:
                 jogos = self._jogos_hoje_portugal()
                 resposta = self.buscador.formatar_jogos(jogos)
             elif comando == '/analisa':
-                jogos = self._jogos_hoje_portugal()
-                if not jogos:
-                    resposta = self.buscador.formatar_jogos(jogos)
-                else:
-                    selecoes = self.analisador.gerar_todas_apostas(jogos)
-                    resposta = self.analisador.gerar_relatorio(jogos, selecoes=selecoes)
-                    novas = self.previsoes.registar(selecoes)
-                    if novas:
-                        resposta += f'\n\n🧾 Auditoria: {novas} nova(s) previsão(ões) guardada(s) antes dos jogos.'
+                resposta = self._executar_analise(tecnica=False)
+            elif comando == '/analisa_full':
+                resposta = self._executar_analise(tecnica=True)
             elif comando == '/performance':
                 liquidadas = self.previsoes.atualizar_pendentes()
                 resposta = self.previsoes.relatorio()
@@ -191,6 +201,7 @@ class BotPremiumReal:
                     'Data dos jogos: filtrada por hora de Portugal (Europe/Lisbon).\n'
                     f'Odds Betano: {self.odds.nome_fonte if self.odds.configurada else "opcionais / não configuradas"}.\n'
                     'Análise premium: ativa com histórico ESPN + modelo Poisson.\n'
+                    'Apresentação: /analisa compacto + /analisa_full técnico.\n'
                     'Filtro: amostra mínima + qualidade dos dados + probabilidade conservadora + odd mínima alvo.\n'
                     'Auditoria de previsões: ativa e persistente em /data.\n'
                     'ROI do modelo: só será ativado com odds reais registadas.'
