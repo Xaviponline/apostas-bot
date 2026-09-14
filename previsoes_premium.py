@@ -257,6 +257,31 @@ class RegistoPrevisoes:
             f"Previsões registadas: {s['total']}",
             f"Liquidadas: {s['liquidadas']} | Pendentes: {s['pendentes']}",
         ]
+
+        pendentes_detalhe = [
+            p for p in self.dados["previsoes"] if p.get("estado") == "pendente"
+        ]
+        if pendentes_detalhe:
+            linhas.extend(["", "⏳ PREVISÕES PENDENTES"])
+            for p in sorted(
+                pendentes_detalhe,
+                key=lambda item: (
+                    str(item.get("data_jogo") or ""),
+                    float(item.get("timestamp_jogo") or 0),
+                ),
+            ):
+                ts = p.get("timestamp_jogo")
+                hora = "--:--"
+                if isinstance(ts, (int, float)):
+                    hora = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(
+                        ZoneInfo("Europe/Lisbon")
+                    ).strftime("%H:%M")
+                linhas.append(
+                    f"• {p.get('data_jogo') or '--'} {hora} — "
+                    f"{p.get('casa') or '?'} vs {p.get('fora') or '?'} | "
+                    f"{p.get('mercado') or 'Mercado desconhecido'}"
+                )
+
         if not s["liquidadas"]:
             linhas.extend(
                 [
@@ -268,6 +293,7 @@ class RegistoPrevisoes:
             return "\n".join(linhas)
         linhas.extend(
             [
+                "",
                 f"✅ Acertos: {s['ganhos']} | ❌ Falhas: {s['perdas']}",
                 f"🎯 Taxa de acerto: {s['hit_rate']*100:.1f}%",
                 f"📐 Brier Score: {s['brier']:.4f} (menor é melhor)",
