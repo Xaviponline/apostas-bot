@@ -41,10 +41,10 @@ class Tests(unittest.TestCase):
         self.assertFalse(self.path.exists())
 
     def test_lucro_roi_ponderado_anuladas_pendentes(self):
-        self.g.registar_resultado(self.add(), 'ganhou') # +15
-        self.g.registar_resultado(self.add('1.9','5'), 'perdeu') # -5
-        self.g.registar_resultado(self.add('2','20'), 'anulada') # 0, fora ROI
-        self.add('2','30') # pendente, fora ROI
+        self.g.registar_resultado(self.add(), 'ganhou')
+        self.g.registar_resultado(self.add('1.9','5'), 'perdeu')
+        self.g.registar_resultado(self.add('2','20'), 'anulada')
+        self.add('2','30')
         s = self.g.calcular_estatisticas()
         self.assertEqual(s['lucro_real'], Decimal('10.00'))
         self.assertEqual(s['valor_liquidado'], Decimal('15'))
@@ -124,7 +124,8 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.g.dados['apostas'],[])
         self.assertIn('suspensa',self.mensagens[-1])
         self.assertEqual(AnalisadorInteligente().gerar_todas_apostas([{'id':1}]),[])
-        self.assertEqual(BuscadorJogosReais().buscar_todos_jogos_hoje(),[])
+        with patch.dict('os.environ', {'ENABLE_REAL_GAMES':'0', 'ENABLE_SOFASCORE':'0'}):
+            self.assertEqual(BuscadorJogosReais().buscar_todos_jogos_hoje(),[])
 
     def test_telegram_text_chunking(self):
         bot=BotPremiumReal(token='teste',gestor=self.g,owner_id=10,chat_id=-20)
