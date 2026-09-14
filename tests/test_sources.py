@@ -109,6 +109,63 @@ class OddsSession:
         )
 
 
+class PapiSession:
+    def get(self, url, params=None, **kwargs):
+        if url.endswith("/fixtures"):
+            return FakeResponse(
+                [
+                    {
+                        "fixtureId": "id100",
+                        "participant1Name": "Casa Papi",
+                        "participant2Name": "Fora Papi",
+                        "startTime": "2026-09-14T20:00:00.000Z",
+                        "tournamentName": "Liga Papi",
+                        "tournamentId": 77,
+                        "statusName": "Pre-Game",
+                    }
+                ]
+            )
+        if url.endswith("/markets"):
+            return FakeResponse(
+                [
+                    {
+                        "marketId": 101,
+                        "marketName": "Full Time Result",
+                        "outcomes": [
+                            {"outcomeId": 101, "outcomeName": "1"},
+                            {"outcomeId": 102, "outcomeName": "X"},
+                            {"outcomeId": 103, "outcomeName": "2"},
+                        ],
+                    }
+                ]
+            )
+        if url.endswith("/odds"):
+            return FakeResponse(
+                {
+                    "fixtureId": "id100",
+                    "participant1Name": "Casa Papi",
+                    "participant2Name": "Fora Papi",
+                    "tournamentName": "Liga Papi",
+                    "updatedAt": "2026-09-14T13:00:00Z",
+                    "bookmakerOdds": {
+                        "betano.pt": {
+                            "markets": {
+                                "101": {
+                                    "marketActive": True,
+                                    "outcomes": {
+                                        "101": {"players": {"0": {"active": True, "price": 1.80, "bookmakerOutcomeId": "home"}}},
+                                        "102": {"players": {"0": {"active": True, "price": 3.40, "bookmakerOutcomeId": "draw"}}},
+                                        "103": {"players": {"0": {"active": True, "price": 4.20, "bookmakerOutcomeId": "away"}}},
+                                    },
+                                }
+                            }
+                        }
+                    },
+                }
+            )
+        return FakeResponse({}, status_code=404)
+
+
 class SourceTests(unittest.TestCase):
     def test_real_games_default_can_be_disabled(self):
         b = BuscadorJogosReais(enabled=False)
@@ -138,12 +195,12 @@ class SourceTests(unittest.TestCase):
         self.assertIn("Casa vs Fora", b.formatar_jogos(jogos))
 
     def test_odds_betano_without_key_does_not_call_network(self):
-        fonte = OddsBetano(api_key="")
+        fonte = OddsBetano(api_key="", papi_key="")
         self.assertFalse(fonte.configurada)
         self.assertEqual(fonte.eventos_hoje(), [])
         self.assertIsNone(fonte.odds_evento(50))
 
-    def test_odds_betano_parses_events_and_odds(self):
+    def test_legacy_odds_betano_parses_events_and_odds(self):
         fonte = OddsBetano(api_key="teste", session=OddsSession())
         eventos = fonte.eventos_hoje()
         self.assertEqual(eventos[0]["id"], 50)
@@ -152,6 +209,18 @@ class SourceTests(unittest.TestCase):
         texto = fonte.formatar_odds(dados)
         self.assertIn("home=1.80", texto)
         self.assertIn("draw=3.40", texto)
+
+    def test_oddspapi_betano_pt_parses_events_and_odds(self):
+        fonte = OddsBetano(papi_key="teste", provider="oddspapi", session=PapiSession())
+        eventos = fonte.eventos_hoje()
+        self.assertEqual(eventos[0]["id"], "id100")
+        self.assertEqual(eventos[0]["casa"], "Casa Papi")
+        dados = fonte.odds_evento("id100")
+        self.assertEqual(dados["mercados"][0]["name"], "Full Time Result")
+        texto = fonte.formatar_odds(dados)
+        self.assertIn("seleção=1", texto)
+        self.assertIn("odd=1.8", texto)
+        self.assertIn("OddsPapi / Betano PT", texto)
 
 
 if __name__ == "__main__":
