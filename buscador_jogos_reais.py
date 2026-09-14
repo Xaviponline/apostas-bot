@@ -5,15 +5,21 @@ apenas um estado genérico para diagnóstico (sem URLs/tokens em logs).
 """
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+import os
 import requests
 
 
 class BuscadorJogosReais:
     BASE_URL = "https://api.sofascore.com/api/v1"
 
-    def __init__(self, session=None):
+    def __init__(self, session=None, enabled=None):
         self.session = session or requests.Session()
-        self.estado = "por validar"
+        self.enabled = (
+            bool(session)
+            if enabled is None and session is not None
+            else (os.getenv("ENABLE_SOFASCORE", "0") == "1" if enabled is None else bool(enabled))
+        )
+        self.estado = "por validar" if self.enabled else "desativado"
         self.ultimo_total = 0
 
     def _get(self, path):
@@ -72,6 +78,10 @@ class BuscadorJogosReais:
             return None
 
     def buscar_todos_jogos_hoje(self, data_iso=None):
+        if not self.enabled:
+            self.estado = "desativado"
+            self.ultimo_total = 0
+            return []
         data_iso = data_iso or datetime.now(
             ZoneInfo("Europe/Lisbon")
         ).strftime("%Y-%m-%d")
