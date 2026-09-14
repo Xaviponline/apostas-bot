@@ -54,9 +54,70 @@ class BotPremiumReal:
             raise RuntimeError('O Telegram recusou o pedido.')
         return payload['result']
 
+    @staticmethod
+    def _telegram_units(texto):
+        return len(texto.encode('utf-16-le')) // 2
+
+    @classmethod
+    def _cortar_bloco(cls, texto, limite):
+        """Último recurso para um bloco sem quebras maior que o limite Telegram."""
+        partes, atual, unidades = [], [], 0
+        for char in texto:
+            u = 2 if ord(char) > 0xFFFF else 1
+            if atual and unidades + u > limite:
+                partes.append(''.join(atual))
+                atual, unidades = [], 0
+            atual.append(char)
+            unidades += u
+        if atual:
+            partes.append(''.join(atual))
+        return partes
+
+    @classmethod
+    def _dividir_texto(cls, texto, limite=3900):
+        """Divide preferencialmente entre cartões/parágrafos, nunca a meio à toa."""
+        if cls._telegram_units(texto) <= limite:
+            return [texto]
+
+        saida, atual = [], ''
+        paragrafos = texto.split('\n\n')
+        for paragrafo in paragrafos:
+            bloco = paragrafo if not atual else '\n\n' + paragrafo
+            if cls._telegram_units(atual + bloco) <= limite:
+                atual += bloco
+                continue
+
+            if atual:
+                saida.append(atual)
+                atual = ''
+
+            if cls._telegram_units(paragrafo) <= limite:
+                atual = paragrafo
+                continue
+
+            # Parágrafo excecionalmente grande: tenta primeiro por linhas.
+            linhas = paragrafo.splitlines(keepends=True)
+            parcial = ''
+            for linha in linhas:
+                if cls._telegram_units(parcial + linha) <= limite:
+                    parcial += linha
+                    continue
+                if parcial:
+                    saida.append(parcial.rstrip('\n'))
+                    parcial = ''
+                if cls._telegram_units(linha) <= limite:
+                    parcial = linha
+                else:
+                    saida.extend(cls._cortar_bloco(linha, limite))
+            atual = parcial.rstrip('\n')
+
+        if atual:
+            saida.append(atual)
+        return [p for p in saida if p]
+
     def enviar_mensagem(self, chat_id, texto):
-        for i in range(0, len(texto), 1800):
-            self.api('sendMessage', {'chat_id': chat_id, 'text': texto[i:i+1800]})
+        for parte in self._dividir_texto(texto):
+            self.api('sendMessage', {'chat_id': chat_id, 'text': parte})
 
     def processar_comando(self, chat_id, texto, user_id=None, update_id=None):
         comando, _, argumentos = texto.strip().partition(' ')
@@ -99,7 +160,7 @@ class BotPremiumReal:
                     f'Jogos reais: {self.buscador.fonte or "ESPN principal + SofaScore fallback"}.\n'
                     f'Odds Betano: {self.odds.nome_fonte if self.odds.configurada else "opcionais / não configuradas"}.\n'
                     'Análise premium: ativa com histórico ESPN + modelo Poisson.\n'
-                    'Filtro: amostra mínima + qualidade dos dados + odd mínima alvo.\n'
+                    'Filtro: amostra mínima + qualidade dos dados + probabilidade conservadora + odd mínima alvo.\n'
                     'Liquidação automática: desativada.'
                 )
             elif comando == '/resultados':
