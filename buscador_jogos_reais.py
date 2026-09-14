@@ -10,6 +10,8 @@ import os
 import re
 import requests
 
+from nomes_ligas import nome_liga_pt
+
 try:
     from curl_cffi import requests as browser_requests
 except ImportError:
@@ -409,7 +411,7 @@ class BuscadorJogosReais:
         ]
         liga_anterior = None
         for jogo in visiveis:
-            liga = jogo.get("liga") or "Competição"
+            liga = nome_liga_pt(jogo.get("liga") or "Competição")
             if liga != liga_anterior:
                 pais = f" — {jogo['pais']}" if jogo.get("pais") else ""
                 linhas.append(f"🏆 {liga}{pais}")
@@ -423,7 +425,7 @@ class BuscadorJogosReais:
         linhas.extend(
             [
                 "",
-                f"Fonte: {fonte}. Sem odds Betano nesta listagem.",
+                f"Fonte: {fonte}. Sem odds nesta listagem.",
                 "Se as fontes falharem, o bot não inventa jogos.",
             ]
         )
