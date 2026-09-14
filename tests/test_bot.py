@@ -119,10 +119,12 @@ class Tests(unittest.TestCase):
             self.assertIsNone(r.analisar_aposta({'tipo':'Vitória Casa'},s))
         self.assertIsNone(r.analisar_aposta({'tipo':'Cantos'},{'casa':2,'fora':1,'status':'finished'}))
 
-    def test_analysis_no_fake_data_or_new_bets(self):
+    def test_analysis_does_not_create_bets_or_fake_fallback(self):
+        self.bot.buscador.buscar_todos_jogos_hoje = lambda: []
+        self.bot.buscador.formatar_jogos = lambda jogos: 'sem jogos reais disponíveis'
         self.command('/analisa')
         self.assertEqual(self.g.dados['apostas'],[])
-        self.assertIn('suspensa',self.mensagens[-1])
+        self.assertIn('sem jogos reais', self.mensagens[-1])
         self.assertEqual(AnalisadorInteligente().gerar_todas_apostas([{'id':1}]),[])
         with patch.dict('os.environ', {'ENABLE_REAL_GAMES':'0', 'ENABLE_SOFASCORE':'0'}):
             self.assertEqual(BuscadorJogosReais().buscar_todos_jogos_hoje(),[])
