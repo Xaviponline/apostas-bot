@@ -8,10 +8,12 @@ import requests
 from gestor_apostas import GestorApostas
 from rastreador_resultados import RastreadorResultados
 from analisador_inteligente import AnalisadorInteligente
+from buscador_jogos_reais import BuscadorJogosReais
 
 AJUDA = '''🤖 BOT DE APOSTAS — VERSÃO DE MANUTENÇÃO
 /start ou /ajuda — Ajuda
 /id — Ver o teu ID e o ID desta conversa
+/jogos — Consultar jogos reais de hoje no SofaScore
 /analisa — Estado da análise automática
 /add_aposta "Jogo" "Mercado" ODD VALOR — Registar uma aposta já feita
 /resultados — Histórico e contas
@@ -29,7 +31,7 @@ Usa /score apenas depois da liquidação da aposta.
 As apostas não são colocadas na Betano pelo bot.'''
 
 class BotPremiumReal:
-    def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None):
+    def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None):
         self.token = token or (os.getenv('TELEGRAM_BOT_TOKEN') or os.getenv('TELEGRAM_TOKEN', '')).strip()
         if not self.token:
             raise ValueError('Configura TELEGRAM_BOT_TOKEN nas variáveis do serviço.')
@@ -39,6 +41,7 @@ class BotPremiumReal:
         self.gestor = gestor or GestorApostas()
         self.rastreador = RastreadorResultados()
         self.session = session or requests.Session()
+        self.buscador = buscador or BuscadorJogosReais()
         self.username = None
 
     def api(self, metodo, data):
@@ -70,10 +73,24 @@ class BotPremiumReal:
         try:
             if comando in ('/start', '/ajuda'):
                 resposta = AJUDA
+            elif comando == '/jogos':
+                jogos = self.buscador.buscar_todos_jogos_hoje()
+                resposta = self.buscador.formatar_jogos(jogos)
             elif comando == '/analisa':
-                resposta = AnalisadorInteligente.motivo_indisponivel
+                resposta = (
+                    AnalisadorInteligente.motivo_indisponivel
+                    + '\n\nJá existe um conector SofaScore para validar jogos reais com /jogos. '
+                    'A fase seguinte é integrar odds Betano Portugal e o modelo estatístico.'
+                )
             elif comando == '/status':
-                resposta = 'Bot de manutenção ativo.\nRegisto manual ativo.\nAnálise automática: suspensa.\nSofaScore e Betano: ligação não validada.\nLiquidação automática: desativada.'
+                resposta = (
+                    'Bot de manutenção ativo.\n'
+                    'Registo manual ativo.\n'
+                    'SofaScore: conector instalado; valida com /jogos.\n'
+                    'Odds Betano: ainda não configuradas.\n'
+                    'Análise automática: ainda suspensa até validar odds e modelo.\n'
+                    'Liquidação automática: desativada.'
+                )
             elif comando == '/resultados':
                 resposta = self.gestor.gerar_relatorio()
             elif comando == '/add_aposta':
