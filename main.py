@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-BOT APOSTAS TELEGRAM - COM RASTREIO DE RESULTADOS
-Bot 100% funcional com análise e rastreio automático
+BOT APOSTAS TELEGRAM - COM SOFASCORE REAL
+Análise de jogos reais com dados inteligentes
 """
 
 import requests
@@ -11,7 +11,8 @@ import json
 import time
 import threading
 from datetime import datetime
-from analista_dinamico_total import AnistaDinamicoTotal
+from buscador_jogos_reais import BuscadorJogosReais
+from analisador_inteligente import AnalisadorInteligente
 from gestor_apostas import GestorApostas
 from rastreador_resultados import RastreadorResultados
 
@@ -20,13 +21,16 @@ BASE_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 CHATS_ATIVOS = set()
 
-class BotPremium:
+class BotPremiumReal:
     
     def __init__(self):
-        self.analista = AnistaDinamicoTotal()
+        self.buscador = BuscadorJogosReais()
+        self.analisador = AnalisadorInteligente(self.buscador)
         self.gestor = GestorApostas()
         self.rastreador = RastreadorResultados()
         self.ultimo_update = 0
+        self.cache_jogos = None
+        self.cache_tempo = 0
     
     def enviar_mensagem(self, chat_id: int, texto: str):
         """Envia mensagem via Telegram API"""
@@ -43,6 +47,24 @@ class BotPremium:
             print(f"❌ Erro ao enviar mensagem: {e}")
             return False
     
+    def obter_jogos_cache(self, cache_minutos=30) -> list:
+        """Obtém jogos com cache (30 minutos padrão)"""
+        tempo_atual = time.time()
+        
+        if self.cache_jogos and (tempo_atual - self.cache_tempo) < (cache_minutos * 60):
+            print(f"✅ Usando cache de jogos ({cache_minutos} min)")
+            return self.cache_jogos
+        
+        print("🔄 Buscando jogos reais do SofaScore...")
+        jogos = self.buscador.buscar_todos_jogos_hoje()
+        
+        if jogos:
+            self.cache_jogos = jogos
+            self.cache_tempo = tempo_atual
+            print(f"✅ {len(jogos)} jogos encontrados!")
+        
+        return jogos
+    
     def processar_comando(self, chat_id: int, texto: str):
         """Processa comandos do bot"""
         
@@ -50,7 +72,7 @@ class BotPremium:
             mensagem = """
 🤖 <b>BEM-VINDO AO BOT APOSTAS PREMIUM!</b>
 
-📊 <b>Análise Automática + Rastreio de Resultados</b>
+📊 <b>Análise Inteligente + Jogos REAIS (SofaScore)</b>
 
 <b>Comandos disponíveis:</b>
 /analisa - 📈 Ver apostas de HOJE
@@ -59,37 +81,80 @@ class BotPremium:
 /ajuda - 📖 Informações completas
 
 <b>Rastreio de Resultados:</b>
-/score ID CASA-FORA - Registar resultado
-(Ex: /score 1 2-1)
+/score ID ganhou - Registar ganho
+/score ID perdeu - Registar perda
+/score ID CASA-FORA - Análise automática
 
 <b>Características:</b>
-✅ 15 apostas de HOJE
-✅ ROI médio +16-40%
-✅ Rastreio de resultados automático
-✅ Histórico completo de apostas
-✅ Estatísticas em tempo real
+✅ 15 apostas de HOJE (JOGOS REAIS)
+✅ Análise por forma dos times
+✅ ROI inteligente
+✅ Rastreio automático
+✅ Histórico completo
 
-Subscreve para receber análises diárias! 🔥
+Subscreve para análises diárias! 🔥
             """
             self.enviar_mensagem(chat_id, mensagem)
             CHATS_ATIVOS.add(chat_id)
         
         elif texto == "/analisa":
-            relatorio = self.analista.gerar_relatorio()
+            # Busca jogos reais
+            jogos = self.obter_jogos_cache()
+            
+            if not jogos:
+                self.enviar_mensagem(chat_id, "❌ Nenhum jogo encontrado para hoje!\n\nTenta mais tarde! 👋")
+                return
+            
+            # Gera apostas
+            apostas = self.analisador.gerar_todas_apostas(jogos)
+            
+            if not apostas:
+                self.enviar_mensagem(chat_id, "❌ Nenhuma aposta de qualidade encontrada para hoje!")
+                return
+            
+            # Formata relatório
+            relatorio = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            relatorio += f"🎯 ANÁLISE PREMIUM - {self.analisador.data_hoje}\n"
+            relatorio += f"📊 {len(apostas)} APOSTAS PARA HOJE\n"
+            relatorio += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            
+            # Agrupa por hora
+            apostas_por_hora = {}
+            for aposta in apostas:
+                hora = aposta["horario"]
+                if hora not in apostas_por_hora:
+                    apostas_por_hora[hora] = []
+                apostas_por_hora[hora].append(aposta)
+            
+            contador = 1
+            for hora in sorted(apostas_por_hora.keys()):
+                relatorio += f"⏰ {hora} - JOGOS\n"
+                
+                for aposta in apostas_por_hora[hora]:
+                    relatorio += f"#{contador} {aposta['risco']}\n"
+                    relatorio += f"   ⚽ {aposta['jogo']}\n"
+                    relatorio += f"   🏆 {aposta['liga']}\n"
+                    relatorio += f"   💰 {aposta['tipo']} @{aposta['odds']}\n"
+                    relatorio += f"   📈 {aposta['probabilidade']}% | ROI +{aposta['roi']}%\n"
+                    relatorio += f"   ⭐ {'⭐' * aposta['confianca']}\n\n"
+                    
+                    # Registra aposta no gestor
+                    self.gestor.adicionar_aposta({
+                        "jogo": aposta["jogo"],
+                        "liga": aposta["liga"],
+                        "tipo": aposta["tipo"],
+                        "odds": aposta["odds"],
+                        "probabilidade": aposta["probabilidade"],
+                        "roi": aposta["roi"]
+                    })
+                    
+                    contador += 1
+            
+            roi_medio = sum(a["roi"] for a in apostas) / len(apostas)
+            relatorio += f"✅ Total: {len(apostas)} apostas (ROI Médio: +{roi_medio:.1f}%)\n"
+            
             self.enviar_mensagem(chat_id, relatorio)
             CHATS_ATIVOS.add(chat_id)
-            
-            # Regista as apostas no gestor
-            apostas = self.analista.gerar_apostas_simples()
-            for aposta in apostas:
-                self.gestor.adicionar_aposta({
-                    "jogo": aposta["jogo"],
-                    "liga": aposta["liga"],
-                    "tipo": aposta["tipo"],
-                    "odds": aposta["odds"],
-                    "probabilidade": aposta["probabilidade"],
-                    "roi": aposta["roi"]
-                })
         
         elif texto == "/resultados":
             relatorio = self.gestor.gerar_relatorio()
@@ -97,39 +162,26 @@ Subscreve para receber análises diárias! 🔥
             CHATS_ATIVOS.add(chat_id)
         
         elif texto.startswith("/score "):
-            # Suporta 2 formatos:
-            # 1. /score ID CASA-FORA (análise automática)
-            #    Exemplo: /score 1 2-1
-            # 2. /score ID ganhou/perdeu (registar manual)
-            #    Exemplo: /score 1 ganhou
-            try:
-                partes = texto.split()
-                if len(partes) >= 3:
+            partes = texto.split()
+            if len(partes) >= 3:
+                try:
                     aposta_id = int(partes[1])
                     param = partes[2].lower()
                     
-                    # Obtém aposta
                     aposta = self.gestor.obter_aposta(aposta_id)
                     if not aposta:
                         self.enviar_mensagem(chat_id, f"❌ Aposta #{aposta_id} não encontrada!")
                         return
                     
                     resultado = None
-                    placar_str = ""
                     
-                    # Verifica se é "ganhou" ou "perdeu"
                     if param in ["ganhou", "won", "g"]:
                         resultado = "ganhou"
                     elif param in ["perdeu", "lost", "p"]:
                         resultado = "perdeu"
-                    
-                    # Se não, tenta analisar como placar
                     elif "-" in param:
                         try:
                             casa, fora = map(int, param.split("-"))
-                            placar_str = f"Placar: {casa}-{fora}"
-                            
-                            # Simula análise de resultado
                             tipo = aposta["tipo"]
                             
                             if tipo == "Ambas Marcam":
@@ -142,8 +194,6 @@ Subscreve para receber análises diárias! 🔥
                                 resultado = "ganhou" if casa > fora else "perdeu"
                             elif tipo == "Vitória Fora":
                                 resultado = "ganhou" if fora > casa else "perdeu"
-                            # Para outros tipos, deixa como análise manual
-                            
                         except:
                             pass
                     
@@ -151,24 +201,26 @@ Subscreve para receber análises diárias! 🔥
                         self.gestor.registar_resultado(aposta_id, resultado)
                         status = "✅ GANHOU!" if resultado == "ganhou" else "❌ PERDEU!"
                         msg = f"{status}\n\n{aposta['jogo']}\n{aposta['tipo']} @{aposta['odds']}"
-                        if placar_str:
-                            msg += f"\n{placar_str}"
                         self.enviar_mensagem(chat_id, msg)
                     else:
-                        self.enviar_mensagem(chat_id, f"⚠️ Formato inválido!\n\nUsa:\n/score {aposta_id} ganhou\n/score {aposta_id} perdeu\n/score {aposta_id} 2-1")
-            
-            except Exception as e:
-                self.enviar_mensagem(chat_id, f"❌ Erro: {str(e)}\n\nUsa:\n/score ID ganhou\n/score ID perdeu\n/score ID CASA-FORA")
+                        self.enviar_mensagem(chat_id, f"⚠️ Formato inválido!\n\nUsa:\n/score {aposta_id} ganhou\n/score {aposta_id} perdeu")
+                
+                except Exception as e:
+                    self.enviar_mensagem(chat_id, f"❌ Erro: {str(e)}")
         
         elif texto == "/status":
+            jogos = self.obter_jogos_cache()
             stats = self.gestor.calcular_estatisticas()
             status = f"""
 ✅ <b>BOT STATUS</b>
 
 🤖 Bot: <b>OPERACIONAL</b> ✓
-🌐 Railway: <b>ONLINE</b> ✓
-📊 Análise: <b>ATIVA</b> ✓
+🌐 SofaScore: <b>ONLINE</b> ✓
+📊 Análise: <b>INTELIGENTE</b> ✓
 ⏰ Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+
+🎮 <b>JOGOS REAIS:</b>
+{len(jogos)} jogos encontrados hoje
 
 📈 <b>PERFORMANCE:</b>
 Total apostas: {stats['total']}
@@ -190,31 +242,27 @@ Lucro: €{stats['lucro_real']}
 
 <b>COMANDOS PRINCIPAIS:</b>
 /start - Começar
-/analisa - Ver apostas de HOJE
+/analisa - Ver apostas de HOJE (JOGOS REAIS)
 /resultados - Ver performance
 /status - Ver status do bot
 
 <b>REGISTAR RESULTADOS:</b>
-/score ID CASA-FORA
-Exemplo: /score 1 2-1
+/score ID ganhou - Registar ganho
+/score ID perdeu - Registar perda
+/score ID CASA-FORA - Análise automática (Ex: /score 1 2-1)
 
 <b>Como funciona:</b>
-✓ Bot gera 15 apostas DIÁRIAS
-✓ Filtros rígidos de qualidade
-✓ ROI sempre positivo
-✓ Rastreio de resultados automático
+✓ Busca JOGOS REAIS de hoje (SofaScore)
+✓ Análise inteligente por forma dos times
+✓ ROI baseado em probabilidade real
+✓ Rastreio automático de resultados
 ✓ Histórico completo guardar
 
-<b>Qualidade garantida:</b>
-- Probabilidade mínima: 55%
-- ROI mínimo: +2%
-- Confiança: ⭐⭐⭐+
-
-<b>Performance Real:</b>
-- Histórico de todas as apostas
-- Win rate calculado
-- ROI real vs esperado
-- Lucro em tempo real
+<b>Dados Reais:</b>
+- Jogos de ligas: PL, La Liga, Serie A, BuLi, L1, Liga PT, Brasileirão
+- Forma recente dos times (últimos 5 jogos)
+- Probabilidade calculada por estatísticas
+- Odds realista baseada em probabilidade
 
 🔥 Subscreve para análises diárias!
             """
@@ -241,7 +289,6 @@ Exemplo: /score 1 2-1
                         for update in dados["result"]:
                             self.ultimo_update = update["update_id"]
                             
-                            # Processa mensagens
                             if "message" in update:
                                 msg = update["message"]
                                 chat_id = msg["chat"]["id"]
@@ -250,14 +297,13 @@ Exemplo: /score 1 2-1
                                     texto = msg["text"].strip()
                                     print(f"📨 [{chat_id}] {texto}")
                                     
-                                    # Processa comando
                                     if texto.startswith("/"):
                                         self.processar_comando(chat_id, texto)
                 
                 time.sleep(0.5)
             
             except requests.exceptions.Timeout:
-                print("⏱️ Timeout na busca de atualizações (normal)")
+                print("⏱️ Timeout (normal)")
                 time.sleep(5)
             
             except Exception as e:
@@ -270,16 +316,21 @@ Exemplo: /score 1 2-1
             try:
                 agora = datetime.now()
                 
-                # Se for 08:00, envia análise
                 if agora.hour == 8 and agora.minute == 0:
-                    relatorio = self.analista.gerar_relatorio()
+                    jogos = self.obter_jogos_cache()
                     
-                    for chat_id in list(CHATS_ATIVOS):
-                        self.enviar_mensagem(chat_id, f"📊 <b>ANÁLISE AUTOMÁTICA</b>\n\n{relatorio}")
+                    if jogos:
+                        apostas = self.analisador.gerar_todas_apostas(jogos)
+                        
+                        relatorio = "📊 <b>ANÁLISE AUTOMÁTICA PREMIUM</b>\n\n"
+                        relatorio += f"{len(apostas)} apostas de qualidade para hoje!"
+                        
+                        for chat_id in list(CHATS_ATIVOS):
+                            self.enviar_mensagem(chat_id, relatorio)
                     
-                    time.sleep(61)  # Espera 1 minuto para não repetir
+                    time.sleep(61)
                 
-                time.sleep(30)  # Verifica a cada 30 segundos
+                time.sleep(30)
             
             except Exception as e:
                 print(f"❌ Erro na análise automática: {e}")
@@ -287,18 +338,16 @@ Exemplo: /score 1 2-1
 
 def main():
     """Inicia o bot"""
-    print("🤖 BOT APOSTAS PREMIUM COM RASTREIO - INICIANDO...")
+    print("🤖 BOT APOSTAS PREMIUM COM SOFASCORE - INICIANDO...")
     print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    print(f"🔑 Token: {TELEGRAM_TOKEN[:20]}...")
     print()
     
-    bot = BotPremium()
+    bot = BotPremiumReal()
     
     # Thread para análise automática
     thread_automatica = threading.Thread(target=bot.analise_automatica, daemon=True)
     thread_automatica.start()
     
-    # Thread principal para buscar atualizações
     print("✅ Bot em execução! Aguardando mensagens...")
     print()
     
