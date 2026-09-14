@@ -44,39 +44,61 @@ class AnalisadorInteligente:
 
     @staticmethod
     def _confianca(qualidade, prob):
-        if qualidade >= 80 and prob >= 0.62:
+        if qualidade >= 85 and prob >= 0.62:
             return "ALTA"
-        if qualidade >= 65 and prob >= 0.58:
+        if qualidade >= 70 and prob >= 0.58:
             return "MÉDIA-ALTA"
         if qualidade >= 55:
             return "MÉDIA"
         return "BAIXA"
 
+    @staticmethod
+    def _probabilidade_conservadora(prob_bruta, qualidade):
+        """Reduz excesso de confiança quando a amostra ainda é limitada.
+
+        50% representa ausência de informação num mercado binário. Quanto melhor
+        a qualidade dos dados, mais a estimativa conservadora se aproxima da
+        probabilidade bruta do modelo. Isto não é calibração definitiva; essa será
+        feita com o histórico real de previsões.
+        """
+        prob_bruta = float(prob_bruta)
+        q = max(0.0, min(1.0, float(qualidade) / 100.0))
+        fiabilidade = 0.55 + (0.45 * q)
+        ajustada = 0.50 + ((prob_bruta - 0.50) * fiabilidade)
+        return max(0.01, min(0.99, ajustada))
+
     def _melhor_selecao(self, analise):
-        if analise["qualidade"] < self.QUALIDADE_MINIMA:
+        qualidade = int(analise["qualidade"])
+        if qualidade < self.QUALIDADE_MINIMA:
             return None
 
         candidatos = []
         for mercado, minimo in self.LIMITES.items():
-            prob = float(analise["probabilidades"].get(mercado, 0.0))
-            if prob < minimo or prob <= 0 or prob >= 1:
+            prob_bruta = float(analise["probabilidades"].get(mercado, 0.0))
+            if prob_bruta <= 0 or prob_bruta >= 1:
                 continue
+
+            prob = self._probabilidade_conservadora(prob_bruta, qualidade)
+            if prob < minimo:
+                continue
+
             odd_justa = 1.0 / prob
             odd_minima = (1.0 + self.MARGEM_VALUE_ALVO) / prob
-            # Mantém o perfil definido: evitar entradas cuja odd mínima já fique abaixo de 1.50.
+            # Evita entradas cuja odd mínima fique abaixo do perfil definido.
             if odd_minima < self.ODD_MINIMA_PERFIL:
                 continue
 
-            # Ranking sem odds reais: probabilidade + qualidade dos dados.
-            score = (prob * 0.62) + ((analise["qualidade"] / 100.0) * 0.38)
+            # Ranking sem odds reais: probabilidade ajustada + qualidade dos dados.
+            score = (prob * 0.62) + ((qualidade / 100.0) * 0.38)
             candidatos.append(
                 {
                     "mercado": mercado,
                     "probabilidade": prob,
+                    "probabilidade_bruta": prob_bruta,
                     "odd_justa": odd_justa,
                     "odd_minima": odd_minima,
                     "score": score,
-                    "confianca": self._confianca(analise["qualidade"], prob),
+                    "confianca": self._confianca(qualidade, prob),
                 }
             )
 
@@ -125,7 +147,8 @@ class AnalisadorInteligente:
             f"📅 {self.data_hoje}",
             "",
             "Modelo: resultados ESPN reais + forma casa/fora + médias da liga + Poisson.",
-            "Ainda sem odds Betano em tempo real: mostramos odd justa e odd mínima para 5% de margem teórica.",
+            "A probabilidade exibida é conservadora e penaliza amostras menos robustas.",
+            "Sem odds Betano em tempo real: mostramos odd justa e odd mínima para 5% de margem teórica.",
             "",
             f"Jogos do dia: {r['jogos']} | Com dados suficientes: {r['com_dados']} | Seleções: {r['selecoes']}",
         ]
@@ -144,13 +167,17 @@ class AnalisadorInteligente:
 
         for i, s in enumerate(selecoes, 1):
             j = s["jogo"]
+            diferenca = abs(s["probabilidade_bruta"] - s["probabilidade"])
+            prob_linha = f"📊 Probabilidade conservadora: {s['probabilidade']*100:.1f}%"
+            if diferenca >= 0.005:
+                prob_linha += f" (bruta {s['probabilidade_bruta']*100:.1f}%)"
             linhas.extend(
                 [
                     "",
                     f"{i}. ⚽ {j.get('casa')} vs {j.get('fora')}",
                     f"🏆 {j.get('liga') or 'Competição'} — {j.get('horario') or '--:--'}",
                     f"🎯 {s['mercado']}",
-                    f"📊 Probabilidade do modelo: {s['probabilidade']*100:.1f}%",
+                    prob_linha,
                     f"💰 Odd justa: {s['odd_justa']:.2f}",
                     f"✅ Só considerar na Betano se odd ≥ {s['odd_minima']:.2f}",
                     f"⚙️ Golos esperados pelo modelo: {s['lambda_casa']:.2f} - {s['lambda_fora']:.2f}",
