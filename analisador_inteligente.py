@@ -19,6 +19,15 @@ class AnalisadorInteligente:
     def calcular_probabilidade_vitoria(self, forma_casa: Dict, forma_fora: Dict) -> float:
         """Calcula probabilidade de vitória da casa baseada em forma"""
         
+        # Se forma está vazia, usa probabilidades padrão
+        if not forma_casa.get("ganhas") and not forma_casa.get("perdidas"):
+            print("    ⚠️ Forma da casa não disponível, usando padrão")
+            return 0.55 + (0.05 * (len(str(hash(forma_casa))) % 2))
+        
+        if not forma_fora.get("ganhas") and not forma_fora.get("perdidas"):
+            print("    ⚠️ Forma do fora não disponível, usando padrão")
+            return 0.50 + (0.05 * (len(str(hash(forma_fora))) % 2))
+        
         # Calcula taxa de vitória recente
         total_casa = max(forma_casa["ganhas"] + forma_casa["empates"] + forma_casa["perdidas"], 1)
         taxa_ganhas_casa = forma_casa["ganhas"] / total_casa
@@ -192,12 +201,13 @@ class AnalisadorInteligente:
         return 1
     
     def gerar_apostas_jogo(self, jogo: Dict) -> List[Dict]:
-        """Gera 2-3 apostas para um jogo (tipos diferentes)"""
+        """Gera 3-4 apostas para um jogo (tipos diferentes)"""
         
         tipos_sugeridos = [
             "Vitória Casa",
             "Ambas Marcam",
-            "Over 2.5 Golos"
+            "Over 2.5 Golos",
+            "Vitória Fora"
         ]
         
         apostas = []
@@ -205,8 +215,8 @@ class AnalisadorInteligente:
             try:
                 aposta = self.gerar_aposta(jogo, tipo)
                 
-                # Filtra qualidade mínima
-                if aposta["probabilidade"] >= 55 and aposta["roi"] >= 2:
+                # Filtro muito relaxado aqui - aceita mesmo com probabilidade baixa
+                if aposta["probabilidade"] >= 50:
                     apostas.append(aposta)
             except:
                 pass
@@ -216,16 +226,38 @@ class AnalisadorInteligente:
     def gerar_todas_apostas(self, jogos: List[Dict]) -> List[Dict]:
         """Gera apostas para todos os jogos (máximo 15)"""
         
+        print("🎯 Gerando apostas com análise inteligente...")
         todas_apostas = []
         
         for jogo in jogos:
             apostas_jogo = self.gerar_apostas_jogo(jogo)
             todas_apostas.extend(apostas_jogo)
             
-            if len(todas_apostas) >= 15:
+            if len(todas_apostas) >= 20:  # Gera mais que 15 para ter margem
                 break
         
-        # Ordena por ROI (melhor primeiro)
-        todas_apostas.sort(key=lambda x: x["roi"], reverse=True)
+        print(f"  📊 Apostas geradas (antes de filtro): {len(todas_apostas)}")
         
-        return todas_apostas[:15]
+        # FILTRO 1 - Qualidade alta
+        apostas_filtradas = [a for a in todas_apostas if a["probabilidade"] >= 55 and a["roi"] >= 2]
+        print(f"  ✅ Com filtro ALTO (55%, +2%): {len(apostas_filtradas)}")
+        
+        # Se não conseguir 10, relaxa
+        if len(apostas_filtradas) < 10:
+            apostas_filtradas = [a for a in todas_apostas if a["probabilidade"] >= 52 and a["roi"] >= 1]
+            print(f"  🟡 Com filtro MÉDIO (52%, +1%): {len(apostas_filtradas)}")
+        
+        # Se ainda não conseguir, relaxa mais
+        if len(apostas_filtradas) < 15:
+            apostas_filtradas = [a for a in todas_apostas if a["probabilidade"] >= 50]
+            print(f"  🟠 Com filtro BAIXO (50%+): {len(apostas_filtradas)}")
+        
+        # Se ainda não conseguir, pega em todas
+        if len(apostas_filtradas) < 15:
+            apostas_filtradas = todas_apostas
+            print(f"  ⚠️ Sem filtro: {len(apostas_filtradas)}")
+        
+        # Ordena por ROI (melhor primeiro)
+        apostas_filtradas.sort(key=lambda x: x["roi"], reverse=True)
+        
+        return apostas_filtradas[:15]
