@@ -4,6 +4,7 @@ Não usa probabilidades aleatórias nem odds fabricadas. A versão atual calcula
 probabilidades de modelo e uma odd justa/mínima; as odds da Betano entram mais
 tarde como camada independente de validação de value.
 """
+from collections import OrderedDict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -25,6 +26,38 @@ class AnalisadorInteligente:
         "Over 1.5 Golos": 0.70,
         "1X (Casa ou Empate)": 0.70,
         "X2 (Empate ou Fora)": 0.70,
+    }
+
+    BANDEIRAS = {
+        "english premier league": "🇬🇧",
+        "premier league": "🇬🇧",
+        "laliga": "🇪🇸",
+        "spanish laliga": "🇪🇸",
+        "italian serie a": "🇮🇹",
+        "serie a": "🇮🇹",
+        "german bundesliga": "🇩🇪",
+        "bundesliga": "🇩🇪",
+        "french ligue 1": "🇫🇷",
+        "ligue 1": "🇫🇷",
+        "ligue 2": "🇫🇷",
+        "portuguese primeira liga": "🇵🇹",
+        "primeira liga": "🇵🇹",
+        "eredivisie": "🇳🇱",
+        "keuken kampioen divisie": "🇳🇱",
+        "belgian pro league": "🇧🇪",
+        "turkish super lig": "🇹🇷",
+        "super lig": "🇹🇷",
+        "allsvenskan": "🇸🇪",
+        "eliteserien": "🇳🇴",
+        "brasileiro serie a": "🇧🇷",
+        "brasileiro serie b": "🇧🇷",
+        "argentine liga profesional": "🇦🇷",
+        "uefa champions league": "🇪🇺",
+        "champions league": "🇪🇺",
+        "uefa europa league": "🇪🇺",
+        "europa league": "🇪🇺",
+        "uefa conference league": "🇪🇺",
+        "conference league": "🇪🇺",
     }
 
     motivo_indisponivel = (
@@ -60,6 +93,30 @@ class AnalisadorInteligente:
         fiabilidade = 0.55 + (0.45 * q)
         ajustada = 0.50 + ((prob_bruta - 0.50) * fiabilidade)
         return max(0.01, min(0.99, ajustada))
+
+    @staticmethod
+    def _fmt_num(valor, casas=2):
+        return f"{float(valor):.{casas}f}".replace(".", ",")
+
+    @classmethod
+    def _bandeira_liga(cls, liga):
+        nome = str(liga or "").strip().lower()
+        if nome in cls.BANDEIRAS:
+            return cls.BANDEIRAS[nome]
+        for chave, bandeira in cls.BANDEIRAS.items():
+            if chave and chave in nome:
+                return bandeira
+        return "🌍"
+
+    @staticmethod
+    def _risco_e_estrelas(confianca):
+        if confianca == "ALTA":
+            return "🟢 RISCO BAIXO", "⭐⭐⭐⭐⭐"
+        if confianca == "MÉDIA-ALTA":
+            return "🟡 RISCO MODERADO", "⭐⭐⭐⭐"
+        if confianca == "MÉDIA":
+            return "🟠 RISCO MÉDIO", "⭐⭐⭐"
+        return "🔴 RISCO ALTO", "⭐⭐"
 
     def _melhor_selecao(self, analise):
         qualidade = int(analise["qualidade"])
@@ -131,11 +188,70 @@ class AnalisadorInteligente:
         return list(self.ultimas_selecoes)
 
     def gerar_relatorio(self, jogos, selecoes=None):
+        """Relatório público/compacto com apresentação premium."""
         if selecoes is None:
             selecoes = self.gerar_todas_apostas(jogos)
         r = self.ultimo_resumo
         linhas = [
-            "🧠 ANÁLISE PREMIUM — BETA",
+            f"🎯 ANÁLISE PREMIUM — {self.data_hoje}",
+            f"📊 {r['selecoes']} SELEÇÃO{'ÕES' if r['selecoes'] != 1 else ''} PARA HOJE",
+            "🧠 Modelo V1 • Probabilidade conservadora",
+        ]
+
+        if not selecoes:
+            linhas.extend(
+                [
+                    "",
+                    "✅ Nenhuma seleção passou os filtros hoje.",
+                    "O modelo não força apostas quando os dados ou a probabilidade não chegam ao mínimo.",
+                ]
+            )
+            return "\n".join(linhas)
+
+        # A apresentação é agrupada por hora; o ranking do motor não é alterado.
+        grupos = OrderedDict()
+        for s in sorted(selecoes, key=lambda x: str((x.get("jogo") or {}).get("horario") or "99:99")):
+            hora = str((s.get("jogo") or {}).get("horario") or "--:--")
+            grupos.setdefault(hora, []).append(s)
+
+        numero = 1
+        for hora, itens in grupos.items():
+            linhas.extend(["", f"⏰ {hora} — JOGOS"])
+            for s in itens:
+                j = s["jogo"]
+                risco, estrelas = self._risco_e_estrelas(s["confianca"])
+                liga = j.get("liga") or "Competição"
+                bandeira = self._bandeira_liga(liga)
+                linhas.extend(
+                    [
+                        f"#{numero} {risco}",
+                        f"   ⚽ {j.get('casa')} vs {j.get('fora')}",
+                        f"   🏆 {bandeira} {liga}",
+                        f"   💰 {s['mercado']}",
+                        f"   📈 {self._fmt_num(s['probabilidade']*100, 1)}% | Odd justa {self._fmt_num(s['odd_justa'])}",
+                        f"   ✅ Betano: considerar só ≥ {self._fmt_num(s['odd_minima'])}",
+                        f"   ⭐ {estrelas}",
+                        f"   🧪 Dados {s['qualidade']}/100",
+                    ]
+                )
+                numero += 1
+
+        linhas.extend(
+            [
+                "",
+                "ℹ️ Sem odds Betano reais não mostramos ROI/EV. Esses valores só entram quando forem medidos com odds reais.",
+                f"📚 Jogos analisados: {r['jogos']} | Com dados suficientes: {r['com_dados']}",
+            ]
+        )
+        return "\n".join(linhas)
+
+    def gerar_relatorio_tecnico(self, jogos, selecoes=None):
+        """Relatório técnico para validação do modelo; não altera as previsões."""
+        if selecoes is None:
+            selecoes = self.gerar_todas_apostas(jogos)
+        r = self.ultimo_resumo
+        linhas = [
+            "🧠 ANÁLISE TÉCNICA — MODELO V1",
             f"📅 {self.data_hoje}",
             "",
             "Modelo: resultados ESPN reais + forma casa/fora + médias da liga + Poisson.",
