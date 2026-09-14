@@ -10,17 +10,20 @@ from zoneinfo import ZoneInfo
 import json
 import os
 import tempfile
+import requests
 
 
 class RegistoPrevisoes:
     VERSAO = 1
+    ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
-    def __init__(self, path=None):
+    def __init__(self, path=None, session=None):
         if path is None:
             data_dir = Path(os.getenv("DATA_DIR", "/data"))
             path = data_dir / "previsoes_premium.json"
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.session = session or requests.Session()
         self.dados = self._carregar()
 
     def _carregar(self):
@@ -142,7 +145,51 @@ class RegistoPrevisoes:
             return int(gf >= gc)
         return None
 
-    def atualizar_pendentes(self, buscador):
+    @staticmethod
+    def _score(valor):
+        try:
+            return int(str(valor).strip())
+        except (TypeError, ValueError):
+            return None
+
+    def _resultados_espn(self, data_iso):
+        """Obtém resultados finais pela rota global ESPN sem User-Agent customizado."""
+        compacta = str(data_iso).replace("-", "")
+        r = self.session.get(
+            f"{self.ESPN_BASE}/all/scoreboard",
+            params={"dates": compacta},
+            timeout=(5, 25),
+        )
+        r.raise_for_status()
+        dados = r.json()
+        eventos = dados.get("events") if isinstance(dados, dict) else None
+        if not isinstance(eventos, list):
+            raise ValueError("Resultados ESPN inválidos.")
+
+        saida = {}
+        for evento in eventos:
+            try:
+                status = ((evento.get("status") or {}).get("type") or {})
+                if str(status.get("state") or "").lower() != "post" and not status.get("completed"):
+                    continue
+                competicoes = evento.get("competitions") or []
+                if not competicoes:
+                    continue
+                concorrentes = (competicoes[0] or {}).get("competitors") or []
+                casa = next((c for c in concorrentes if c.get("homeAway") == "home"), None)
+                fora = next((c for c in concorrentes if c.get("homeAway") == "away"), None)
+                if casa is None or fora is None:
+                    continue
+                gc, gf = self._score(casa.get("score")), self._score(fora.get("score"))
+                if gc is None or gf is None:
+                    continue
+                saida[int(evento["id"])] = (gc, gf)
+            except (KeyError, TypeError, ValueError):
+                continue
+        return saida
+
+    def atualizar_pendentes(self, buscador=None):
+        """Liquida previsões pendentes. Falhas de rede não alteram o histórico."""
         pendentes = [p for p in self.dados["previsoes"] if p.get("estado") == "pendente"]
         if not pendentes:
             return 0
@@ -156,15 +203,15 @@ class RegistoPrevisoes:
         for data_iso, previsoes in por_data.items():
             if not data_iso:
                 continue
-            jogos = buscador.buscar_todos_jogos_hoje(data_iso)
-            por_id = {j.get("id"): j for j in jogos if j.get("id") is not None}
+            try:
+                resultados = self._resultados_espn(data_iso)
+            except (requests.RequestException, RuntimeError, ValueError, TypeError):
+                continue
             for p in previsoes:
-                jogo = por_id.get(p.get("event_id"))
-                if not jogo or jogo.get("status") != "finished":
+                resultado = resultados.get(p.get("event_id"))
+                if resultado is None:
                     continue
-                gc, gf = jogo.get("golos_casa"), jogo.get("golos_fora")
-                if not isinstance(gc, int) or not isinstance(gf, int):
-                    continue
+                gc, gf = resultado
                 y = self._resultado_mercado(p.get("mercado"), gc, gf)
                 if y is None:
                     continue
