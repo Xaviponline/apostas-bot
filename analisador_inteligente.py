@@ -9,6 +9,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from estatisticas_espn import EstatisticasESPN
+from nomes_ligas import nome_liga_pt
 
 
 class AnalisadorInteligente:
@@ -223,8 +224,9 @@ class AnalisadorInteligente:
                     linhas.append("")
                 j = s["jogo"]
                 risco, estrelas = self._risco_e_estrelas(s["confianca"])
-                liga = j.get("liga") or "Competição"
-                bandeira = self._bandeira_liga(liga)
+                liga_original = j.get("liga") or "Competição"
+                liga = nome_liga_pt(liga_original)
+                bandeira = self._bandeira_liga(liga_original)
                 linhas.extend(
                     [
                         f"#{numero} {risco}",
@@ -286,7 +288,7 @@ class AnalisadorInteligente:
                 [
                     "",
                     f"{i}. ⚽ {j.get('casa')} vs {j.get('fora')}",
-                    f"🏆 {j.get('liga') or 'Competição'} — {j.get('horario') or '--:--'}",
+                    f"🏆 {nome_liga_pt(j.get('liga') or 'Competição')} — {j.get('horario') or '--:--'}",
                     f"🎯 {s['mercado']}",
                     prob_linha,
                     f"💰 Odd justa: {s['odd_justa']:.2f}",
