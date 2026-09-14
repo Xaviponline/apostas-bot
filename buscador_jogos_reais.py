@@ -1,8 +1,8 @@
 """Conector de leitura para jogos reais.
 
 Fonte principal: ESPN scoreboard público, sem chave API.
-Fallback: SofaScore, quando acessível.
-Nunca inventa jogos nem odds; se ambas as fontes falharem devolve lista vazia.
+Fallback: endpoints de ligas ESPN e, por último, SofaScore quando acessível.
+Nunca inventa jogos nem odds; se todas as fontes falharem devolve lista vazia.
 """
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -17,7 +17,25 @@ except ImportError:
 
 
 class BuscadorJogosReais:
-    ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard"
+    ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+    ESPN_LEAGUES = (
+        "eng.1",
+        "esp.1",
+        "ita.1",
+        "ger.1",
+        "fra.1",
+        "por.1",
+        "ned.1",
+        "bel.1",
+        "uefa.champions",
+        "uefa.europa",
+        "uefa.europa.conf",
+        "uefa.nations",
+        "fifa.world",
+        "usa.1",
+        "bra.1",
+        "arg.1",
+    )
     SOFA_BASE_URL = "https://api.sofascore.com/api/v1"
     SOFA_SITE_URL = "https://www.sofascore.com/"
 
@@ -44,6 +62,8 @@ class BuscadorJogosReais:
         self.estado = "por validar" if self.enabled else "desativado"
         self.ultimo_total = 0
         self.ultimo_http_status = None
+        self.espn_http_status = None
+        self.sofa_http_status = None
         self.fonte = None
         self._sofa_aquecida = False
         self._espn_respondeu = False
@@ -113,11 +133,7 @@ class BuscadorJogosReais:
             status_obj = evento.get("status") or {}
             status_type = status_obj.get("type") or {}
             state = str(status_type.get("state") or "unknown").lower()
-            mapa_estado = {
-                "pre": "notstarted",
-                "in": "live",
-                "post": "finished",
-            }
+            mapa_estado = {"pre": "notstarted", "in": "live", "post": "finished"}
             estado = mapa_estado.get(state, state or "unknown")
 
             def _id(team):
@@ -143,19 +159,16 @@ class BuscadorJogosReais:
         except (KeyError, TypeError, ValueError):
             return None
 
-    def _buscar_espn(self, data_iso):
-        data_compacta = data_iso.replace("-", "")
-        self.ultimo_http_status = None
+    def _get_espn(self, league, data_compacta):
+        """Pedido ESPN sem User-Agent customizado: usa o identificador normal do requests."""
+        url = f"{self.ESPN_BASE}/{league}/scoreboard"
         resposta = self.espn_session.get(
-            self.ESPN_URL,
+            url,
             params={"dates": data_compacta},
-            headers={
-                "Accept": "application/json",
-                "User-Agent": "apostas-bot/1.0",
-            },
             timeout=20,
         )
-        self.ultimo_http_status = getattr(resposta, "status_code", None)
+        self.espn_http_status = getattr(resposta, "status_code", None)
+        self.ultimo_http_status = self.espn_http_status
         resposta.raise_for_status()
         dados = resposta.json()
         if not isinstance(dados, dict):
@@ -163,10 +176,12 @@ class BuscadorJogosReais:
         eventos = dados.get("events")
         if not isinstance(eventos, list):
             raise ValueError("Lista ESPN ausente.")
-
         self._espn_respondeu = True
+        return eventos
+
+    def _normalizar_lista_espn(self, eventos, ids=None):
+        ids = ids if ids is not None else set()
         jogos = []
-        ids = set()
         for evento in eventos:
             jogo = self._normalizar_evento_espn(evento)
             if jogo is None or jogo["id"] in ids:
@@ -174,6 +189,42 @@ class BuscadorJogosReais:
             ids.add(jogo["id"])
             jogos.append(jogo)
         return jogos
+
+    def _buscar_espn(self, data_iso):
+        data_compacta = data_iso.replace("-", "")
+        self.espn_http_status = None
+        self._espn_respondeu = False
+
+        ids = set()
+        jogos = []
+        erro_global = None
+
+        try:
+            eventos = self._get_espn("all", data_compacta)
+            jogos.extend(self._normalizar_lista_espn(eventos, ids))
+            if jogos:
+                return jogos
+        except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
+            erro_global = exc
+
+        # Se /all falhar ou vier vazio, tenta ligas principais individualmente.
+        respostas_validas = 0
+        for league in self.ESPN_LEAGUES:
+            try:
+                eventos = self._get_espn(league, data_compacta)
+                respostas_validas += 1
+                jogos.extend(self._normalizar_lista_espn(eventos, ids))
+            except (requests.RequestException, RuntimeError, ValueError, TypeError):
+                continue
+
+        if jogos:
+            return jogos
+        if respostas_validas > 0:
+            self._espn_respondeu = True
+            return []
+        if erro_global is not None:
+            raise ValueError("Fonte ESPN indisponível.") from None
+        return []
 
     @staticmethod
     def _headers_sofa():
@@ -201,7 +252,6 @@ class BuscadorJogosReais:
 
     def _get_sofa(self, path):
         url = f"{self.SOFA_BASE_URL}{path}"
-        self.ultimo_http_status = None
         try:
             if self.browser_mode:
                 self._aquecer_sofa()
@@ -220,7 +270,8 @@ class BuscadorJogosReais:
                     },
                     timeout=20,
                 )
-            self.ultimo_http_status = getattr(resposta, "status_code", None)
+            self.sofa_http_status = getattr(resposta, "status_code", None)
+            self.ultimo_http_status = self.sofa_http_status
             resposta.raise_for_status()
             dados = resposta.json()
             if not isinstance(dados, dict):
@@ -256,6 +307,7 @@ class BuscadorJogosReais:
             return None
 
     def _buscar_sofa(self, data_iso):
+        self.sofa_http_status = None
         try:
             dados = self._get_sofa(f"/sport/football/scheduled-events/{data_iso}/inverse")
         except ValueError:
@@ -294,6 +346,8 @@ class BuscadorJogosReais:
 
         data_iso = data_iso or datetime.now(ZoneInfo("Europe/Lisbon")).strftime("%Y-%m-%d")
         self._espn_respondeu = False
+        self.espn_http_status = None
+        self.sofa_http_status = None
 
         try:
             jogos = self._ordenar(self._buscar_espn(data_iso))
@@ -302,7 +356,7 @@ class BuscadorJogosReais:
                 self.fonte = "ESPN"
                 self.ultimo_total = len(jogos)
                 return jogos
-        except (requests.RequestException, ValueError, TypeError):
+        except (requests.RequestException, RuntimeError, ValueError, TypeError):
             pass
 
         try:
@@ -327,7 +381,6 @@ class BuscadorJogosReais:
         return []
 
     def obter_forma_time(self, team_id):
-        """Reservado para a fase estatística. Nunca devolve dados inventados."""
         if type(team_id) is not int or team_id <= 0:
             return None
         return None
@@ -335,10 +388,16 @@ class BuscadorJogosReais:
     def formatar_jogos(self, jogos, limite=40):
         if not jogos:
             if self.estado == "operacional":
-                return "ℹ️ A fonte respondeu corretamente, mas não encontrei jogos de futebol para hoje."
+                return "ℹ️ A ESPN respondeu corretamente, mas não encontrei jogos de futebol para hoje."
+            diagnostico = []
+            if self.espn_http_status is not None:
+                diagnostico.append(f"ESPN HTTP {self.espn_http_status}")
+            if self.sofa_http_status is not None:
+                diagnostico.append(f"SofaScore HTTP {self.sofa_http_status}")
+            extra = f" Diagnóstico: {'; '.join(diagnostico)}." if diagnostico else ""
             return (
                 "⚠️ Não consegui obter jogos reais das fontes disponíveis neste momento. "
-                "Não foram usados jogos de substituição."
+                "Não foram usados jogos de substituição." + extra
             )
 
         visiveis = jogos[:limite]
