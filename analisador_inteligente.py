@@ -1,8 +1,8 @@
 """Motor de análise premium baseado em resultados reais da ESPN.
 
 Não usa probabilidades aleatórias nem odds fabricadas. A versão atual calcula
-probabilidades de modelo e uma odd justa/mínima; as odds da Betano entram mais
-tarde como camada independente de validação de value.
+probabilidades de modelo e uma odd justa/mínima; odds reais de mercado entram
+mais tarde como camada independente de validação de value.
 """
 from collections import OrderedDict
 from datetime import datetime
@@ -232,7 +232,7 @@ class AnalisadorInteligente:
                         f"   🏆 {bandeira} {liga}",
                         f"   💰 {s['mercado']}",
                         f"   📈 {self._fmt_num(s['probabilidade']*100, 1)}% | Odd justa {self._fmt_num(s['odd_justa'])}",
-                        f"   ✅ Betano: considerar só ≥ {self._fmt_num(s['odd_minima'])}",
+                        f"   ✅ Odd mínima: ≥ {self._fmt_num(s['odd_minima'])}",
                         f"   ⭐ {estrelas}",
                         f"   🧪 Dados {s['qualidade']}/100",
                     ]
@@ -242,7 +242,7 @@ class AnalisadorInteligente:
         linhas.extend(
             [
                 "",
-                "ℹ️ Sem odds Betano reais não mostramos ROI/EV. Esses valores só entram quando forem medidos com odds reais.",
+                "ℹ️ Sem odds reais de mercado não mostramos ROI/EV. Esses valores só entram quando forem medidos com odds reais.",
                 f"📚 Jogos analisados: {r['jogos']} | Com dados suficientes: {r['com_dados']}",
             ]
         )
@@ -259,7 +259,7 @@ class AnalisadorInteligente:
             "",
             "Modelo: resultados ESPN reais + forma casa/fora + médias da liga + Poisson.",
             "A probabilidade exibida é conservadora e penaliza amostras menos robustas.",
-            "Sem odds Betano em tempo real: mostramos odd justa e odd mínima para 5% de margem teórica.",
+            "Sem odds reais em tempo real: mostramos odd justa e odd mínima para 5% de margem teórica.",
             "",
             f"Jogos do dia: {r['jogos']} | Com dados suficientes: {r['com_dados']} | Seleções: {r['selecoes']}",
         ]
@@ -290,7 +290,7 @@ class AnalisadorInteligente:
                     f"🎯 {s['mercado']}",
                     prob_linha,
                     f"💰 Odd justa: {s['odd_justa']:.2f}",
-                    f"✅ Só considerar na Betano se odd ≥ {s['odd_minima']:.2f}",
+                    f"✅ Só considerar se odd ≥ {s['odd_minima']:.2f}",
                     f"⚙️ Golos esperados pelo modelo: {s['lambda_casa']:.2f} - {s['lambda_fora']:.2f}",
                     f"📈 Forma (últimos jogos): {j.get('casa')} {s['ppg_casa']:.2f} PPG | {j.get('fora')} {s['ppg_fora']:.2f} PPG",
                     f"🧪 Qualidade dos dados: {s['qualidade']}/100 | Confiança: {s['confianca']}",
@@ -301,7 +301,7 @@ class AnalisadorInteligente:
         linhas.extend(
             [
                 "",
-                "⚠️ Probabilidades são estimativas estatísticas, não garantias. Confirma sempre a odd real antes de apostar.",
+                "⚠️ Probabilidades são estimativas estatísticas, não garantias. Confirma sempre a odd real na casa de apostas que utilizares.",
             ]
         )
         return "\n".join(linhas)
