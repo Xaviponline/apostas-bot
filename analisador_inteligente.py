@@ -15,7 +15,6 @@ class AnalisadorInteligente:
     QUALIDADE_MINIMA = 55
     ODD_MINIMA_PERFIL = 1.50
 
-    # Probabilidade mínima por mercado para sequer entrar na shortlist.
     LIMITES = {
         "Vitória Casa": 0.56,
         "Vitória Fora": 0.56,
@@ -37,6 +36,7 @@ class AnalisadorInteligente:
         self.buscador = buscador_jogos
         self.estatisticas = estatisticas or EstatisticasESPN()
         self.ultimo_resumo = {"jogos": 0, "com_dados": 0, "selecoes": 0}
+        self.ultimas_selecoes = []
 
     @property
     def data_hoje(self):
@@ -54,13 +54,7 @@ class AnalisadorInteligente:
 
     @staticmethod
     def _probabilidade_conservadora(prob_bruta, qualidade):
-        """Reduz excesso de confiança quando a amostra ainda é limitada.
-
-        50% representa ausência de informação num mercado binário. Quanto melhor
-        a qualidade dos dados, mais a estimativa conservadora se aproxima da
-        probabilidade bruta do modelo. Isto não é calibração definitiva; essa será
-        feita com o histórico real de previsões.
-        """
+        """Reduz excesso de confiança quando a amostra ainda é limitada."""
         prob_bruta = float(prob_bruta)
         q = max(0.0, min(1.0, float(qualidade) / 100.0))
         fiabilidade = 0.55 + (0.45 * q)
@@ -84,11 +78,9 @@ class AnalisadorInteligente:
 
             odd_justa = 1.0 / prob
             odd_minima = (1.0 + self.MARGEM_VALUE_ALVO) / prob
-            # Evita entradas cuja odd mínima fique abaixo do perfil definido.
             if odd_minima < self.ODD_MINIMA_PERFIL:
                 continue
 
-            # Ranking sem odds reais: probabilidade ajustada + qualidade dos dados.
             score = (prob * 0.62) + ((qualidade / 100.0) * 0.38)
             candidatos.append(
                 {
@@ -105,15 +97,13 @@ class AnalisadorInteligente:
         if not candidatos:
             return None
         melhor = max(candidatos, key=lambda x: (x["score"], x["probabilidade"]))
-        return {
-            **melhor,
-            **analise,
-        }
+        return {**melhor, **analise}
 
     def gerar_todas_apostas(self, jogos):
         jogos = [j for j in (jogos or []) if isinstance(j, dict)]
         suportados = [j for j in jogos if self.estatisticas.resolver_liga(j)]
         self.ultimo_resumo = {"jogos": len(jogos), "com_dados": 0, "selecoes": 0}
+        self.ultimas_selecoes = []
         if not suportados:
             return []
 
@@ -137,10 +127,12 @@ class AnalisadorInteligente:
             "com_dados": com_dados,
             "selecoes": len(selecoes),
         }
-        return selecoes[:8]
+        self.ultimas_selecoes = selecoes[:8]
+        return list(self.ultimas_selecoes)
 
-    def gerar_relatorio(self, jogos):
-        selecoes = self.gerar_todas_apostas(jogos)
+    def gerar_relatorio(self, jogos, selecoes=None):
+        if selecoes is None:
+            selecoes = self.gerar_todas_apostas(jogos)
         r = self.ultimo_resumo
         linhas = [
             "🧠 ANÁLISE PREMIUM — BETA",
