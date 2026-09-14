@@ -27,6 +27,19 @@ class Tests(unittest.TestCase):
     def command(self, text, user=10, chat=-20, update=None):
         self.bot.processar_comando(chat, text, user, update)
 
+    def test_restore_once_never_overwrites_existing_history(self):
+        backup = {'apostas': [{'id': 42, 'jogo': 'A vs B', 'tipo': 'Vitória Casa', 'odds': 2, 'resultado': None}]}
+        with patch.dict('os.environ', {'RESTORE_HISTORICO_JSON': json.dumps(backup)}):
+            g = GestorApostas(self.path)
+            self.assertEqual(g.obter_aposta(42)['jogo'], 'A vs B')
+            g.adicionar_aposta({'jogo': 'C vs D', 'tipo': 'Ambas Marcam', 'odds': 2, 'stake': 1})
+            self.assertEqual(len(GestorApostas(self.path).dados['apostas']), 2)
+
+    def test_invalid_restore_does_not_create_file(self):
+        with patch.dict('os.environ', {'RESTORE_HISTORICO_JSON': '{invalid'}):
+            with self.assertRaises(ValueError): GestorApostas(self.path)
+        self.assertFalse(self.path.exists())
+
     def test_lucro_roi_ponderado_anuladas_pendentes(self):
         self.g.registar_resultado(self.add(), 'ganhou') # +15
         self.g.registar_resultado(self.add('1.9','5'), 'perdeu') # -5

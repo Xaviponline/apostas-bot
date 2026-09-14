@@ -108,3 +108,5 @@ suficientes; não deve relaxar filtros para preencher uma quota diária.
 - [Railway: volumes persistentes](https://docs.railway.com/volumes)
 
 O ficheiro legado analista_dinamico_total.py não é usado pelo bot desta revisão.
+
+Restauração inicial: RESTORE_HISTORICO_JSON permite carregar uma cópia privada em JSON apenas quando o ficheiro de destino não existe. Nunca sobrepõe um histórico existente. Depois de verificar a reposição no volume, remover essa variável; nunca colocar o seu conteúdo no GitHub ou nos logs.

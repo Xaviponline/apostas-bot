@@ -27,6 +27,15 @@ class GestorApostas:
     def __init__(self, ficheiro=None):
         self.ficheiro_apostas = Path(ficheiro or Path(os.getenv('DATA_DIR', '.')) / 'apostas_historico.json')
         self.dados = {'apostas': [], 'ultimo_update': 0}
+        backup = os.getenv('RESTORE_HISTORICO_JSON')
+        if not self.ficheiro_apostas.exists() and backup:
+            dados = json.loads(backup)
+            if not isinstance(dados, dict) or not isinstance(dados.get('apostas'), list):
+                raise ValueError('Cópia de segurança inválida.')
+            ids = [a['id'] for a in dados['apostas']]
+            if len(ids) != len(set(ids)):
+                raise ValueError('Cópia de segurança com IDs duplicados.')
+            self._commit(dados)
         if self.ficheiro_apostas.exists():
             # Histórico inválido interrompe o arranque: nunca o substituir por uma lista vazia.
             self.dados = json.loads(self.ficheiro_apostas.read_text(encoding='utf-8'))
