@@ -10,12 +10,14 @@ from rastreador_resultados import RastreadorResultados
 from analisador_inteligente import AnalisadorInteligente
 from buscador_jogos_reais import BuscadorJogosReais
 from odds_betano import OddsBetano
+from previsoes_premium import RegistoPrevisoes
 
 AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /start ou /ajuda — Ajuda
 /id — Ver o teu ID e o ID desta conversa
 /jogos — Consultar jogos reais de hoje (ESPN + fallback SofaScore)
 /analisa — Analisar os jogos de hoje com estatísticas reais e modelo Poisson
+/performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /odds — Listar eventos com odds Betano, se uma fonte de odds estiver configurada
 /odds ID — Consultar mercados/odds Betano desse evento
 /add_aposta "Jogo" "Mercado" ODD VALOR — Registar uma aposta já feita
@@ -25,12 +27,13 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /status — Estado do bot
 
 No /analisa, a odd mínima é o preço a partir do qual o modelo aponta para uma margem teórica de 5%.
+As previsões do /analisa ficam guardadas antes do jogo para auditoria; não são reescritas depois.
 As probabilidades são estimativas estatísticas e não garantias.
 As apostas não são colocadas na Betano pelo bot.'''
 
 
 class BotPremiumReal:
-    def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None, analisador=None):
+    def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None, analisador=None, previsoes=None):
         self.token = token or (os.getenv('TELEGRAM_BOT_TOKEN') or os.getenv('TELEGRAM_TOKEN', '')).strip()
         if not self.token:
             raise ValueError('Configura TELEGRAM_BOT_TOKEN nas variáveis do serviço.')
@@ -43,6 +46,7 @@ class BotPremiumReal:
         self.buscador = buscador or BuscadorJogosReais()
         self.odds = odds or OddsBetano()
         self.analisador = analisador or AnalisadorInteligente(self.buscador)
+        self.previsoes = previsoes or RegistoPrevisoes()
         self.username = None
 
     def api(self, metodo, data):
@@ -60,7 +64,6 @@ class BotPremiumReal:
 
     @classmethod
     def _cortar_bloco(cls, texto, limite):
-        """Último recurso para um bloco sem quebras maior que o limite Telegram."""
         partes, atual, unidades = [], [], 0
         for char in texto:
             u = 2 if ord(char) > 0xFFFF else 1
@@ -75,7 +78,7 @@ class BotPremiumReal:
 
     @classmethod
     def _dividir_texto(cls, texto, limite=3900):
-        """Divide preferencialmente entre cartões/parágrafos, nunca a meio à toa."""
+        """Divide preferencialmente entre cartões/parágrafos."""
         if cls._telegram_units(texto) <= limite:
             return [texto]
 
@@ -86,16 +89,12 @@ class BotPremiumReal:
             if cls._telegram_units(atual + bloco) <= limite:
                 atual += bloco
                 continue
-
             if atual:
                 saida.append(atual)
                 atual = ''
-
             if cls._telegram_units(paragrafo) <= limite:
                 atual = paragrafo
                 continue
-
-            # Parágrafo excecionalmente grande: tenta primeiro por linhas.
             linhas = paragrafo.splitlines(keepends=True)
             parcial = ''
             for linha in linhas:
@@ -110,7 +109,6 @@ class BotPremiumReal:
                 else:
                     saida.extend(cls._cortar_bloco(linha, limite))
             atual = parcial.rstrip('\n')
-
         if atual:
             saida.append(atual)
         return [p for p in saida if p]
@@ -141,7 +139,16 @@ class BotPremiumReal:
                 if not jogos:
                     resposta = self.buscador.formatar_jogos(jogos)
                 else:
-                    resposta = self.analisador.gerar_relatorio(jogos)
+                    selecoes = self.analisador.gerar_todas_apostas(jogos)
+                    resposta = self.analisador.gerar_relatorio(jogos, selecoes=selecoes)
+                    novas = self.previsoes.registar(selecoes)
+                    if novas:
+                        resposta += f'\n\n🧾 Auditoria: {novas} nova(s) previsão(ões) guardada(s) antes dos jogos.'
+            elif comando == '/performance':
+                liquidadas = self.previsoes.atualizar_pendentes()
+                resposta = self.previsoes.relatorio()
+                if liquidadas:
+                    resposta = f'🔄 {liquidadas} previsão(ões) liquidada(s) agora.\n\n' + resposta
             elif comando == '/odds':
                 if not self.odds.configurada:
                     resposta = (
@@ -161,7 +168,8 @@ class BotPremiumReal:
                     f'Odds Betano: {self.odds.nome_fonte if self.odds.configurada else "opcionais / não configuradas"}.\n'
                     'Análise premium: ativa com histórico ESPN + modelo Poisson.\n'
                     'Filtro: amostra mínima + qualidade dos dados + probabilidade conservadora + odd mínima alvo.\n'
-                    'Liquidação automática: desativada.'
+                    'Auditoria de previsões: ativa e persistente em /data.\n'
+                    'ROI do modelo: só será ativado com odds reais registadas.'
                 )
             elif comando == '/resultados':
                 resposta = self.gestor.gerar_relatorio()
@@ -189,8 +197,8 @@ class BotPremiumReal:
                 resposta = f'Aposta #{ident}: {resultado}.'
             else:
                 resposta = 'Comando desconhecido. Usa /ajuda.'
-        except (ValueError, KeyError, ArithmeticError):
-            resposta = 'Não foi possível aceitar o comando. Verifica o formato em /ajuda, o ID e se o resultado já foi registado. O histórico não foi alterado.'
+        except (ValueError, KeyError, ArithmeticError, OSError):
+            resposta = 'Não foi possível aceitar o comando. Verifica o formato em /ajuda, o ID e os dados disponíveis. O histórico não foi alterado.'
         self.enviar_mensagem(chat_id, resposta)
 
     def buscar_atualizacoes(self):
