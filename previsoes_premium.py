@@ -273,7 +273,7 @@ class RegistoPrevisoes:
                 f"📐 Brier Score: {s['brier']:.4f} (menor é melhor)",
                 "",
                 "ROI ainda não é apresentado porque não temos odds reais guardadas no momento da previsão.",
-                "Quando ligarmos odds Betano, o ROI passará a fazer parte desta auditoria.",
+                "Quando ligarmos odds reais de mercado/multi-casa, o ROI passará a fazer parte desta auditoria.",
             ]
         )
         return "\n".join(linhas)
