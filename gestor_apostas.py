@@ -1,195 +1,133 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-"""
-GESTOR DE APOSTAS
-Armazena histórico de apostas e resultados
-"""
-
+"""Histórico local de uma banca privada; escrita atómica, sem inferir stakes antigas."""
+import copy
 import json
 import os
+import tempfile
+from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from zoneinfo import ZoneInfo
+
+
+def numero(valor):
+    try:
+        n = Decimal(str(valor).replace(',', '.'))
+    except InvalidOperation:
+        raise ValueError('Número inválido.') from None
+    if not n.is_finite():
+        raise ValueError('Número inválido.')
+    return n
+
+
+def agora():
+    return datetime.now(ZoneInfo('Europe/Lisbon')).isoformat(timespec='seconds')
+
 
 class GestorApostas:
-    
-    def __init__(self):
-        self.ficheiro_apostas = "apostas_historico.json"
-        self.carregar_ou_criar()
-    
-    def carregar_ou_criar(self):
-        """Carrega histórico de apostas ou cria ficheiro novo"""
-        if os.path.exists(self.ficheiro_apostas):
-            try:
-                with open(self.ficheiro_apostas, 'r', encoding='utf-8') as f:
-                    self.dados = json.load(f)
-            except:
-                self.dados = {"apostas": []}
-        else:
-            self.dados = {"apostas": []}
-    
-    def guardar(self):
-        """Guarda dados em ficheiro JSON"""
+    def __init__(self, ficheiro=None):
+        self.ficheiro_apostas = Path(ficheiro or Path(os.getenv('DATA_DIR', '.')) / 'apostas_historico.json')
+        self.dados = {'apostas': [], 'ultimo_update': 0}
+        if self.ficheiro_apostas.exists():
+            # Histórico inválido interrompe o arranque: nunca o substituir por uma lista vazia.
+            self.dados = json.loads(self.ficheiro_apostas.read_text(encoding='utf-8'))
+            if not isinstance(self.dados, dict) or not isinstance(self.dados.get('apostas'), list):
+                raise ValueError('Histórico inválido. Restaurar uma cópia antes de arrancar.')
+            ids = [a['id'] for a in self.dados['apostas']]
+            if len(ids) != len(set(ids)):
+                raise ValueError('Histórico com IDs duplicados.')
+
+    def _commit(self, dados):
+        pasta = self.ficheiro_apostas.parent
+        pasta.mkdir(parents=True, exist_ok=True)
+        fd, nome = tempfile.mkstemp(dir=pasta, prefix='.apostas-', suffix='.tmp')
         try:
-            with open(self.ficheiro_apostas, 'w', encoding='utf-8') as f:
-                json.dump(self.dados, f, ensure_ascii=False, indent=2)
-            return True
-        except Exception as e:
-            print(f"❌ Erro ao guardar: {e}")
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(dados, f, ensure_ascii=False, indent=2, allow_nan=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(nome, self.ficheiro_apostas)
+        finally:
+            if os.path.exists(nome):
+                os.unlink(nome)
+        self.dados = dados
+
+    def marcar_update(self, update_id):
+        dados = copy.deepcopy(self.dados)
+        dados['ultimo_update'] = update_id
+        self._commit(dados)
+
+    def adicionar_aposta(self, aposta_dict, update_id=None):
+        # A chave Telegram evita duplicados se houver um reinício antes de confirmar o offset.
+        for a in self.dados['apostas']:
+            if update_id is not None and a.get('update_id') == update_id:
+                return a['id']
+        odd, stake = numero(aposta_dict['odds']), numero(aposta_dict['stake'])
+        if odd <= 1 or stake <= 0 or stake != stake.quantize(Decimal('.01')):
+            raise ValueError('Odd superior a 1 e valor positivo com até 2 casas decimais.')
+        jogo, tipo = aposta_dict['jogo'].strip(), aposta_dict['tipo'].strip()
+        if not jogo or not tipo or len(jogo) > 200 or len(tipo) > 100:
+            raise ValueError('Jogo ou mercado vazio/demasiado longo.')
+        dados = copy.deepcopy(self.dados)
+        aposta_id = max((a['id'] for a in dados['apostas']), default=0) + 1
+        dados['apostas'].append({
+            'id': aposta_id, 'data': agora(), 'jogo': jogo, 'tipo': tipo,
+            'odds': str(odd), 'stake': str(stake), 'origem': 'manual',
+            'resultado': None, 'data_resultado': None, 'update_id': update_id,
+        })
+        self._commit(dados)
+        return aposta_id
+
+    def obter_aposta(self, aposta_id):
+        return next((a for a in self.dados['apostas'] if a['id'] == aposta_id), None)
+
+    def registar_resultado(self, aposta_id, resultado):
+        if resultado not in ('ganhou', 'perdeu', 'anulada'):
+            raise ValueError('Resultado inválido.')
+        aposta = self.obter_aposta(aposta_id)
+        if aposta is None:
             return False
-    
-    def adicionar_aposta(self, aposta_dict: Dict) -> int:
-        """Adiciona uma aposta ao histórico"""
-        
-        aposta = {
-            "id": len(self.dados["apostas"]) + 1,
-            "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "jogo": aposta_dict.get("jogo"),
-            "liga": aposta_dict.get("liga"),
-            "tipo": aposta_dict.get("tipo"),
-            "odds": aposta_dict.get("odds"),
-            "probabilidade": aposta_dict.get("probabilidade"),
-            "roi_esperado": aposta_dict.get("roi"),
-            "resultado": None,  # ✅ Ganhou / ❌ Perdeu / ⏳ Pendente
-            "roi_real": None,
-            "data_resultado": None
-        }
-        
-        self.dados["apostas"].append(aposta)
-        self.guardar()
-        
-        return aposta["id"]
-    
-    def registar_resultado(self, aposta_id: int, resultado: str) -> bool:
-        """
-        Regista resultado de uma aposta
-        resultado: "ganhou" ou "perdeu"
-        """
-        
-        for aposta in self.dados["apostas"]:
-            if aposta["id"] == aposta_id:
-                aposta["resultado"] = resultado
-                aposta["data_resultado"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-                
-                # Calcula ROI real
-                if resultado == "ganhou":
-                    aposta["roi_real"] = round((aposta["odds"] - 1) * 100, 1)
-                else:
-                    aposta["roi_real"] = -100  # Perda total
-                
-                self.guardar()
+        if aposta.get('origem') != 'manual':
+            raise ValueError('Registo antigo não confirmado; excluído das contas reais.')
+        if aposta.get('resultado') is not None:
+            if aposta['resultado'] == resultado:
                 return True
-        
-        return False
-    
-    def obter_aposta(self, aposta_id: int) -> Optional[Dict]:
-        """Obtém aposta por ID"""
-        for aposta in self.dados["apostas"]:
-            if aposta["id"] == aposta_id:
-                return aposta
-        return None
-    
-    def obter_apostas_hoje(self) -> List[Dict]:
-        """Obtém apostas de hoje"""
-        hoje = datetime.now().strftime("%d/%m/%Y")
-        return [a for a in self.dados["apostas"] if a["data"].startswith(hoje)]
-    
-    def obter_apostas_pendentes(self) -> List[Dict]:
-        """Obtém apostas sem resultado ainda"""
-        return [a for a in self.dados["apostas"] if a["resultado"] is None]
-    
-    def obter_apostas_finalizadas(self) -> List[Dict]:
-        """Obtém apostas com resultado"""
-        return [a for a in self.dados["apostas"] if a["resultado"] is not None]
-    
-    def calcular_estatisticas(self, apostas: List[Dict] = None) -> Dict:
-        """Calcula estatísticas"""
-        
-        if apostas is None:
-            apostas = self.dados["apostas"]
-        
-        if not apostas:
-            return {
-                "total": 0,
-                "ganhas": 0,
-                "perdidas": 0,
-                "pendentes": 0,
-                "win_rate": 0,
-                "roi_medio_esperado": 0,
-                "roi_medio_real": 0,
-                "lucro_real": 0
-            }
-        
-        ganhas = [a for a in apostas if a["resultado"] == "ganhou"]
-        perdidas = [a for a in apostas if a["resultado"] == "perdeu"]
-        pendentes = [a for a in apostas if a["resultado"] is None]
-        
-        finalizadas = len(ganhas) + len(perdidas)
-        
-        win_rate = (len(ganhas) / finalizadas * 100) if finalizadas > 0 else 0
-        
-        roi_esperado_total = sum(a["roi_esperado"] for a in apostas)
-        roi_medio_esperado = roi_esperado_total / len(apostas) if apostas else 0
-        
-        roi_real_total = sum(a["roi_real"] for a in (ganhas + perdidas) if a["roi_real"] is not None)
-        roi_medio_real = roi_real_total / finalizadas if finalizadas > 0 else 0
-        
-        # Lucro em euros (assumindo €1 por aposta)
-        lucro_real = len(ganhas) - len(perdidas)
-        
+            raise ValueError('Resultado já registado; não foi alterado.')
+        dados = copy.deepcopy(self.dados)
+        a = next(a for a in dados['apostas'] if a['id'] == aposta_id)
+        a['resultado'], a['data_resultado'] = resultado, agora()
+        self._commit(dados)
+        return True
+
+    def obter_apostas_pendentes(self):
+        return [a for a in self.dados['apostas'] if a.get('origem') == 'manual' and a.get('resultado') is None]
+
+    def calcular_estatisticas(self, apostas=None):
+        todos = self.dados['apostas'] if apostas is None else apostas
+        reais = [a for a in todos if a.get('origem') == 'manual' and a.get('stake') is not None]
+        liquidadas = [a for a in reais if a.get('resultado') in ('ganhou', 'perdeu')]
+        total = sum((numero(a['stake']) for a in liquidadas), Decimal(0))
+        lucro = sum((numero(a['stake']) * (numero(a['odds']) - 1) if a['resultado'] == 'ganhou' else -numero(a['stake']) for a in liquidadas), Decimal(0))
+        ganhas = sum(a['resultado'] == 'ganhou' for a in liquidadas)
         return {
-            "total": len(apostas),
-            "ganhas": len(ganhas),
-            "perdidas": len(perdidas),
-            "pendentes": len(pendentes),
-            "win_rate": round(win_rate, 1),
-            "roi_medio_esperado": round(roi_medio_esperado, 1),
-            "roi_medio_real": round(roi_medio_real, 1),
-            "lucro_real": lucro_real
+            'total': len(reais), 'ganhas': ganhas, 'perdidas': len(liquidadas)-ganhas,
+            'pendentes': sum(a.get('resultado') is None for a in reais),
+            'anuladas': sum(a.get('resultado') == 'anulada' for a in reais),
+            'legadas': len(todos)-len(reais),
+            'win_rate': round(100*ganhas/len(liquidadas), 1) if liquidadas else 0,
+            'roi_medio_real': float(lucro/total*100) if total else 0,
+            'lucro_real': lucro.quantize(Decimal('.01'), rounding=ROUND_HALF_UP),
+            'valor_liquidado': total,
         }
-    
-    def gerar_relatorio(self, dias: int = 1) -> str:
-        """Gera relatório de performance"""
-        
-        # Obtém apostas dos últimos dias
-        apostas_recentes = self.dados["apostas"][-100:]  # Últimas 100
-        
-        stats = self.calcular_estatisticas(apostas_recentes)
-        
-        relatorio = "📊 RELATÓRIO DE PERFORMANCE\n"
-        relatorio += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        
-        relatorio += f"📈 ESTATÍSTICAS:\n"
-        relatorio += f"   Total: {stats['total']} apostas\n"
-        relatorio += f"   ✅ Ganhas: {stats['ganhas']}\n"
-        relatorio += f"   ❌ Perdidas: {stats['perdidas']}\n"
-        relatorio += f"   ⏳ Pendentes: {stats['pendentes']}\n\n"
-        
-        if stats['ganhas'] + stats['perdidas'] > 0:
-            relatorio += f"📊 WIN RATE: {stats['win_rate']}%\n\n"
-        
-        relatorio += f"💰 ROI:\n"
-        relatorio += f"   Esperado: +{stats['roi_medio_esperado']}%\n"
-        relatorio += f"   Real: +{stats['roi_medio_real']}%\n"
-        relatorio += f"   Lucro: €{stats['lucro_real']}\n\n"
-        
-        # Últimas 5 apostas
-        relatorio += "📋 ÚLTIMAS APOSTAS:\n"
-        for aposta in apostas_recentes[-5:]:
-            status = "✅" if aposta["resultado"] == "ganhou" else "❌" if aposta["resultado"] == "perdeu" else "⏳"
-            relatorio += f"   {status} #{aposta['id']} {aposta['jogo'][:30]} @{aposta['odds']}\n"
-        
-        return relatorio
-    
-    def exportar_csv(self) -> str:
-        """Exporta histórico como CSV"""
-        import csv
-        import io
-        
-        output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=self.dados["apostas"][0].keys())
-        
-        writer.writeheader()
-        writer.writerows(self.dados["apostas"])
-        
-        return output.getvalue()
+
+    def gerar_relatorio(self):
+        s = self.calcular_estatisticas()
+        linhas = ['📊 HISTÓRICO DE APOSTAS REGISTADAS',
+                  f"Ganhas: {s['ganhas']} | Perdidas: {s['perdidas']} | Anuladas: {s['anuladas']}",
+                  f"Pendentes: {s['pendentes']} | Taxa de acerto: {s['win_rate']}%",
+                  f"Valor liquidado (sem anuladas): {s['valor_liquidado']:.2f} €",
+                  f"Lucro: {s['lucro_real']:+.2f} € | ROI: {s['roi_medio_real']:+.2f}%",
+                  f"Registos antigos sem confirmação, fora das contas: {s['legadas']}",
+                  'Resultados introduzidos pelo utilizador; sem verificação na Betano.', '\nÚltimos 10 registos:']
+        for a in self.dados['apostas'][-10:]:
+            linhas.append(f"#{a['id']} {a['jogo']} | {a['tipo']} @{a['odds']} | {a.get('stake', '?')} € | {a.get('resultado') or 'pendente'}")
+        return '\n'.join(linhas)

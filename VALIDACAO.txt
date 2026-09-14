@@ -1,0 +1,17 @@
+Validação local — 14/09/2026
+Python 3.12; requests 2.34.2; tzdata 2026.4.
+Comando: python -m unittest discover -s tests -v
+Resultado: 13 testes, todos aprovados.
+
+Cobertura: lucro por odds/stake, ROI ponderado, anuladas e pendentes,
+legado excluído sem eliminação, JSON inválido preservado, falha de escrita
+sem mutação, valores inválidos, vírgula decimal, persistência, duplicados por
+update Telegram, permissões por utilizador/conversa, comandos @bot,
+IDs reais, bloqueio de reescrita de resultados, mercados e estados finais,
+análise sem geração fictícia, divisão de mensagens.
+
+Sem chamadas reais ao Telegram, SofaScore, Betano ou Railway.
+Instalação de dependências efetuada num ambiente virtual isolado.
+Não houve deploy. O volume Railway e a entrega real de mensagens não foram testados.
+O histórico efetivo do utilizador não estava no ZIP; compatibilidade testada
+com um exemplo do formato antigo, não com os dados de produção.
