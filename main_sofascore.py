@@ -14,7 +14,7 @@ from odds_betano import OddsBetano
 AJUDA = '''🤖 BOT DE APOSTAS — VERSÃO DE MANUTENÇÃO
 /start ou /ajuda — Ajuda
 /id — Ver o teu ID e o ID desta conversa
-/jogos — Consultar jogos reais de hoje no SofaScore
+/jogos — Consultar jogos reais de hoje (ESPN + fallback SofaScore)
 /odds — Listar eventos de hoje com odds Betano disponíveis
 /odds ID — Consultar mercados/odds Betano desse evento
 /analisa — Estado da análise automática
@@ -32,6 +32,7 @@ Ambas Marcam, Over 2.5 Golos e Over 3.5 Golos.
 Outros mercados: registar ganhou/perdeu/anulada manualmente.
 Usa /score apenas depois da liquidação da aposta.
 As apostas não são colocadas na Betano pelo bot.'''
+
 
 class BotPremiumReal:
     def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None):
@@ -93,7 +94,7 @@ class BotPremiumReal:
             elif comando == '/analisa':
                 resposta = (
                     AnalisadorInteligente.motivo_indisponivel
-                    + '\n\nJá existe um conector SofaScore para validar jogos reais com /jogos. '
+                    + '\n\nJá existe um conector de jogos reais ESPN com fallback SofaScore para /jogos. '
                     + (
                         'A fonte de odds Betano está configurada; falta validar o modelo estatístico.'
                         if self.odds.configurada
@@ -104,7 +105,7 @@ class BotPremiumReal:
                 resposta = (
                     'Bot de manutenção ativo.\n'
                     'Registo manual ativo.\n'
-                    'SofaScore: conector instalado; valida com /jogos.\n'
+                    f'Jogos reais: {self.buscador.fonte or "ESPN principal + SofaScore fallback"}.\n'
                     f'Odds Betano: {"configuradas" if self.odds.configurada else "não configuradas"}.\n'
                     'Análise automática: ainda suspensa até validar odds e modelo.\n'
                     'Liquidação automática: desativada.'
@@ -145,12 +146,21 @@ class BotPremiumReal:
             raise RuntimeError('Existe um webhook configurado. Resolver antes de usar polling.')
         while True:
             try:
-                updates = self.api('getUpdates', {'offset': self.gestor.dados.get('ultimo_update', 0)+1, 'timeout': 30, 'allowed_updates': ['message']})
+                updates = self.api('getUpdates', {
+                    'offset': self.gestor.dados.get('ultimo_update', 0) + 1,
+                    'timeout': 30,
+                    'allowed_updates': ['message'],
+                })
                 for update in updates:
                     msg = update.get('message', {})
                     texto = msg.get('text', '').strip()
                     if texto.startswith('/'):
-                        self.processar_comando(msg['chat']['id'], texto, msg.get('from', {}).get('id'), update['update_id'])
+                        self.processar_comando(
+                            msg['chat']['id'],
+                            texto,
+                            msg.get('from', {}).get('id'),
+                            update['update_id'],
+                        )
                     self.gestor.marcar_update(update['update_id'])
             except (requests.RequestException, RuntimeError, ValueError):
                 logging.warning('Falha na comunicação Telegram; nova tentativa em 5 segundos.')
@@ -164,6 +174,7 @@ def main():
     except Exception:
         logging.error('Arranque ou escrita interrompidos. Verifica configuração, histórico e permissões; detalhes omitidos para proteger credenciais.')
         raise SystemExit(1)
+
 
 if __name__ == '__main__':
     main()
