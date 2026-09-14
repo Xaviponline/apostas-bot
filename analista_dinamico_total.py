@@ -18,11 +18,6 @@ class AnistaDinamicoTotal:
         self.min_confianca = 3
         self.min_odds = 1.65
         
-        # Seed com data de HOJE
-        self.data_hoje = datetime.now().strftime("%d/%m/%Y")
-        self.seed = int(datetime.now().strftime("%d%m%Y"))
-        random.seed(self.seed)
-        
         # Jogos com ligas CORRETAS (cada jogo tem sua liga)
         self.todos_jogos = [
             # Premier League
@@ -75,8 +70,17 @@ class AnistaDinamicoTotal:
             ("Gremio", "Internacional", "🇧🇷 Brasileirão"),
         ]
     
+    def atualizar_data_seed(self):
+        """Atualiza data e seed SEMPRE com a data atual"""
+        self.data_hoje = datetime.now().strftime("%d/%m/%Y")
+        self.seed = int(datetime.now().strftime("%d%m%Y"))
+        random.seed(self.seed)
+    
     def gerar_apostas_simples(self) -> List[Dict]:
         """Gera 15 apostas de HOJE dinamicamente COM LIGAS CORRETAS"""
+        
+        # ATUALIZA DATA E SEED SEMPRE (garante data correta mesmo após restart)
+        self.atualizar_data_seed()
         
         tipos_aposta = [
             "Ambas Marcam",
