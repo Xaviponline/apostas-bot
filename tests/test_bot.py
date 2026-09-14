@@ -9,6 +9,7 @@ from main_sofascore import BotPremiumReal
 from rastreador_resultados import RastreadorResultados
 from analisador_inteligente import AnalisadorInteligente
 from buscador_jogos_reais import BuscadorJogosReais
+from previsoes_premium import RegistoPrevisoes
 
 class Tests(unittest.TestCase):
     def setUp(self):
@@ -16,7 +17,8 @@ class Tests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name)/'apostas_historico.json'
         self.g = GestorApostas(self.path)
-        self.bot = BotPremiumReal(token='token-de-teste', gestor=self.g, owner_id=10, chat_id=-20)
+        self.previsoes = RegistoPrevisoes(Path(self.tmp.name)/'previsoes_premium.json')
+        self.bot = BotPremiumReal(token='token-de-teste', gestor=self.g, owner_id=10, chat_id=-20, previsoes=self.previsoes)
         self.bot.username = 'ExemploBot'
         self.mensagens = []
         self.bot.enviar_mensagem = lambda chat, text: self.mensagens.append(text)
@@ -129,8 +131,12 @@ class Tests(unittest.TestCase):
         with patch.dict('os.environ', {'ENABLE_REAL_GAMES':'0', 'ENABLE_SOFASCORE':'0'}):
             self.assertEqual(BuscadorJogosReais().buscar_todos_jogos_hoje(),[])
 
+    def test_performance_empty_is_safe(self):
+        self.command('/performance')
+        self.assertIn('Previsões registadas: 0', self.mensagens[-1])
+
     def test_telegram_text_chunking(self):
-        bot=BotPremiumReal(token='teste',gestor=self.g,owner_id=10,chat_id=-20)
+        bot=BotPremiumReal(token='teste',gestor=self.g,owner_id=10,chat_id=-20,previsoes=self.previsoes)
         calls=[]
         bot.api=lambda method,data:calls.append(data)
         text='⚽' * 6000 + '<texto>'
