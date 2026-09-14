@@ -1,19 +1,36 @@
 """Conector de leitura para jogos reais do SofaScore.
 
-Não inventa jogos nem odds. Se a fonte falhar, devolve uma lista vazia e guarda
-apenas um estado genérico para diagnóstico (sem URLs/tokens em logs).
+Nunca inventa jogos nem odds. Em produção usa curl_cffi para imitar um navegador
+real ao nível TLS/HTTP2, porque o SofaScore pode responder de forma diferente a
+clientes HTTP de datacenter. Se a fonte falhar, devolve uma lista vazia.
 """
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import os
 import requests
 
+try:
+    from curl_cffi import requests as browser_requests
+except ImportError:  # Mantém compatibilidade local; em produção está em requirements.txt.
+    browser_requests = None
+
 
 class BuscadorJogosReais:
     BASE_URL = "https://api.sofascore.com/api/v1"
+    SITE_URL = "https://www.sofascore.com/"
 
     def __init__(self, session=None, enabled=None):
-        self.session = session or requests.Session()
+        self._session_injetada = session is not None
+        if session is not None:
+            self.session = session
+            self.browser_mode = False
+        elif browser_requests is not None:
+            self.session = browser_requests.Session()
+            self.browser_mode = True
+        else:
+            self.session = requests.Session()
+            self.browser_mode = False
+
         self.enabled = (
             bool(session)
             if enabled is None and session is not None
@@ -21,27 +38,73 @@ class BuscadorJogosReais:
         )
         self.estado = "por validar" if self.enabled else "desativado"
         self.ultimo_total = 0
+        self.ultimo_http_status = None
+        self._aquecida = False
+
+    @staticmethod
+    def _headers_api():
+        return {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "pt-PT,pt;q=0.9,en;q=0.8",
+            "Origin": "https://www.sofascore.com",
+            "Referer": "https://www.sofascore.com/",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+
+    def _aquecer_sessao(self):
+        """Obtém cookies de navegação antes da API; falha silenciosamente."""
+        if self._aquecida or not self.browser_mode:
+            return
+        self._aquecida = True
+        try:
+            self.session.get(
+                self.SITE_URL,
+                impersonate="chrome",
+                headers={
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "pt-PT,pt;q=0.9,en;q=0.8",
+                },
+                timeout=15,
+            )
+        except Exception:
+            # O pedido à API ainda pode funcionar sem o warm-up.
+            pass
 
     def _get(self, path):
-        resposta = self.session.get(
-            f"{self.BASE_URL}{path}",
-            headers={
-                "Accept": "application/json",
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/140.0 Safari/537.36"
-                ),
-                "Origin": "https://www.sofascore.com",
-                "Referer": "https://www.sofascore.com/",
-            },
-            timeout=(5, 20),
-        )
-        resposta.raise_for_status()
-        dados = resposta.json()
-        if not isinstance(dados, dict):
-            raise ValueError("Resposta SofaScore inválida.")
-        return dados
+        url = f"{self.BASE_URL}{path}"
+        self.ultimo_http_status = None
+        try:
+            if self.browser_mode:
+                self._aquecer_sessao()
+                resposta = self.session.get(
+                    url,
+                    impersonate="chrome",
+                    headers=self._headers_api(),
+                    timeout=20,
+                )
+            else:
+                # Sessões injetadas são usadas nos testes; requests normal é fallback.
+                resposta = self.session.get(
+                    url,
+                    headers={
+                        **self._headers_api(),
+                        "User-Agent": (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/146.0 Safari/537.36"
+                        ),
+                    },
+                    timeout=20,
+                )
+            self.ultimo_http_status = getattr(resposta, "status_code", None)
+            resposta.raise_for_status()
+            dados = resposta.json()
+            if not isinstance(dados, dict):
+                raise ValueError("Resposta SofaScore inválida.")
+            return dados
+        except Exception:
+            # Não expor HTML de challenge, cookies ou detalhes internos nos logs/Telegram.
+            raise ValueError("Fonte SofaScore indisponível.") from None
 
     @staticmethod
     def _hora_lisboa(timestamp):
@@ -86,7 +149,12 @@ class BuscadorJogosReais:
             ZoneInfo("Europe/Lisbon")
         ).strftime("%Y-%m-%d")
         try:
-            dados = self._get(f"/sport/football/scheduled-events/{data_iso}")
+            # Primeiro tenta a lista completa usada pelo site ao selecionar "Show All".
+            try:
+                dados = self._get(f"/sport/football/scheduled-events/{data_iso}/inverse")
+            except ValueError:
+                dados = self._get(f"/sport/football/scheduled-events/{data_iso}")
+
             eventos = dados.get("events")
             if not isinstance(eventos, list):
                 raise ValueError("Lista de eventos ausente.")
@@ -109,7 +177,7 @@ class BuscadorJogosReais:
             self.estado = "operacional"
             self.ultimo_total = len(jogos)
             return jogos
-        except (requests.RequestException, ValueError, TypeError):
+        except (ValueError, TypeError):
             self.estado = "indisponível"
             self.ultimo_total = 0
             return []
