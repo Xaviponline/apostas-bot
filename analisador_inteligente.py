@@ -122,12 +122,12 @@ class AnalisadorInteligente:
                 selecoes.append(melhor)
 
         selecoes.sort(key=lambda x: (x["score"], x["qualidade"]), reverse=True)
+        self.ultimas_selecoes = selecoes[:8]
         self.ultimo_resumo = {
             "jogos": len(jogos),
             "com_dados": com_dados,
-            "selecoes": len(selecoes),
+            "selecoes": len(self.ultimas_selecoes),
         }
-        self.ultimas_selecoes = selecoes[:8]
         return list(self.ultimas_selecoes)
 
     def gerar_relatorio(self, jogos, selecoes=None):
