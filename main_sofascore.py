@@ -1,4 +1,6 @@
 """Bot privado: jogos reais, análise premium beta e registo de apostas."""
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import logging
 import os
 import re
@@ -15,7 +17,7 @@ from previsoes_premium import RegistoPrevisoes
 AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /start ou /ajuda — Ajuda
 /id — Ver o teu ID e o ID desta conversa
-/jogos — Consultar jogos reais de hoje (ESPN + fallback SofaScore)
+/jogos — Consultar jogos reais de hoje (hora de Portugal; ESPN + fallback SofaScore)
 /analisa — Analisar os jogos de hoje com estatísticas reais e modelo Poisson
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /odds — Listar eventos com odds Betano, se uma fonte de odds estiver configurada
@@ -113,6 +115,27 @@ class BotPremiumReal:
             saida.append(atual)
         return [p for p in saida if p]
 
+    @staticmethod
+    def _filtrar_data_portugal(jogos, data_iso=None):
+        """Mantém apenas eventos cuja data em Europe/Lisbon corresponde ao dia pedido."""
+        alvo = data_iso or datetime.now(ZoneInfo('Europe/Lisbon')).strftime('%Y-%m-%d')
+        saida = []
+        for jogo in jogos or []:
+            ts = jogo.get('timestamp') if isinstance(jogo, dict) else None
+            if not isinstance(ts, (int, float)):
+                continue
+            data_local = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(
+                ZoneInfo('Europe/Lisbon')
+            ).strftime('%Y-%m-%d')
+            if data_local == alvo:
+                saida.append(jogo)
+        return saida
+
+    def _jogos_hoje_portugal(self):
+        data_iso = datetime.now(ZoneInfo('Europe/Lisbon')).strftime('%Y-%m-%d')
+        jogos = self.buscador.buscar_todos_jogos_hoje(data_iso)
+        return self._filtrar_data_portugal(jogos, data_iso)
+
     def enviar_mensagem(self, chat_id, texto):
         for parte in self._dividir_texto(texto):
             self.api('sendMessage', {'chat_id': chat_id, 'text': parte})
@@ -132,10 +155,10 @@ class BotPremiumReal:
             if comando in ('/start', '/ajuda'):
                 resposta = AJUDA
             elif comando == '/jogos':
-                jogos = self.buscador.buscar_todos_jogos_hoje()
+                jogos = self._jogos_hoje_portugal()
                 resposta = self.buscador.formatar_jogos(jogos)
             elif comando == '/analisa':
-                jogos = self.buscador.buscar_todos_jogos_hoje()
+                jogos = self._jogos_hoje_portugal()
                 if not jogos:
                     resposta = self.buscador.formatar_jogos(jogos)
                 else:
@@ -165,6 +188,7 @@ class BotPremiumReal:
                     'Bot premium beta ativo.\n'
                     'Registo manual ativo.\n'
                     f'Jogos reais: {self.buscador.fonte or "ESPN principal + SofaScore fallback"}.\n'
+                    'Data dos jogos: filtrada por hora de Portugal (Europe/Lisbon).\n'
                     f'Odds Betano: {self.odds.nome_fonte if self.odds.configurada else "opcionais / não configuradas"}.\n'
                     'Análise premium: ativa com histórico ESPN + modelo Poisson.\n'
                     'Filtro: amostra mínima + qualidade dos dados + probabilidade conservadora + odd mínima alvo.\n'
