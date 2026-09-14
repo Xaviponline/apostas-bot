@@ -1,4 +1,4 @@
-"""Bot privado de manutenção: registo manual, sem recomendações fabricadas."""
+"""Bot privado: jogos reais, análise premium beta e registo de apostas."""
 import logging
 import os
 import re
@@ -11,31 +11,26 @@ from analisador_inteligente import AnalisadorInteligente
 from buscador_jogos_reais import BuscadorJogosReais
 from odds_betano import OddsBetano
 
-AJUDA = '''🤖 BOT DE APOSTAS — VERSÃO DE MANUTENÇÃO
+AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /start ou /ajuda — Ajuda
 /id — Ver o teu ID e o ID desta conversa
 /jogos — Consultar jogos reais de hoje (ESPN + fallback SofaScore)
-/odds — Listar eventos de hoje com odds Betano disponíveis
+/analisa — Analisar os jogos de hoje com estatísticas reais e modelo Poisson
+/odds — Listar eventos com odds Betano, se uma fonte de odds estiver configurada
 /odds ID — Consultar mercados/odds Betano desse evento
-/analisa — Estado da análise automática
 /add_aposta "Jogo" "Mercado" ODD VALOR — Registar uma aposta já feita
 /resultados — Histórico e contas
 /score ID ganhou|perdeu|anulada — Registar resultado
 /score ID 2-1 — Resultado final no tempo regulamentar (inclui compensação)
 /status — Estado do bot
 
-Exemplo de formato (não é uma recomendação):
-/add_aposta "Equipa A vs Equipa B" "Over 2.5 Golos" 1.90 1.00
-
-Mercados com interpretação de resultado: Vitória Casa, Vitória Fora,
-Ambas Marcam, Over 2.5 Golos e Over 3.5 Golos.
-Outros mercados: registar ganhou/perdeu/anulada manualmente.
-Usa /score apenas depois da liquidação da aposta.
+No /analisa, a odd mínima é o preço a partir do qual o modelo aponta para uma margem teórica de 5%.
+As probabilidades são estimativas estatísticas e não garantias.
 As apostas não são colocadas na Betano pelo bot.'''
 
 
 class BotPremiumReal:
-    def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None):
+    def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None, analisador=None):
         self.token = token or (os.getenv('TELEGRAM_BOT_TOKEN') or os.getenv('TELEGRAM_TOKEN', '')).strip()
         if not self.token:
             raise ValueError('Configura TELEGRAM_BOT_TOKEN nas variáveis do serviço.')
@@ -47,6 +42,7 @@ class BotPremiumReal:
         self.session = session or requests.Session()
         self.buscador = buscador or BuscadorJogosReais()
         self.odds = odds or OddsBetano()
+        self.analisador = analisador or AnalisadorInteligente(self.buscador)
         self.username = None
 
     def api(self, metodo, data):
@@ -79,34 +75,31 @@ class BotPremiumReal:
             elif comando == '/jogos':
                 jogos = self.buscador.buscar_todos_jogos_hoje()
                 resposta = self.buscador.formatar_jogos(jogos)
+            elif comando == '/analisa':
+                jogos = self.buscador.buscar_todos_jogos_hoje()
+                if not jogos:
+                    resposta = self.buscador.formatar_jogos(jogos)
+                else:
+                    resposta = self.analisador.gerar_relatorio(jogos)
             elif comando == '/odds':
                 if not self.odds.configurada:
                     resposta = (
                         'Odds Betano ainda não configuradas. '
-                        'Define ODDS_PAPI_KEY (preferido) ou ODDS_API_IO_KEY no Railway.'
+                        'O /analisa funciona sem elas e indica odd justa e odd mínima.'
                     )
                 elif argumentos.strip():
                     evento_id = argumentos.strip()
                     resposta = self.odds.formatar_odds(self.odds.odds_evento(evento_id))
                 else:
                     resposta = self.odds.formatar_eventos(self.odds.eventos_hoje())
-            elif comando == '/analisa':
-                resposta = (
-                    AnalisadorInteligente.motivo_indisponivel
-                    + '\n\nJá existe um conector de jogos reais ESPN com fallback SofaScore para /jogos. '
-                    + (
-                        f'A fonte de odds Betano está configurada ({self.odds.nome_fonte}); falta validar o modelo estatístico.'
-                        if self.odds.configurada
-                        else 'A fase seguinte exige configurar a fonte de odds Betano e validar o modelo estatístico.'
-                    )
-                )
             elif comando == '/status':
                 resposta = (
-                    'Bot de manutenção ativo.\n'
+                    'Bot premium beta ativo.\n'
                     'Registo manual ativo.\n'
                     f'Jogos reais: {self.buscador.fonte or "ESPN principal + SofaScore fallback"}.\n'
-                    f'Odds Betano: {self.odds.nome_fonte if self.odds.configurada else "não configuradas"}.\n'
-                    'Análise automática: ainda suspensa até validar odds e modelo.\n'
+                    f'Odds Betano: {self.odds.nome_fonte if self.odds.configurada else "opcionais / não configuradas"}.\n'
+                    'Análise premium: ativa com histórico ESPN + modelo Poisson.\n'
+                    'Filtro: amostra mínima + qualidade dos dados + odd mínima alvo.\n'
                     'Liquidação automática: desativada.'
                 )
             elif comando == '/resultados':
