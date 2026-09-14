@@ -20,6 +20,23 @@ Este diretório existe para desenvolver e validar a próxima geração do modelo
 6. Odds multi-casa e EV apenas quando existirem odds reais.
 7. Comparar V1 vs V2 em amostra fora do treino antes de promover a V2.
 
+## Ideias futuras já aprovadas
+
+### Alertas automáticos pré-jogo
+
+- Cerca de 1 hora antes do kickoff, verificar se o jogo já tinha sido selecionado pelo modelo do dia.
+- Enviar no Telegram apenas o cartão desse jogo, com mercado recomendado, probabilidade, odd justa, odd mínima e nível de confiança.
+- Garantir que o mesmo jogo não gera alertas duplicados.
+- Este módulo não altera a previsão original; apenas relembra uma seleção que já existia antes do jogo.
+
+### Motor Live separado
+
+- Desenvolver apenas depois de existir uma fonte live suficientemente rica, estável e licenciada.
+- Usar minuto, marcador, remates, remates à baliza, cantos, cartões, pressão/forma ofensiva recente, xG quando disponível e outras métricas verificadas.
+- Procurar oportunidades como Over 0.5/1.5, próximo golo e outros mercados live apenas quando houver validação histórica.
+- Não assumir que "muito ataque" implica automaticamente aposta; o sinal live deve ter modelo e backtesting próprios.
+- O motor Live deve ser totalmente separado da V1 pré-jogo e ter auditoria/performance próprias.
+
 ## Critério de promoção
 
 A V2 não substitui a V1 por parecer melhor num dia. Deve apresentar melhoria consistente em amostra fora do treino, sobretudo em Brier Score/calibração e, quando houver odds históricas, ROI/CLV por mercado.
