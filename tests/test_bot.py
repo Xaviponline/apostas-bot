@@ -122,7 +122,7 @@ class Tests(unittest.TestCase):
         self.assertIsNone(r.analisar_aposta({'tipo':'Cantos'},{'casa':2,'fora':1,'status':'finished'}))
 
     def test_analysis_does_not_create_bets_or_fake_fallback(self):
-        self.bot.buscador.buscar_todos_jogos_hoje = lambda: []
+        self.bot.buscador.buscar_todos_jogos_hoje = lambda *args, **kwargs: []
         self.bot.buscador.formatar_jogos = lambda jogos: 'sem jogos reais disponíveis'
         self.command('/analisa')
         self.assertEqual(self.g.dados['apostas'],[])
