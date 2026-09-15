@@ -1,1 +1,1 @@
-worker: python main_sofascore.py
+worker: python main_diario.py
