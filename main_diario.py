@@ -4,14 +4,50 @@ A geração de novas previsões continua a acontecer apenas antes do início dos
 jogos. O relatório compacto junta essas novas previsões às previsões já
 congeladas na auditoria para o mesmo dia local em Portugal (00:00–23:59).
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import logging
+import requests
 
 from main_sofascore import BotPremiumReal
+from previsoes_premium import RegistoPrevisoes
 
 
 TZ_PORTUGAL = ZoneInfo("Europe/Lisbon")
+
+
+class RegistoPrevisoesDiario(RegistoPrevisoes):
+    """Liquidação tolerante às diferenças de data/fuso usadas pela ESPN.
+
+    A previsão continua identificada exclusivamente pelo event_id da ESPN. Para
+    jogos perto da meia-noite em Portugal, a página diária da ESPN pode colocar
+    o evento no dia anterior/seguinte. Consultamos uma janela de três datas e
+    apenas aceitamos o mesmo event_id, evitando associações por nome.
+    """
+
+    def _resultados_espn(self, data_iso):
+        try:
+            data_base = datetime.strptime(str(data_iso), "%Y-%m-%d").date()
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Data de jogo inválida para consulta ESPN.") from exc
+
+        resultados = {}
+        consultas_validas = 0
+        ultimo_erro = None
+
+        for deslocamento in (-1, 0, 1):
+            alvo = (data_base + timedelta(days=deslocamento)).isoformat()
+            try:
+                encontrados = super()._resultados_espn(alvo)
+            except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
+                ultimo_erro = exc
+                continue
+            consultas_validas += 1
+            resultados.update(encontrados)
+
+        if not consultas_validas:
+            raise ValueError("Não foi possível consultar resultados ESPN.") from ultimo_erro
+        return resultados
 
 
 class BotPremiumDiario(BotPremiumReal):
@@ -129,7 +165,7 @@ class BotPremiumDiario(BotPremiumReal):
 def main():
     logging.basicConfig(level=logging.INFO)
     try:
-        BotPremiumDiario().buscar_atualizacoes()
+        BotPremiumDiario(previsoes=RegistoPrevisoesDiario()).buscar_atualizacoes()
     except Exception:
         logging.error(
             "Arranque ou escrita interrompidos. Verifica configuração, histórico "
