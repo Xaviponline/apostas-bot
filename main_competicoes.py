@@ -1,7 +1,7 @@
-"""Arranque de produção com cobertura V1, taças e base histórica alargada."""
+"""Arranque de produção com cobertura V1 e histórico híbrido de competições."""
 import logging
 
-from estatisticas_espn_competicoes import EstatisticasESPNCompeticoes
+from estatisticas_hibridas_competicoes import EstatisticasHibridasCompeticoes
 from main_diario import RegistoPrevisoesDiario
 from main_enriquecido import (
     AnalisadorInteligenteEnriquecido,
@@ -25,9 +25,20 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 continue
             jogos = int(diag.get("jogos") or 0)
             fonte = str(diag.get("fonte") or "-")
-            if fonte == "cache":
-                linhas.append(f"• {codigo}: {jogos} jogos | cache")
+            if fonte in {"cache", "cache_sofascore"}:
+                origem = "SofaScore cache" if fonte == "cache_sofascore" else "cache"
+                linhas.append(f"• {codigo}: {jogos} jogos | {origem}")
                 continue
+            if fonte == "sofascore":
+                paginas = int(diag.get("paginas") or 0)
+                linhas.append(
+                    f"• {codigo}: {jogos} jogos | SofaScore | páginas {paginas}"
+                )
+                continue
+            if fonte == "sofascore_indisponivel":
+                linhas.append(f"• {codigo}: 0 jogos | SofaScore indisponível")
+                continue
+
             blocos = int(diag.get("blocos") or 0)
             ok = int(diag.get("blocos_ok") or 0)
             falhas = int(diag.get("blocos_falha") or 0)
@@ -44,7 +55,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
     try:
         buscador = BuscadorJogosEnriquecido()
-        estatisticas = EstatisticasESPNCompeticoes()
+        estatisticas = EstatisticasHibridasCompeticoes()
         analisador = AnalisadorInteligenteEnriquecido(
             buscador_jogos=buscador,
             estatisticas=estatisticas,
