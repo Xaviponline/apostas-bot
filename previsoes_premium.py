@@ -1,9 +1,10 @@
 """Registo auditável das previsões do motor premium.
 
-Cada previsão é guardada antes do jogo e não é alterada por novas execuções do
-/analisa. Depois do resultado final, pode ser liquidada e usada para medir taxa
-de acerto e Brier Score. ROI só é calculado para previsões que tenham uma odd
-real congelada no momento do registo.
+Cada previsão é guardada antes do jogo e os campos do modelo não são alterados
+por novas execuções do /analisa. Enquanto uma previsão continuar pendente e o
+jogo ainda não tiver começado, uma odd real que faltava pode ser anexada com a
+hora exata da captura. Depois do resultado final, a previsão pode ser liquidada
+e usada para medir taxa de acerto, Brier Score e, quando aplicável, ROI.
 """
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,14 +79,52 @@ class RegistoPrevisoes:
             return None
         return odd if odd > 1.0 else None
 
+    @staticmethod
+    def _jogo_ainda_nao_comecou(registo, agora_ts):
+        ts = registo.get("timestamp_jogo")
+        return isinstance(ts, (int, float)) and float(ts) > float(agora_ts)
+
+    def _anexar_odd_se_segura(self, registo, selecao, agora_iso, agora_ts):
+        """Anexa apenas a primeira odd real, sem alterar qualquer campo do modelo."""
+        if registo.get("estado") != "pendente":
+            return False
+        if self._odd_real_valida(registo.get("odd_real")) is not None:
+            return False
+        if not self._jogo_ainda_nao_comecou(registo, agora_ts):
+            return False
+
+        odd_real = self._odd_real_valida(selecao.get("odd_real"))
+        if odd_real is None:
+            return False
+        try:
+            prob = float(registo["probabilidade"])
+        except (KeyError, TypeError, ValueError):
+            return False
+
+        registo.update(
+            {
+                "odd_real": round(odd_real, 4),
+                "ev_real": round((prob * odd_real) - 1.0, 6),
+                "odds_fonte": str(selecao.get("odds_fonte") or ""),
+                "odds_event_id": str(selecao.get("odds_event_id") or ""),
+                "odds_atualizada_em": str(selecao.get("odds_atualizada_em") or ""),
+                "odds_capturada_em": agora_iso,
+            }
+        )
+        return True
+
     def registar(self, selecoes):
-        """Guarda apenas previsões novas. Nunca reescreve uma previsão existente."""
+        """Guarda previsões novas e completa odds ausentes apenas antes do jogo."""
         existentes = {
-            self._chave(p.get("event_id"), p.get("mercado"))
+            self._chave(p.get("event_id"), p.get("mercado")): p
             for p in self.dados["previsoes"]
         }
-        agora = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        agora_dt = datetime.now(timezone.utc)
+        agora_ts = agora_dt.timestamp()
+        agora = agora_dt.isoformat().replace("+00:00", "Z")
         adicionadas = 0
+        odds_anexadas = 0
+
         for s in selecoes or []:
             jogo = s.get("jogo") or {}
             event_id = jogo.get("id")
@@ -94,6 +133,10 @@ class RegistoPrevisoes:
                 continue
             chave = self._chave(event_id, mercado)
             if chave in existentes:
+                if self._anexar_odd_se_segura(
+                    existentes[chave], s, agora, agora_ts
+                ):
+                    odds_anexadas += 1
                 continue
             try:
                 prob = float(s["probabilidade"])
@@ -140,9 +183,10 @@ class RegistoPrevisoes:
                 )
 
             self.dados["previsoes"].append(registo)
-            existentes.add(chave)
+            existentes[chave] = registo
             adicionadas += 1
-        if adicionadas:
+
+        if adicionadas or odds_anexadas:
             self._guardar()
         return adicionadas
 
@@ -333,7 +377,7 @@ class RegistoPrevisoes:
                 [
                     "",
                     "Ainda não há previsões liquidadas suficientes para avaliar o modelo.",
-                    "As previsões ficam guardadas antes do jogo e não são reescritas pelo /analisa.",
+                    "As previsões ficam guardadas antes do jogo e os campos do modelo não são reescritos pelo /analisa.",
                 ]
             )
             return "\n".join(linhas)
@@ -365,7 +409,7 @@ class RegistoPrevisoes:
             linhas.extend(
                 [
                     "",
-                    "ROI ainda não é apresentado porque não há previsões liquidadas com odds reais congeladas no momento da previsão.",
+                    "ROI ainda não é apresentado porque não há previsões liquidadas com odds reais capturadas antes do início do jogo.",
                     "As previsões antigas sem snapshot de odd continuam válidas para hit rate/Brier, mas não entram no ROI.",
                 ]
             )
