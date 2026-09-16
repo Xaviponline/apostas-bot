@@ -107,6 +107,38 @@ class EstatisticasESPNEnriquecidas(EstatisticasESPNResiliente):
         return EstatisticasESPN.resolver_liga(jogo)
 
 
+class BotPremiumDiarioDiagnostico(BotPremiumDiario):
+    def _diagnostico_zero(
+        self,
+        total_jogos,
+        total_futuros,
+        total_suportados,
+        resumo_novo,
+        selecoes_novas,
+        fora_cobertura=None,
+        historico_indisponivel=None,
+        jogos_historico_indisponivel=0,
+    ):
+        base = super()._diagnostico_zero(
+            total_jogos,
+            total_futuros,
+            total_suportados,
+            resumo_novo,
+            selecoes_novas,
+            fora_cobertura,
+            historico_indisponivel,
+            jogos_historico_indisponivel,
+        )
+        erros = dict(self.analisador.estatisticas.ultimo_erros or {})
+        if not erros:
+            return base
+        detalhes = ", ".join(
+            f"{codigo}: {str(motivo or 'indisponível')}"
+            for codigo, motivo in sorted(erros.items())
+        )
+        return base + "\n🔎 Motivo técnico: " + detalhes
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     try:
@@ -116,7 +148,7 @@ def main():
             buscador_jogos=buscador,
             estatisticas=estatisticas,
         )
-        BotPremiumDiario(
+        BotPremiumDiarioDiagnostico(
             buscador=buscador,
             analisador=analisador,
             previsoes=RegistoPrevisoesDiario(),
