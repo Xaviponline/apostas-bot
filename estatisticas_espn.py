@@ -17,34 +17,80 @@ import requests
 class EstatisticasESPN:
     BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
-    # Códigos ESPN validados/convencionais para as competições que mais nos interessam.
-    # Se uma competição não estiver aqui, o motor não tenta adivinhar o código.
+    # Whitelist de códigos ESPN validados para o V1. Se uma competição não
+    # estiver aqui, o motor não tenta adivinhar o código.
     LIGAS = {
+        # Inglaterra
         "english premier league": "eng.1",
         "premier league": "eng.1",
-        "laliga": "esp.1",
+        "english league championship": "eng.2",
+        "efl championship": "eng.2",
+        "english league one": "eng.3",
+        "efl league one": "eng.3",
+        "english league two": "eng.4",
+        "efl league two": "eng.4",
+
+        # Espanha
         "spanish laliga": "esp.1",
+        "laliga": "esp.1",
+        "spanish laliga 2": "esp.2",
+        "spanish segunda division": "esp.2",
+        "laliga 2": "esp.2",
+
+        # Itália
         "italian serie a": "ita.1",
         "serie a": "ita.1",
+        "italian serie b": "ita.2",
+
+        # Alemanha
         "german bundesliga": "ger.1",
         "bundesliga": "ger.1",
+        "german 2. bundesliga": "ger.2",
+        "2. bundesliga": "ger.2",
+
+        # França
         "french ligue 1": "fra.1",
         "ligue 1": "fra.1",
+        "french ligue 2": "fra.2",
         "ligue 2": "fra.2",
+
+        # Portugal
         "portuguese primeira liga": "por.1",
         "primeira liga": "por.1",
+
+        # Países Baixos / Bélgica / Turquia
+        "dutch eredivisie": "ned.1",
         "eredivisie": "ned.1",
+        "dutch keuken kampioen divisie": "ned.2",
         "keuken kampioen divisie": "ned.2",
         "belgian pro league": "bel.1",
         "turkish super lig": "tur.1",
         "super lig": "tur.1",
+
+        # Escócia / Áustria / Dinamarca / Grécia / Suíça
+        "scottish premiership": "sco.1",
+        "scottish championship": "sco.2",
+        "austrian bundesliga": "aut.1",
+        "danish superliga": "den.1",
+        "greek super league": "gre.1",
+        "swiss super league": "sui.1",
+
+        # Escandinávia
+        "swedish allsvenskan": "swe.1",
         "allsvenskan": "swe.1",
+        "norwegian eliteserien": "nor.1",
         "eliteserien": "nor.1",
+
+        # América
+        "major league soccer": "usa.1",
+        "mls": "usa.1",
         "brasileiro serie a": "bra.1",
         "brazilian serie a": "bra.1",
         "brasileiro serie b": "bra.2",
         "brazilian serie b": "bra.2",
         "argentine liga profesional": "arg.1",
+
+        # UEFA
         "uefa champions league": "uefa.champions",
         "champions league": "uefa.champions",
         "uefa europa league": "uefa.europa",
@@ -53,7 +99,22 @@ class EstatisticasESPN:
         "conference league": "uefa.europa.conf",
     }
 
+    # Ordem importante: slugs mais específicos, como LaLiga 2, têm de vir
+    # antes dos seus prefixos de primeira divisão.
     SLUGS = (
+        ("spanish-laliga-2", "esp.2"),
+        ("english-league-championship", "eng.2"),
+        ("english-league-one", "eng.3"),
+        ("english-league-two", "eng.4"),
+        ("italian-serie-b", "ita.2"),
+        ("german-2-bundesliga", "ger.2"),
+        ("scottish-premiership", "sco.1"),
+        ("scottish-championship", "sco.2"),
+        ("austrian-bundesliga", "aut.1"),
+        ("danish-superliga", "den.1"),
+        ("greek-super-league", "gre.1"),
+        ("swiss-super-league", "sui.1"),
+        ("major-league-soccer", "usa.1"),
         ("english-premier-league", "eng.1"),
         ("spanish-laliga", "esp.1"),
         ("italian-serie-a", "ita.1"),
