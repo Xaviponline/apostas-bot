@@ -8,7 +8,7 @@ from estatisticas_espn_competicoes import EstatisticasESPNCompeticoes
 
 
 class BaseAlargadaCompeticoesTests(unittest.TestCase):
-    def test_taca_usa_janela_alargada(self):
+    def test_taca_usa_blocos_de_14_dias(self):
         class Probe(EstatisticasESPNCompeticoes):
             def __init__(self):
                 super().__init__(dias_historico=70)
@@ -21,12 +21,11 @@ class BaseAlargadaCompeticoesTests(unittest.TestCase):
         stats = Probe()
         ref = datetime(2026, 9, 16, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
         stats._fetch_liga("eng.league_cup", ref)
-        codigo, inicio, fim = stats.intervalos[0]
-        self.assertEqual(codigo, "eng.league_cup")
-        self.assertGreaterEqual((fim - inicio).days, 400)
+        self.assertGreater(len(stats.intervalos), 1)
         self.assertTrue(
-            any((fim_bloco - inicio_bloco).days <= 59 for _, inicio_bloco, fim_bloco in stats.intervalos[1:])
+            all((fim - inicio).days <= 13 for _, inicio, fim in stats.intervalos)
         )
+        self.assertEqual(stats.diagnostico_base["eng.league_cup"]["fonte"], "blocos_14d")
 
     def test_liga_normal_mantem_janela_v1(self):
         class Probe(EstatisticasESPNCompeticoes):
@@ -56,6 +55,9 @@ class BaseAlargadaCompeticoesTests(unittest.TestCase):
         ref = datetime(2026, 9, 16, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
         with self.assertRaises(requests.Timeout):
             stats._fetch_liga("uefa.europa", ref)
+        diag = stats.diagnostico_base["uefa.europa"]
+        self.assertGreater(diag["blocos_falha"], 0)
+        self.assertIn("timeout", diag["motivos"])
 
     def test_bloco_isolado_pode_falhar_se_houver_amostra_minima(self):
         class Probe(EstatisticasESPNCompeticoes):
@@ -79,8 +81,10 @@ class BaseAlargadaCompeticoesTests(unittest.TestCase):
         ref = datetime(2026, 9, 16, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
         historico = stats._fetch_liga("eng.league_cup", ref)
         self.assertGreaterEqual(len(historico), stats.MIN_JOGOS_BASE)
+        diag = stats.diagnostico_base["eng.league_cup"]
+        self.assertGreaterEqual(diag["blocos_ok"], 1)
 
-    def test_resposta_longa_vazia_tenta_blocos_menores(self):
+    def test_para_quando_atinge_alvo_de_jogos(self):
         class Probe(EstatisticasESPNCompeticoes):
             def __init__(self):
                 super().__init__()
@@ -88,11 +92,10 @@ class BaseAlargadaCompeticoesTests(unittest.TestCase):
 
             def _consultar_intervalo(self, liga_codigo, inicio, fim):
                 self.chamadas += 1
-                if self.chamadas == 1:
-                    return []
+                base = 1000 * self.chamadas
                 return [
-                    {"id": 200 + i, "timestamp": float(2000 - i)}
-                    for i in range(10)
+                    {"id": base + i, "timestamp": float(base - i)}
+                    for i in range(12)
                 ]
 
             def _normalizar_eventos(self, eventos, liga_codigo):
@@ -101,8 +104,8 @@ class BaseAlargadaCompeticoesTests(unittest.TestCase):
         stats = Probe()
         ref = datetime(2026, 9, 16, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
         historico = stats._fetch_liga("uefa.europa", ref)
-        self.assertEqual(len(historico), 10)
-        self.assertGreaterEqual(stats.chamadas, 2)
+        self.assertGreaterEqual(len(historico), stats.ALVO_JOGOS_BASE)
+        self.assertLessEqual(stats.chamadas, 3)
 
 
 if __name__ == "__main__":
