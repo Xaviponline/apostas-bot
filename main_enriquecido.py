@@ -3,6 +3,8 @@
 Mantém o modelo V1 e os seus filtros intactos. A única função desta camada é
 combinar a listagem global da ESPN com endpoints específicos de competições
 conhecidas para guardar um código de liga fiável (ex.: uefa.europa, esp.1).
+O histórico usa ainda uma recolha resiliente por blocos quando a ESPN rejeita
+uma janela longa de datas.
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
@@ -11,6 +13,7 @@ import requests
 from analisador_inteligente import AnalisadorInteligente
 from buscador_jogos_reais import BuscadorJogosReais
 from estatisticas_espn import EstatisticasESPN
+from estatisticas_espn_resiliente import EstatisticasESPNResiliente
 from main_diario import BotPremiumDiario, RegistoPrevisoesDiario
 
 
@@ -94,7 +97,7 @@ class BuscadorJogosEnriquecido(BuscadorJogosReais):
         return []
 
 
-class EstatisticasESPNEnriquecidas(EstatisticasESPN):
+class EstatisticasESPNEnriquecidas(EstatisticasESPNResiliente):
     @staticmethod
     def resolver_liga(jogo):
         codigo = str((jogo or {}).get("league_code") or "").strip()
