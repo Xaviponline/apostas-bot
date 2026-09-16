@@ -102,6 +102,9 @@ class OddsBetano:
 
     def _eventos_papi(self):
         inicio, fim = self._janela_hoje_utc()
+        # A descoberta dos jogos não deve depender de a Betano ter o mercado
+        # aberto exatamente neste instante. Primeiro listamos todos os fixtures
+        # pré-jogo e só depois consultamos /odds para a casa configurada.
         dados = self._get_papi(
             "/fixtures",
             {
@@ -109,8 +112,6 @@ class OddsBetano:
                 "from": inicio,
                 "to": fim,
                 "statusId": 0,
-                "hasOdds": "true",
-                "bookmakers": self.papi_bookmaker,
                 "language": "en",
             },
         )
@@ -128,6 +129,9 @@ class OddsBetano:
                         "liga": str(e.get("tournamentName") or "Competição").strip(),
                         "status": str(e.get("statusName") or "Pre-Game"),
                         "tournament_id": int(e["tournamentId"]),
+                        "has_odds": bool(e.get("hasOdds", False)),
+                        "participant1_id": e.get("participant1Id"),
+                        "participant2_id": e.get("participant2Id"),
                     }
                 )
             except (KeyError, TypeError, ValueError):
@@ -221,7 +225,16 @@ class OddsBetano:
             raise ValueError("Resposta OddsPapi inválida.")
         book = (dados.get("bookmakerOdds") or {}).get(self.papi_bookmaker)
         if not isinstance(book, dict):
-            return None
+            return {
+                "id": dados.get("fixtureId"),
+                "casa": dados.get("participant1Name"),
+                "fora": dados.get("participant2Name"),
+                "liga": dados.get("tournamentName"),
+                "updatedAt": dados.get("updatedAt") or "",
+                "mercados": [],
+                "bookmaker_disponivel": False,
+                "fonte": self.nome_fonte,
+            }
 
         try:
             catalogo = self._catalogo_papi()
@@ -283,6 +296,7 @@ class OddsBetano:
             "liga": dados.get("tournamentName"),
             "updatedAt": dados.get("updatedAt") or "",
             "mercados": mercados_saida,
+            "bookmaker_disponivel": True,
             "fonte": self.nome_fonte,
         }
 
@@ -324,13 +338,13 @@ class OddsBetano:
     @staticmethod
     def formatar_eventos(eventos, limite=20):
         if not eventos:
-            return "Sem eventos Betano disponíveis para hoje ou fonte não configurada."
-        linhas = ["💶 EVENTOS BETANO — HOJE", ""]
+            return "Sem eventos disponíveis para hoje ou fonte não configurada."
+        linhas = ["💶 EVENTOS DA FONTE DE ODDS — HOJE", ""]
         for e in eventos[:limite]:
             linhas.append(f"• ID {e['id']} — {e['casa']} vs {e['fora']} — {e['liga']}")
         if len(eventos) > limite:
             linhas.append(f"… e mais {len(eventos)-limite} eventos.")
-        linhas.extend(["", "Usa /odds ID para consultar as odds desse evento."])
+        linhas.extend(["", "Usa /odds ID para consultar as odds Betano desse evento."])
         return "\n".join(linhas)
 
     @staticmethod
@@ -350,6 +364,9 @@ class OddsBetano:
             f"🏆 {dados.get('liga') or 'Competição'}",
             "",
         ]
+        if dados.get("bookmaker_disponivel") is False:
+            linhas.append("Betano sem odds disponíveis neste momento para este evento.")
+            return "\n".join(linhas)
         for mercado in dados.get("mercados", []):
             nome = str(mercado.get("name") or "Mercado")
             atualizado = str(mercado.get("updatedAt") or "")
