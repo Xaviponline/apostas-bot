@@ -75,14 +75,48 @@ class AuditoriaOdds:
     def _mercado_compativel(cls, mercado_modelo, mercado):
         if not cls._periodo_compativel(mercado):
             return False
+        if bool(mercado.get("playerProp", False)):
+            return False
+
         nome = cls._normalizar(mercado.get("name"))
+        if not nome:
+            return False
+
+        # Evita mercados estruturalmente parecidos mas que não representam o
+        # resultado/golos totais do jogo: cantos, cartões, equipa, jogador, etc.
         if mercado_modelo in {"Vitória Casa", "Vitória Fora"}:
+            proibidos = ("corner", "handicap", "first half", "second half")
+            if any(x in nome for x in proibidos):
+                return False
             return any(x in nome for x in ("full time result", "match result", "1x2"))
+
         if mercado_modelo == "Ambas Marcam":
+            proibidos = ("corner", "first half", "second half", "team 1", "team 2")
+            if any(x in nome for x in proibidos):
+                return False
             return any(x in nome for x in ("both teams to score", "both teams score", "btts"))
+
         if mercado_modelo.startswith(("Over ", "Under ")):
-            return any(x in nome for x in ("total goals", "goals over under", "over under", "match goals"))
+            proibidos = (
+                "corner", "team 1", "team 2", "first half", "second half",
+                "player", "card", "booking", "shot", "offside",
+            )
+            if any(x in nome for x in proibidos):
+                return False
+            return any(
+                x in nome
+                for x in (
+                    "over under full time",
+                    "total goals",
+                    "goals over under",
+                    "match goals",
+                )
+            )
+
         if mercado_modelo in {"1X (Casa ou Empate)", "X2 (Empate ou Fora)"}:
+            proibidos = ("corner", "first half", "second half")
+            if any(x in nome for x in proibidos):
+                return False
             return "double chance" in nome
         return False
 
