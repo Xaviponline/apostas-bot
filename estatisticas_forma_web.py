@@ -2,8 +2,8 @@
 
 Para resultados já concluídos, a rota site.api com parâmetros de resultados é
 mais fiável do que a rota web usada sobretudo para fixtures. Esta camada altera
-apenas a recolha da forma recente usada em taças/UEFA; a base da competição, o
-modelo V1 e os filtros permanecem iguais.
+a recolha da forma recente usada em taças/UEFA e trata explicitamente provas em
+campo neutro quando a designação casa/fora do feed não representa vantagem real.
 """
 from datetime import datetime
 from time import monotonic
@@ -16,6 +16,7 @@ from estatisticas_hibridas_competicoes import EstatisticasHibridasCompeticoes
 
 class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
     ESPN_WEB_BASE = "https://site.web.api.espn.com/apis/site/v2/sports/soccer"
+    COMPETICOES_NEUTRAS = {"arg.copa"}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -206,3 +207,84 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
         with self._lock:
             self._cache_forma_global[chave] = (monotonic(), resultados)
         return resultados
+
+    def _analisar_multicompeticao_neutra(self, jogo, partidas):
+        """Modelo sem vantagem casa/fora para provas em estádio neutro.
+
+        A etiqueta home/away do feed serve apenas para identificar a primeira e
+        segunda equipa. A forma usa os últimos jogos oficiais gerais de cada
+        equipa e a base de golos da prova é tornada simétrica.
+        """
+        codigo = self.resolver_liga(jogo)
+        casa_id, fora_id = jogo.get("casa_id"), jogo.get("fora_id")
+        if not codigo or not isinstance(casa_id, int) or not isinstance(fora_id, int):
+            return None
+        if len(partidas) < 10:
+            return None
+
+        partidas_casa = self._formas_globais.get(casa_id) or []
+        partidas_fora = self._formas_globais.get(fora_id) or []
+        casa_all = self._ultimos_time(partidas_casa, casa_id, limite=8)
+        fora_all = self._ultimos_time(partidas_fora, fora_id, limite=8)
+        if len(casa_all) < 4 or len(fora_all) < 4:
+            return None
+
+        liga_home = self._media([p["golos_casa"] for p in partidas])
+        liga_away = self._media([p["golos_fora"] for p in partidas])
+        baseline_neutro = (liga_home + liga_away) / 2.0
+        if baseline_neutro < 0.25:
+            return None
+
+        casa_gf = self._shrink(
+            sum(x["gf"] for x in casa_all), len(casa_all), baseline_neutro
+        )
+        casa_ga = self._shrink(
+            sum(x["ga"] for x in casa_all), len(casa_all), baseline_neutro
+        )
+        fora_gf = self._shrink(
+            sum(x["gf"] for x in fora_all), len(fora_all), baseline_neutro
+        )
+        fora_ga = self._shrink(
+            sum(x["ga"] for x in fora_all), len(fora_all), baseline_neutro
+        )
+
+        lambda_casa = casa_gf * fora_ga / baseline_neutro
+        lambda_fora = fora_gf * casa_ga / baseline_neutro
+        lambda_casa = min(3.8, max(0.20, lambda_casa))
+        lambda_fora = min(3.8, max(0.20, lambda_fora))
+        probs = self._probabilidades(lambda_casa, lambda_fora)
+        if not probs:
+            return None
+
+        qualidade_amostra = min(1.0, min(len(casa_all), len(fora_all)) / 8.0)
+        qualidade_liga = min(1.0, len(partidas) / 35.0)
+        qualidade = round(100 * (0.75 * qualidade_amostra + 0.25 * qualidade_liga))
+
+        return {
+            "jogo": jogo,
+            "liga_codigo": codigo,
+            "lambda_casa": lambda_casa,
+            "lambda_fora": lambda_fora,
+            "probabilidades": probs,
+            "qualidade": qualidade,
+            "amostra_casa": len(casa_all),
+            "amostra_fora": len(fora_all),
+            "amostra_liga": len(partidas),
+            "ppg_casa": self._ppg(casa_all[:6]),
+            "ppg_fora": self._ppg(fora_all[:6]),
+            "forma_fonte": "multicompeticao",
+            "contexto_partida": "neutro",
+            "baseline_neutro": baseline_neutro,
+            "liga_home_original": liga_home,
+            "liga_away_original": liga_away,
+            "gf_casa_ajustado": casa_gf,
+            "ga_casa_ajustado": casa_ga,
+            "gf_fora_ajustado": fora_gf,
+            "ga_fora_ajustado": fora_ga,
+        }
+
+    def analisar_jogo(self, jogo, partidas):
+        codigo = self.resolver_liga(jogo)
+        if codigo in self.COMPETICOES_NEUTRAS:
+            return self._analisar_multicompeticao_neutra(jogo, partidas)
+        return super().analisar_jogo(jogo, partidas)
