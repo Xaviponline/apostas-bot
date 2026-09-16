@@ -84,6 +84,33 @@ class OddsAuditoriaTests(unittest.TestCase):
         self.assertEqual(AuditoriaOdds._normalizar("AC Milan"), "milan")
         self.assertNotEqual(AuditoriaOdds._normalizar("Inter Milan"), "milan")
 
+    def test_fallback_controlado_para_extensoes_de_nome(self):
+        eventos = [
+            {"id": "a", "casa": "AIK Solna", "fora": "Mjällby AIF"},
+            {"id": "b", "casa": "Deportivo La Coruna", "fora": "Sevilla"},
+            {"id": "c", "casa": "Levante UD", "fora": "Athletic Bilbao"},
+        ]
+        self.assertEqual(
+            AuditoriaOdds._candidatos_evento(eventos, "AIK", "Mjällby AIF")[0]["id"],
+            "a",
+        )
+        self.assertEqual(
+            AuditoriaOdds._candidatos_evento(eventos, "Deportivo", "Sevilla")[0]["id"],
+            "b",
+        )
+        self.assertEqual(
+            AuditoriaOdds._candidatos_evento(eventos, "Levante", "Athletic Club")[0]["id"],
+            "c",
+        )
+
+    def test_fallback_ambiguo_continua_bloqueado(self):
+        eventos = [
+            {"id": "a", "casa": "Deportivo La Coruna", "fora": "Sevilla"},
+            {"id": "b", "casa": "Deportivo B", "fora": "Sevilla"},
+        ]
+        candidatos = AuditoriaOdds._candidatos_evento(eventos, "Deportivo", "Sevilla")
+        self.assertEqual(len(candidatos), 2)
+
     def test_sem_fonte_nao_inventa_odds(self):
         selecoes = [
             {
