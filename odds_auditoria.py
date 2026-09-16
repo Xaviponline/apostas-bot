@@ -81,7 +81,7 @@ class AuditoriaOdds:
         m = re.match(r"^(Over|Under) ([0-9]+(?:\.[0-9]+)?) Golos$", mercado_modelo)
         if m:
             lado = m.group(1).casefold()
-            linha = m.group(2)
+            linha = cls._normalizar(m.group(2))
             return lado in texto and linha in texto
         return False
 
