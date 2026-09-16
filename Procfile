@@ -1,1 +1,1 @@
-worker: python main_enriquecido.py
+worker: python main_competicoes.py
