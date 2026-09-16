@@ -23,26 +23,52 @@ from nomes_ligas import nome_liga_pt
 class BuscadorJogosEnriquecido(BuscadorJogosReais):
     """Preserva todos os jogos globais e enriquece os que têm código conhecido."""
 
+    EXTRA_ESPN_LEAGUES = (
+        "eng.fa",
+        "eng.league_cup",
+        "esp.copa_del_rey",
+        "ger.dfb_pokal",
+        "ita.coppa_italia",
+        "fra.coupe_de_france",
+        "por.taca.portugal",
+        "ned.cup",
+        "sco.tennents",
+        "sco.cis",
+        "bra.copa_do_brazil",
+        "arg.copa",
+    )
+    ESPN_LEAGUES = BuscadorJogosReais.ESPN_LEAGUES + EXTRA_ESPN_LEAGUES
+
     ESPN_CODIGO_NOME = {
         "eng.1": "English Premier League",
         "eng.2": "English League Championship",
         "eng.3": "English League One",
         "eng.4": "English League Two",
+        "eng.fa": "English FA Cup",
+        "eng.league_cup": "English Carabao Cup",
         "esp.1": "Spanish LaLiga",
         "esp.2": "Spanish LaLiga 2",
+        "esp.copa_del_rey": "Spanish Copa del Rey",
         "ita.1": "Italian Serie A",
         "ita.2": "Italian Serie B",
+        "ita.coppa_italia": "Italian Coppa Italia",
         "ger.1": "German Bundesliga",
         "ger.2": "German 2. Bundesliga",
+        "ger.dfb_pokal": "German DFB-Pokal",
         "fra.1": "French Ligue 1",
         "fra.2": "French Ligue 2",
+        "fra.coupe_de_france": "French Coupe de France",
         "por.1": "Portuguese Primeira Liga",
+        "por.taca.portugal": "Portuguese Taca de Portugal",
         "ned.1": "Eredivisie",
         "ned.2": "Keuken Kampioen Divisie",
+        "ned.cup": "Dutch KNVB Beker",
         "bel.1": "Belgian Pro League",
         "tur.1": "Turkish Super Lig",
         "sco.1": "Scottish Premiership",
         "sco.2": "Scottish Championship",
+        "sco.tennents": "Scottish Cup",
+        "sco.cis": "Scottish League Cup",
         "aut.1": "Austrian Bundesliga",
         "den.1": "Danish Superliga",
         "gre.1": "Greek Super League",
@@ -57,7 +83,9 @@ class BuscadorJogosEnriquecido(BuscadorJogosReais):
         "usa.1": "Major League Soccer",
         "bra.1": "Brasileiro Serie A",
         "bra.2": "Brasileiro Serie B",
+        "bra.copa_do_brazil": "Brazilian Copa do Brasil",
         "arg.1": "Argentine Liga Profesional",
+        "arg.copa": "Argentine Copa Argentina",
     }
 
     def _normalizar_evento_com_codigo(self, evento, codigo):
@@ -119,13 +147,85 @@ class BuscadorJogosEnriquecido(BuscadorJogosReais):
 
 
 class EstatisticasESPNEnriquecidas(EstatisticasESPNResiliente):
+    EXTRA_CODIGOS = set(BuscadorJogosEnriquecido.EXTRA_ESPN_LEAGUES)
+    EXTRA_NOMES = {
+        "english fa cup": "eng.fa",
+        "english carabao cup": "eng.league_cup",
+        "english league cup": "eng.league_cup",
+        "spanish copa del rey": "esp.copa_del_rey",
+        "german dfb-pokal": "ger.dfb_pokal",
+        "german cup": "ger.dfb_pokal",
+        "italian coppa italia": "ita.coppa_italia",
+        "french coupe de france": "fra.coupe_de_france",
+        "portuguese taca de portugal": "por.taca.portugal",
+        "dutch knvb beker": "ned.cup",
+        "scottish cup": "sco.tennents",
+        "scottish league cup": "sco.cis",
+        "brazilian copa do brasil": "bra.copa_do_brazil",
+        "argentine copa argentina": "arg.copa",
+    }
+    EXTRA_SLUGS = (
+        ("english-fa-cup", "eng.fa"),
+        ("english-carabao-cup", "eng.league_cup"),
+        ("english-league-cup", "eng.league_cup"),
+        ("spanish-copa-del-rey", "esp.copa_del_rey"),
+        ("german-dfb-pokal", "ger.dfb_pokal"),
+        ("italian-coppa-italia", "ita.coppa_italia"),
+        ("french-coupe-de-france", "fra.coupe_de_france"),
+        ("portuguese-taca-de-portugal", "por.taca.portugal"),
+        ("dutch-knvb-beker", "ned.cup"),
+        ("scottish-league-cup", "sco.cis"),
+        ("scottish-cup", "sco.tennents"),
+        ("brazilian-copa-do-brasil", "bra.copa_do_brazil"),
+        ("copa-argentina", "arg.copa"),
+    )
+
     @staticmethod
     def resolver_liga(jogo):
-        codigo = str((jogo or {}).get("league_code") or "").strip()
-        suportados = set(EstatisticasESPN.LIGAS.values())
+        jogo = jogo or {}
+        codigo = str(jogo.get("league_code") or "").strip()
+        suportados = set(EstatisticasESPN.LIGAS.values()) | EstatisticasESPNEnriquecidas.EXTRA_CODIGOS
         if codigo in suportados:
             return codigo
+
+        slug = str(jogo.get("season_slug") or "").lower().strip()
+        for trecho, codigo_extra in EstatisticasESPNEnriquecidas.EXTRA_SLUGS:
+            if trecho in slug:
+                return codigo_extra
+
+        nome = " ".join(str(jogo.get("liga") or "").lower().split())
+        extra = EstatisticasESPNEnriquecidas.EXTRA_NOMES.get(nome)
+        if extra:
+            return extra
         return EstatisticasESPN.resolver_liga(jogo)
+
+
+class AnalisadorInteligenteEnriquecido(AnalisadorInteligente):
+    EXTRA_BANDEIRAS = {
+        "english fa cup": "🇬🇧",
+        "english carabao cup": "🇬🇧",
+        "english league cup": "🇬🇧",
+        "spanish copa del rey": "🇪🇸",
+        "german dfb-pokal": "🇩🇪",
+        "german cup": "🇩🇪",
+        "italian coppa italia": "🇮🇹",
+        "french coupe de france": "🇫🇷",
+        "portuguese taca de portugal": "🇵🇹",
+        "dutch knvb beker": "🇳🇱",
+        "scottish cup": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+        "scottish league cup": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+        "brazilian copa do brasil": "🇧🇷",
+        "argentine copa argentina": "🇦🇷",
+    }
+
+    @classmethod
+    def _bandeira_liga(cls, liga):
+        # Correspondência exata para não confundir, por exemplo,
+        # Russian Premier League com a Premier League inglesa.
+        nome = " ".join(str(liga or "").lower().split())
+        if nome in cls.EXTRA_BANDEIRAS:
+            return cls.EXTRA_BANDEIRAS[nome]
+        return cls.BANDEIRAS.get(nome, "🌍")
 
 
 class BotPremiumDiarioDiagnostico(BotPremiumDiario):
@@ -295,7 +395,7 @@ def main():
     try:
         buscador = BuscadorJogosEnriquecido()
         estatisticas = EstatisticasESPNEnriquecidas()
-        analisador = AnalisadorInteligente(
+        analisador = AnalisadorInteligenteEnriquecido(
             buscador_jogos=buscador,
             estatisticas=estatisticas,
         )
