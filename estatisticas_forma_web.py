@@ -33,6 +33,43 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
                     return numero
         return None
 
+    @staticmethod
+    def _status_forma(evento):
+        """Lê o estado final nos dois formatos usados pelos calendários ESPN."""
+        if not isinstance(evento, dict):
+            return {}
+
+        candidatos = []
+        status_evento = evento.get("status") or {}
+        if isinstance(status_evento, dict):
+            candidatos.append(status_evento.get("type") or status_evento)
+
+        competicoes = evento.get("competitions") or []
+        if competicoes and isinstance(competicoes[0], dict):
+            status_comp = competicoes[0].get("status") or {}
+            if isinstance(status_comp, dict):
+                candidatos.append(status_comp.get("type") or status_comp)
+
+        for status in candidatos:
+            if not isinstance(status, dict):
+                continue
+            estado = str(status.get("state") or "").lower().strip()
+            if estado or status.get("completed") is not None or status.get("name"):
+                return status
+        return {}
+
+    @classmethod
+    def _concluido_forma(cls, evento):
+        status = cls._status_forma(evento)
+        estado = str(status.get("state") or "").lower().strip()
+        if estado == "post" or status.get("completed") is True:
+            return True
+        nome = " ".join(
+            str(status.get(k) or "")
+            for k in ("name", "description", "detail", "shortDetail")
+        ).lower()
+        return "status_final" in nome or nome.strip() in {"final", "ft", "full time"}
+
     @classmethod
     def _normalizar_resultado_forma(cls, evento):
         # Primeiro tenta o formato já suportado pelo V1.
@@ -40,14 +77,12 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
         if item is not None:
             return item
 
-        # Alguns calendários de equipa devolvem o score como objeto em vez de
-        # string/número. Aceita apenas jogos concluídos e preserva IDs ESPN.
+        # Alguns calendários de equipa colocam o status em competitions[0]
+        # e/ou devolvem o score como objeto em vez de string/número.
         try:
-            if not isinstance(evento, dict):
+            if not isinstance(evento, dict) or not cls._concluido_forma(evento):
                 return None
-            status = ((evento.get("status") or {}).get("type") or {})
-            if str(status.get("state") or "").lower() != "post" and not status.get("completed"):
-                return None
+            status = cls._status_forma(evento)
             detalhe = " ".join(
                 str(status.get(k) or "")
                 for k in ("name", "description", "detail", "shortDetail")
@@ -106,12 +141,8 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
         rota_site = f"{self.BASE}/all/teams/{team_id}/schedule"
         rota_web = f"{self.ESPN_WEB_BASE}/all/teams/{team_id}/schedule"
         pedidos = [
-            # Rota dedicada a jogos já concluídos em todas as competições.
             (rota_site, {"seasontype": 1, "type": 0, "level": 3}, "site_resultados"),
-            # Compatibilidade: em várias equipas o endpoint sem parâmetros
-            # também devolve diretamente os resultados anteriores.
             (rota_site, None, "site_sem_parametros"),
-            # A rota web continua como fallback de compatibilidade.
             (rota_web, None, "web_sem_parametros"),
             (rota_web, {"fixture": "false"}, "web_fixture_false"),
         ]
@@ -141,8 +172,7 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
                 if not self._evento_oficial(evento):
                     continue
                 oficiais += 1
-                status = ((evento.get("status") or {}).get("type") or {}) if isinstance(evento, dict) else {}
-                if str(status.get("state") or "").lower() == "post" or status.get("completed"):
+                if self._concluido_forma(evento):
                     concluidos += 1
                 item = self._normalizar_resultado_forma(evento)
                 if item is None:
