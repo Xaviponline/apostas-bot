@@ -1,0 +1,56 @@
+import unittest
+
+import requests
+
+from odds_auditoria import AuditoriaOdds
+from odds_betano import OddsBetano
+
+
+class Session429:
+    def get(self, url, params=None, **kwargs):
+        response = requests.Response()
+        response.status_code = 429
+        response.url = url
+        raise requests.HTTPError("rate limit", response=response)
+
+
+class FonteComFalha:
+    configurada = True
+    nome_fonte = "Fonte teste"
+
+    def eventos_hoje(self):
+        return [{"id": "evt-1", "casa": "Casa", "fora": "Fora"}]
+
+    def odds_evento(self, event_id):
+        self._erro = {str(event_id): "odds_http_429"}
+        return None
+
+    def diagnostico_evento(self, event_id):
+        return self._erro.get(str(event_id), "")
+
+
+class OddsDiagnosticoFonteTests(unittest.TestCase):
+    def test_odds_betano_guarda_http_sem_expor_payload(self):
+        fonte = OddsBetano(
+            papi_key="teste",
+            provider="oddspapi",
+            session=Session429(),
+        )
+        self.assertIsNone(fonte.odds_evento("abc"))
+        self.assertEqual(fonte.diagnostico_evento("abc"), "odds_http_429")
+
+    def test_auditoria_propaga_diagnostico_da_fonte(self):
+        selecoes = [
+            {
+                "jogo": {"id": 1, "casa": "Casa", "fora": "Fora"},
+                "mercado": "Vitória Casa",
+                "probabilidade": 0.60,
+            }
+        ]
+        saida = AuditoriaOdds(FonteComFalha()).enriquecer(selecoes)
+        self.assertEqual(saida[0]["_odds_diag"], "odds_http_429")
+        self.assertNotIn("odd_real", saida[0])
+
+
+if __name__ == "__main__":
+    unittest.main()
