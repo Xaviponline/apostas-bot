@@ -111,6 +111,30 @@ class OddsAuditoriaTests(unittest.TestCase):
         candidatos = AuditoriaOdds._candidatos_evento(eventos, "Deportivo", "Sevilla")
         self.assertEqual(len(candidatos), 2)
 
+    def test_diagnostica_evento_nao_encontrado(self):
+        selecoes = [
+            {
+                "jogo": {"id": 9, "casa": "Equipa X", "fora": "Equipa Y"},
+                "mercado": "Over 2.5 Golos",
+                "probabilidade": 0.60,
+            }
+        ]
+        saida = AuditoriaOdds(FonteFake()).enriquecer(selecoes)
+        self.assertEqual(saida[0]["_odds_diag"], "evento_nao_encontrado")
+        self.assertNotIn("odd_real", saida[0])
+
+    def test_diagnostica_linha_ou_selecao_nao_disponivel(self):
+        selecoes = [
+            {
+                "jogo": {"id": 1, "casa": "AIK", "fora": "Mjällby AIF"},
+                "mercado": "Over 3.5 Golos",
+                "probabilidade": 0.60,
+            }
+        ]
+        saida = AuditoriaOdds(FonteFake()).enriquecer(selecoes)
+        self.assertEqual(saida[0]["_odds_diag"], "linha_ou_selecao_nao_disponivel")
+        self.assertNotIn("odd_real", saida[0])
+
     def test_sem_fonte_nao_inventa_odds(self):
         selecoes = [
             {
@@ -140,6 +164,7 @@ class OddsAuditoriaTests(unittest.TestCase):
         ]
         saida = AuditoriaOdds(FonteAmbigua()).enriquecer(selecoes)
         self.assertNotIn("odd_real", saida[0])
+        self.assertEqual(saida[0]["_odds_diag"], "evento_ambiguo")
 
 
 if __name__ == "__main__":
