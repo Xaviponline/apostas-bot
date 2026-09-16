@@ -28,6 +28,7 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "eng.league_cup": {"efl cup", "carabao cup", "english league cup", "league cup"},
         "uefa.europa": {"uefa europa league", "europa league"},
     }
+    SOFA_WWW_BASE = "https://www.sofascore.com/api/v1"
     MAX_PAGINAS_SOFA = 8
 
     def __init__(self, *args, sofa_client=None, **kwargs):
@@ -41,17 +42,75 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         texto = re.sub(r"[^a-z0-9]+", " ", texto.lower()).strip()
         return re.sub(r"\s+", " ", texto)
 
+    @staticmethod
+    def _motivo_seguro_sofa(exc):
+        texto = re.sub(r"\s+", " ", str(exc or "")).strip()
+        if not texto:
+            return "falha sem detalhe"
+        return texto[:140]
+
     def _sofa(self):
         if self._sofa_client is None:
             self._sofa_client = BuscadorJogosReais(enabled=True)
         return self._sofa_client
+
+    def _sofa_get_www(self, cliente, caminho, status_api=None):
+        sessao = getattr(cliente, "sofa_session", None)
+        if sessao is None:
+            detalhe = f"API HTTP {status_api}" if status_api is not None else "API indisponível"
+            raise ValueError(f"{detalhe}; sem sessão WWW")
+
+        url = f"{self.SOFA_WWW_BASE}{caminho}"
+        status_www = None
+        try:
+            browser_mode = bool(getattr(cliente, "browser_mode", False))
+            headers_fn = getattr(cliente, "_headers_sofa", None)
+            headers = headers_fn() if callable(headers_fn) else {
+                "Accept": "application/json, text/plain, */*",
+                "Referer": "https://www.sofascore.com/",
+            }
+            if browser_mode:
+                aquecer = getattr(cliente, "_aquecer_sofa", None)
+                if callable(aquecer):
+                    aquecer()
+                resposta = sessao.get(
+                    url,
+                    impersonate="chrome",
+                    headers=headers,
+                    timeout=20,
+                )
+            else:
+                resposta = sessao.get(
+                    url,
+                    headers={
+                        **headers,
+                        "User-Agent": "Mozilla/5.0 Chrome/146.0 Safari/537.36",
+                    },
+                    timeout=20,
+                )
+            status_www = getattr(resposta, "status_code", None)
+            cliente.sofa_http_status = status_www
+            cliente.ultimo_http_status = status_www
+            resposta.raise_for_status()
+            dados = resposta.json()
+            if not isinstance(dados, dict):
+                raise ValueError("resposta WWW não JSON")
+            return dados
+        except Exception:
+            parte_api = f"API HTTP {status_api}" if status_api is not None else "API falhou"
+            parte_www = f"WWW HTTP {status_www}" if status_www is not None else "WWW falhou"
+            raise ValueError(f"{parte_api}; {parte_www}") from None
 
     def _sofa_get(self, caminho):
         cliente = self._sofa()
         metodo = getattr(cliente, "_get_sofa", None)
         if not callable(metodo):
             raise ValueError("Cliente SofaScore inválido.")
-        return metodo(caminho)
+        try:
+            return metodo(caminho)
+        except Exception:
+            status_api = getattr(cliente, "sofa_http_status", None)
+            return self._sofa_get_www(cliente, caminho, status_api=status_api)
 
     @staticmethod
     def _data_ref(data_ref=None):
@@ -70,12 +129,12 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
                 eventos = dados.get("events") if isinstance(dados, dict) else None
                 if isinstance(eventos, list):
                     return eventos
-                ultimo_erro = ValueError("Lista SofaScore ausente.")
+                ultimo_erro = ValueError("lista diária ausente")
             except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
                 ultimo_erro = exc
         if ultimo_erro is not None:
-            raise ultimo_erro
-        raise ValueError("SofaScore indisponível.")
+            raise ValueError(f"agenda: {self._motivo_seguro_sofa(ultimo_erro)}") from None
+        raise ValueError("agenda: SofaScore indisponível")
 
     def _descobrir_competicao_sofa(self, liga_codigo, data_ref=None):
         aliases = {
@@ -83,7 +142,7 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
             for nome in self.SOFA_ALIASES.get(liga_codigo, set())
         }
         if not aliases:
-            raise ValueError("Competição SofaScore não mapeada.")
+            raise ValueError("competição não mapeada")
 
         agora = self._data_ref(data_ref)
         eventos = self._eventos_sofa_do_dia(agora.date().isoformat())
@@ -107,8 +166,10 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
                 continue
             pares.add((unique_id, season_id))
 
+        if not pares:
+            raise ValueError("competição não identificada na agenda")
         if len(pares) != 1:
-            raise ValueError("Competição SofaScore ambígua ou ausente.")
+            raise ValueError("competição ambígua na agenda")
         return next(iter(pares))
 
     @staticmethod
@@ -182,12 +243,17 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         por_id = {}
         paginas = 0
         for pagina in range(self.MAX_PAGINAS_SOFA):
-            dados = self._sofa_get(
-                f"/unique-tournament/{unique_id}/season/{season_id}/events/last/{pagina}"
-            )
+            try:
+                dados = self._sofa_get(
+                    f"/unique-tournament/{unique_id}/season/{season_id}/events/last/{pagina}"
+                )
+            except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
+                raise ValueError(
+                    f"histórico página {pagina}: {self._motivo_seguro_sofa(exc)}"
+                ) from None
             eventos = dados.get("events") if isinstance(dados, dict) else None
             if not isinstance(eventos, list):
-                raise ValueError("Histórico SofaScore inválido.")
+                raise ValueError(f"histórico página {pagina}: lista ausente")
             paginas += 1
             for evento in eventos:
                 item = self._normalizar_resultado_sofa(
@@ -210,7 +276,7 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
             "paginas": paginas,
         }
         if len(resultados) < self.MIN_JOGOS_BASE:
-            raise ValueError("Base SofaScore insuficiente.")
+            raise ValueError(f"base insuficiente: {len(resultados)}/{self.MIN_JOGOS_BASE}")
 
         with self._lock:
             self._cache[chave] = (monotonic(), resultados)
@@ -220,10 +286,11 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         if liga_codigo in self.ESPN_HISTORICO_BLOQUEADO:
             try:
                 return self._fetch_base_sofa(liga_codigo, data_ref)
-            except (requests.RequestException, ValueError, TypeError, RuntimeError):
+            except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
                 self.diagnostico_base[liga_codigo] = {
                     "fonte": "sofascore_indisponivel",
                     "jogos": 0,
+                    "motivo": self._motivo_seguro_sofa(exc),
                 }
                 raise
 
