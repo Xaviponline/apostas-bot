@@ -11,6 +11,8 @@ import unicodedata
 from time import monotonic
 from zoneinfo import ZoneInfo
 
+import requests
+
 from buscador_jogos_reais import BuscadorJogosReais
 from estatisticas_espn_competicoes import EstatisticasESPNCompeticoes
 
@@ -41,8 +43,6 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
 
     def _sofa(self):
         if self._sofa_client is None:
-            # enabled=True permite usar a mesma sessão browser/curl_cffi já
-            # existente no projeto mesmo que o fallback diário esteja desligado.
             self._sofa_client = BuscadorJogosReais(enabled=True)
         return self._sofa_client
 
@@ -71,7 +71,7 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
                 if isinstance(eventos, list):
                     return eventos
                 ultimo_erro = ValueError("Lista SofaScore ausente.")
-            except (ValueError, TypeError, RuntimeError) as exc:
+            except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
                 ultimo_erro = exc
         if ultimo_erro is not None:
             raise ultimo_erro
@@ -107,8 +107,6 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
                 continue
             pares.add((unique_id, season_id))
 
-        # Correspondência conservadora: nunca escolher entre duas épocas/provas
-        # possíveis sem uma identificação inequívoca.
         if len(pares) != 1:
             raise ValueError("Competição SofaScore ambígua ou ausente.")
         return next(iter(pares))
@@ -121,7 +119,6 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         if isinstance(valor, (int, float)):
             return int(valor)
 
-        # Só usar current se não existirem sinais de prolongamento/penáltis.
         chaves_extra = {
             "extra1", "extra2", "overtime", "penalties", "period3", "period4"
         }
@@ -220,12 +217,10 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         return resultados
 
     def _fetch_liga(self, liga_codigo, data_ref=None):
-        # Para estes códigos já foi confirmado em produção que a ESPN devolve
-        # 400/403 em todos os blocos. Evita pedidos inúteis e usa o fallback.
         if liga_codigo in self.ESPN_HISTORICO_BLOQUEADO:
             try:
                 return self._fetch_base_sofa(liga_codigo, data_ref)
-            except (ValueError, TypeError, RuntimeError):
+            except (requests.RequestException, ValueError, TypeError, RuntimeError):
                 self.diagnostico_base[liga_codigo] = {
                     "fonte": "sofascore_indisponivel",
                     "jogos": 0,
@@ -234,7 +229,7 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
 
         try:
             historico = super()._fetch_liga(liga_codigo, data_ref)
-        except (ValueError, TypeError, RuntimeError):
+        except (requests.RequestException, ValueError, TypeError, RuntimeError):
             if liga_codigo not in self.FORMA_MULTICOMPETICAO:
                 raise
             return self._fetch_base_sofa(liga_codigo, data_ref)
