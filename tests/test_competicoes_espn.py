@@ -9,6 +9,7 @@ class CompeticoesESPNTests(unittest.TestCase):
         evento = {
             "id": "123456",
             "date": "2026-09-16T20:00:00Z",
+            "league": {"name": "League Phase"},
             "season": {
                 "name": "League Phase",
                 "slug": "2026-27-uefa-europa-league",
@@ -16,6 +17,7 @@ class CompeticoesESPNTests(unittest.TestCase):
             "status": {"type": {"state": "pre"}},
             "competitions": [
                 {
+                    "league": {"name": "League Phase"},
                     "competitors": [
                         {
                             "homeAway": "home",
@@ -25,7 +27,7 @@ class CompeticoesESPNTests(unittest.TestCase):
                             "homeAway": "away",
                             "team": {"id": "2", "displayName": "Fora"},
                         },
-                    ]
+                    ],
                 }
             ],
         }
