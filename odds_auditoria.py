@@ -5,6 +5,7 @@ exatos. Só usa um fallback controlado quando existe um único evento compatíve
 os nomes são extensões inequívocas ou equivalências conhecidas entre fornecedores.
 Se não houver correspondência segura, não guarda qualquer odd.
 """
+import logging
 import re
 import unicodedata
 from copy import deepcopy
@@ -199,17 +200,21 @@ class AuditoriaOdds:
         )
 
     @classmethod
-    def _extrair_odd(cls, dados, mercado_modelo):
+    def _extrair_odd_diagnostico(cls, dados, mercado_modelo):
         if not isinstance(dados, dict):
-            return None
+            return None, "odds_evento_indisponiveis"
+
         casa = dados.get("casa") or ""
         fora = dados.get("fora") or ""
+        mercados_compativeis = []
         encontrados = []
+
         for mercado in dados.get("mercados") or []:
             if not isinstance(mercado, dict):
                 continue
             if not cls._mercado_compativel(mercado_modelo, mercado):
                 continue
+            mercados_compativeis.append(mercado)
             for odd in mercado.get("odds") or []:
                 if not isinstance(odd, dict):
                     continue
@@ -218,9 +223,19 @@ class AuditoriaOdds:
                     continue
                 if cls._item_compativel(mercado_modelo, mercado, odd, casa, fora):
                     encontrados.append((valor, cls._timestamp_odd(mercado, odd)))
-        if len(encontrados) != 1:
-            return None
-        return encontrados[0]
+
+        if not mercados_compativeis:
+            return None, "mercado_nao_disponivel"
+        if not encontrados:
+            return None, "linha_ou_selecao_nao_disponivel"
+        if len(encontrados) > 1:
+            return None, "mercado_ambiguo"
+        return encontrados[0], None
+
+    @classmethod
+    def _extrair_odd(cls, dados, mercado_modelo):
+        extraida, _ = cls._extrair_odd_diagnostico(dados, mercado_modelo)
+        return extraida
 
     @classmethod
     def _candidatos_evento(cls, eventos, casa, fora, indice_exato=None):
@@ -239,6 +254,18 @@ class AuditoriaOdds:
             ):
                 candidatos.append(evento)
         return candidatos
+
+    @staticmethod
+    def _registar_diagnostico(selecao, motivo):
+        selecao["_odds_diag"] = motivo
+        jogo = selecao.get("jogo") or {}
+        logging.info(
+            "ODDS_DIAG | %s vs %s | %s | %s",
+            jogo.get("casa") or "?",
+            jogo.get("fora") or "?",
+            selecao.get("mercado") or "?",
+            motivo,
+        )
 
     def enriquecer(self, selecoes):
         """Devolve cópias das seleções; nunca filtra nem reordena o V1."""
@@ -265,22 +292,33 @@ class AuditoriaOdds:
                 jogo.get("fora"),
                 indice_exato=indice,
             )
-            if len(candidatos) != 1:
+            if not candidatos:
+                self._registar_diagnostico(selecao, "evento_nao_encontrado")
                 continue
+            if len(candidatos) != 1:
+                self._registar_diagnostico(selecao, "evento_ambiguo")
+                continue
+
             evento = candidatos[0]
             event_id = evento.get("id")
             if event_id is None:
+                self._registar_diagnostico(selecao, "evento_sem_id")
                 continue
             if event_id not in cache_odds:
                 cache_odds[event_id] = self.fonte.odds_evento(event_id)
             dados = cache_odds[event_id]
-            extraida = self._extrair_odd(dados, str(selecao.get("mercado") or ""))
+            extraida, motivo = self._extrair_odd_diagnostico(
+                dados, str(selecao.get("mercado") or "")
+            )
             if extraida is None:
+                self._registar_diagnostico(selecao, motivo or "odd_nao_extraida")
                 continue
+
             odd_real, atualizada_em = extraida
             try:
                 prob = float(selecao["probabilidade"])
             except (KeyError, TypeError, ValueError):
+                self._registar_diagnostico(selecao, "probabilidade_invalida")
                 continue
             selecao["odd_real"] = round(odd_real, 4)
             selecao["ev_real"] = round((prob * odd_real) - 1.0, 6)
