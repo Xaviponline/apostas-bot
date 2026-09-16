@@ -16,6 +16,7 @@ class AnalisadorInteligente:
     MARGEM_VALUE_ALVO = 0.05
     QUALIDADE_MINIMA = 55
     ODD_MINIMA_PERFIL = 1.50
+    MAX_SELECOES = 15
 
     LIMITES = {
         "Vitória Casa": 0.56,
@@ -180,7 +181,7 @@ class AnalisadorInteligente:
                 selecoes.append(melhor)
 
         selecoes.sort(key=lambda x: (x["score"], x["qualidade"]), reverse=True)
-        self.ultimas_selecoes = selecoes[:8]
+        self.ultimas_selecoes = selecoes[: self.MAX_SELECOES]
         self.ultimo_resumo = {
             "jogos": len(jogos),
             "com_dados": com_dados,
