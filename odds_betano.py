@@ -366,16 +366,19 @@ class OddsBetano:
             linhas.append(f"• {nome}{sufixo}")
             for odd in (mercado.get("odds") or [])[:12]:
                 if isinstance(odd, dict):
-                    chaves = ["seleção", "odd", "jogador", "ref", "mainLine"]
-                    partes = []
-                    for chave in chaves:
-                        if chave not in odd:
-                            continue
-                        valor = odd[chave]
-                        if chave == "mainLine":
-                            valor = "sim" if valor else "não"
-                            chave = "principal"
-                        partes.append(f"{chave}={valor}")
+                    if any(k in odd for k in ("seleção", "odd", "jogador", "ref", "mainLine")):
+                        chaves = ["seleção", "odd", "jogador", "ref", "mainLine"]
+                        partes = []
+                        for chave in chaves:
+                            if chave not in odd:
+                                continue
+                            valor = odd[chave]
+                            if chave == "mainLine":
+                                valor = "sim" if valor else "não"
+                                chave = "principal"
+                            partes.append(f"{chave}={valor}")
+                    else:
+                        partes = [f"{k}={v}" for k, v in odd.items()]
                     linhas.append("  " + " | ".join(partes))
         linhas.extend(["", f"Fonte externa: {dados.get('fonte') or 'agregador de odds'}. Confirma sempre na Betano antes de apostar."])
         return "\n".join(linhas)
