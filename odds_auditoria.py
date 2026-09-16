@@ -1,8 +1,9 @@
 """Liga previsões V1 a odds reais sem alterar a seleção do modelo.
 
-A camada é deliberadamente conservadora: só associa um evento quando casa e fora
-coincidem de forma não ambígua e só aceita mercados que consegue reconhecer com
-segurança. Se não houver correspondência inequívoca, não guarda qualquer odd.
+A camada é deliberadamente conservadora: associa primeiro por nomes normalizados
+exatos. Só usa um fallback controlado quando existe um único evento compatível e
+os nomes são extensões inequívocas ou equivalências conhecidas entre fornecedores.
+Se não houver correspondência segura, não guarda qualquer odd.
 """
 import re
 import unicodedata
@@ -11,12 +12,17 @@ from copy import deepcopy
 
 class AuditoriaOdds:
     # Siglas institucionais comuns que variam entre fornecedores e não
-    # identificam, por si só, a equipa. Removê-las permite casar, por exemplo,
-    # "CA Osasuna" com "Osasuna" e "AC Milan" com "Milan" sem recorrer a
-    # fuzzy matching.
+    # identificam, por si só, a equipa.
     TOKENS_CLUBE = {
         "fc", "cf", "afc", "ac", "sc", "ca", "cd", "ud", "rcd",
-        "sl", "ss", "fk", "sk", "bk",
+        "sl", "ss", "fk", "sk", "bk", "aif",
+    }
+
+    # Equivalências muito específicas e controladas. Não é fuzzy matching.
+    # A chave e o valor são avaliados depois da normalização básica.
+    ALIASES_EQUIPA = {
+        "athletic club": "athletic bilbao",
+        "athletic bilbao": "athletic bilbao",
     }
 
     def __init__(self, fonte_odds):
@@ -32,8 +38,33 @@ class AuditoriaOdds:
         return " ".join(tokens).strip()
 
     @classmethod
+    def _canon_equipa(cls, texto):
+        nome = cls._normalizar(texto)
+        return cls.ALIASES_EQUIPA.get(nome, nome)
+
+    @classmethod
+    def _nome_equipa_compativel(cls, a, b):
+        """Compara nomes sem aceitar aproximações abertas.
+
+        Aceita igualdade canónica e relações de subconjunto de tokens, úteis
+        para diferenças como AIK/AIK Solna ou Deportivo/Deportivo La Coruna.
+        A decisão final continua a exigir um único evento casa+fora compatível.
+        """
+        a_n = cls._canon_equipa(a)
+        b_n = cls._canon_equipa(b)
+        if not a_n or not b_n:
+            return False
+        if a_n == b_n:
+            return True
+
+        ta, tb = set(a_n.split()), set(b_n.split())
+        if not ta or not tb:
+            return False
+        return ta.issubset(tb) or tb.issubset(ta)
+
+    @classmethod
     def _chave_jogo(cls, casa, fora):
-        return cls._normalizar(casa), cls._normalizar(fora)
+        return cls._canon_equipa(casa), cls._canon_equipa(fora)
 
     @staticmethod
     def _odd_numero(valor):
@@ -125,8 +156,8 @@ class AuditoriaOdds:
         texto = cls._texto_item(mercado, odd)
         selecao = cls._normalizar(odd.get("seleção"))
         ref = cls._normalizar(odd.get("ref"))
-        casa_n = cls._normalizar(casa)
-        fora_n = cls._normalizar(fora)
+        casa_n = cls._canon_equipa(casa)
+        fora_n = cls._canon_equipa(fora)
 
         if mercado_modelo == "Vitória Casa":
             return selecao in {"1", "home", casa_n} or ref in {"1", "home", casa_n}
@@ -191,6 +222,24 @@ class AuditoriaOdds:
             return None
         return encontrados[0]
 
+    @classmethod
+    def _candidatos_evento(cls, eventos, casa, fora, indice_exato=None):
+        chave = cls._chave_jogo(casa, fora)
+        if indice_exato is not None:
+            exatos = indice_exato.get(chave) or []
+            if exatos:
+                return exatos
+
+        candidatos = []
+        for evento in eventos or []:
+            if not isinstance(evento, dict):
+                continue
+            if cls._nome_equipa_compativel(casa, evento.get("casa")) and cls._nome_equipa_compativel(
+                fora, evento.get("fora")
+            ):
+                candidatos.append(evento)
+        return candidatos
+
     def enriquecer(self, selecoes):
         """Devolve cópias das seleções; nunca filtra nem reordena o V1."""
         saida = deepcopy(list(selecoes or []))
@@ -210,8 +259,12 @@ class AuditoriaOdds:
         cache_odds = {}
         for selecao in saida:
             jogo = selecao.get("jogo") or {}
-            chave = self._chave_jogo(jogo.get("casa"), jogo.get("fora"))
-            candidatos = indice.get(chave) or []
+            candidatos = self._candidatos_evento(
+                eventos,
+                jogo.get("casa"),
+                jogo.get("fora"),
+                indice_exato=indice,
+            )
             if len(candidatos) != 1:
                 continue
             evento = candidatos[0]
