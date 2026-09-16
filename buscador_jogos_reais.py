@@ -38,6 +38,29 @@ class BuscadorJogosReais:
         "bra.1",
         "arg.1",
     )
+    ESPN_SLUG_NOMES = (
+        ("english-premier-league", "English Premier League"),
+        ("spanish-laliga", "Spanish LaLiga"),
+        ("italian-serie-a", "Italian Serie A"),
+        ("german-bundesliga", "German Bundesliga"),
+        ("french-ligue-1", "French Ligue 1"),
+        ("french-ligue-2", "French Ligue 2"),
+        ("portuguese-primeira-liga", "Portuguese Primeira Liga"),
+        ("dutch-eredivisie", "Eredivisie"),
+        ("dutch-keuken-kampioen-divisie", "Keuken Kampioen Divisie"),
+        ("belgian-pro-league", "Belgian Pro League"),
+        ("turkish-super-lig", "Turkish Super Lig"),
+        ("swedish-allsvenskan", "Allsvenskan"),
+        ("norwegian-eliteserien", "Eliteserien"),
+        ("brazilian-serie-a", "Brasileiro Serie A"),
+        ("brazilian-serie-b", "Brasileiro Serie B"),
+        ("argentine-liga-profesional", "Argentine Liga Profesional"),
+        ("uefa-champions-league", "UEFA Champions League"),
+        ("uefa-europa-league", "UEFA Europa League"),
+        ("uefa-conference-league", "UEFA Conference League"),
+        ("uefa-nations-league", "UEFA Nations League"),
+        ("fifa-world-cup", "FIFA World Cup"),
+    )
     SOFA_BASE_URL = "https://api.sofascore.com/api/v1"
     SOFA_SITE_URL = "https://www.sofascore.com/"
 
@@ -92,21 +115,53 @@ class BuscadorJogosReais:
             return None
 
     @staticmethod
-    def _nome_liga_espn(evento, competicao):
-        candidatos = [
-            (evento.get("league") or {}).get("name") if isinstance(evento.get("league"), dict) else None,
-            (competicao.get("league") or {}).get("name") if isinstance(competicao.get("league"), dict) else None,
-            (evento.get("season") or {}).get("name") if isinstance(evento.get("season"), dict) else None,
+    def _season_slug_espn(evento):
+        season = evento.get("season") or {}
+        if not isinstance(season, dict):
+            return ""
+        slug = season.get("slug")
+        return str(slug or "").strip().lower()
+
+    @classmethod
+    def _nome_liga_por_slug(cls, slug):
+        slug = str(slug or "").strip().lower()
+        if not slug:
+            return None
+        for trecho, nome in cls.ESPN_SLUG_NOMES:
+            if trecho in slug:
+                return nome
+        return None
+
+    @classmethod
+    def _nome_liga_espn(cls, evento, competicao):
+        candidatos_liga = [
+            (evento.get("league") or {}).get("name")
+            if isinstance(evento.get("league"), dict)
+            else None,
+            (competicao.get("league") or {}).get("name")
+            if isinstance(competicao.get("league"), dict)
+            else None,
         ]
-        for valor in candidatos:
+        for valor in candidatos_liga:
             if isinstance(valor, str) and valor.strip():
                 return valor.strip()
 
+        # O season.name da rota global ESPN pode ser apenas a fase da prova
+        # ("League Phase", "Group Stage", etc.). O slug preserva normalmente
+        # a identidade da competição e é também usado pelo motor V1.
+        slug = cls._season_slug_espn(evento)
+        nome_slug = cls._nome_liga_por_slug(slug)
+        if nome_slug:
+            return nome_slug
+
         season = evento.get("season") or {}
-        slug = season.get("slug") if isinstance(season, dict) else None
-        if isinstance(slug, str) and slug.strip():
-            slug = re.sub(r"^\d{4}(?:-\d{2,4})?-", "", slug.strip())
-            nome = slug.replace("-", " ").strip().title()
+        nome_season = season.get("name") if isinstance(season, dict) else None
+        if isinstance(nome_season, str) and nome_season.strip():
+            return nome_season.strip()
+
+        if slug:
+            slug_limpo = re.sub(r"^\d{4}(?:-\d{2,4})?-", "", slug)
+            nome = slug_limpo.replace("-", " ").strip().title()
             return nome or "Competição"
         return "Competição"
 
@@ -151,6 +206,7 @@ class BuscadorJogosReais:
                 "casa_id": _id(casa_team),
                 "fora_id": _id(fora_team),
                 "liga": BuscadorJogosReais._nome_liga_espn(evento, competicao),
+                "season_slug": BuscadorJogosReais._season_slug_espn(evento),
                 "pais": "",
                 "horario": BuscadorJogosReais._hora_lisboa_timestamp(timestamp),
                 "timestamp": timestamp,
