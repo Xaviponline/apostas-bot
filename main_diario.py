@@ -193,6 +193,19 @@ class BotPremiumDiario(BotPremiumReal):
             TZ_PORTUGAL
         ).strftime("%H:%M")
 
+    @staticmethod
+    def _diagnostico_zero(total_jogos, total_futuros, resumo_novo, selecoes_novas):
+        """Explica um dia sem seleções sem alterar qualquer filtro do V1."""
+        com_dados = int((resumo_novo or {}).get("com_dados", 0) or 0)
+        selecionadas = len(selecoes_novas or [])
+        sem_selecao = max(com_dados - selecionadas, 0)
+        return (
+            f"📚 Jogos encontrados hoje: {int(total_jogos)} | "
+            f"Futuros avaliados: {int(total_futuros)}\n"
+            f"🧪 Com dados suficientes: {com_dados} | "
+            f"Sem seleção após filtros: {sem_selecao}"
+        )
+
     def _selecoes_registadas_da_data(self, data_iso):
         """Reconstrói cartões compactos a partir dos snapshots auditados."""
         selecoes = []
@@ -289,6 +302,10 @@ class BotPremiumDiario(BotPremiumReal):
             "selecoes": len(selecoes_dia),
         }
         resposta = self.analisador.gerar_relatorio(jogos, selecoes=selecoes_dia)
+        if not selecoes_dia:
+            resposta += "\n" + self._diagnostico_zero(
+                len(jogos), len(jogos_futuros), resumo_novo, selecoes_novas
+            )
         resposta += "\n🕛 Janela diária: 00:00–23:59 (hora de Portugal)."
         if novas:
             resposta += (
