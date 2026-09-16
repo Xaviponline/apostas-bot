@@ -6,7 +6,7 @@ from main_diario import RegistoPrevisoesDiario
 
 
 class PerformanceSegmentadoTests(unittest.TestCase):
-    def test_relatorio_mostra_dia_e_mercado_sem_alterar_dados(self):
+    def test_relatorio_mostra_segmentos_sem_alterar_dados(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = RegistoPrevisoesDiario(Path(tmp) / "previsoes.json")
             reg.dados = {
@@ -16,6 +16,7 @@ class PerformanceSegmentadoTests(unittest.TestCase):
                         "data_jogo": "2026-09-14",
                         "mercado": "Vitória Casa",
                         "probabilidade": 0.65,
+                        "qualidade": 90,
                         "resultado_binario": 1,
                         "estado": "ganhou",
                     },
@@ -23,6 +24,7 @@ class PerformanceSegmentadoTests(unittest.TestCase):
                         "data_jogo": "2026-09-14",
                         "mercado": "Over 2.5 Golos",
                         "probabilidade": 0.60,
+                        "qualidade": 60,
                         "resultado_binario": 0,
                         "estado": "perdeu",
                     },
@@ -30,6 +32,7 @@ class PerformanceSegmentadoTests(unittest.TestCase):
                         "data_jogo": "2026-09-15",
                         "mercado": "Vitória Casa",
                         "probabilidade": 0.70,
+                        "qualidade": 75,
                         "resultado_binario": 1,
                         "estado": "ganhou",
                     },
@@ -44,6 +47,14 @@ class PerformanceSegmentadoTests(unittest.TestCase):
         self.assertIn("🎯 DESEMPENHO POR MERCADO", texto)
         self.assertIn("• Vitória Casa: 2/2 (100.0%)", texto)
         self.assertIn("• Over 2.5 Golos: 0/1 (0.0%)", texto)
+        self.assertIn("⭐ DESEMPENHO POR CONFIANÇA", texto)
+        self.assertIn("⭐⭐⭐⭐⭐ ALTA: 1/1 (100.0%)", texto)
+        self.assertIn("⭐⭐⭐⭐ MÉDIA-ALTA: 1/1 (100.0%)", texto)
+        self.assertIn("⭐⭐⭐ MÉDIA: 0/1 (0.0%)", texto)
+        self.assertIn("🧪 DESEMPENHO POR QUALIDADE DOS DADOS", texto)
+        self.assertIn("Dados 85–100: 1/1 (100.0%)", texto)
+        self.assertIn("Dados 70–84: 1/1 (100.0%)", texto)
+        self.assertIn("Dados 55–69: 0/1 (0.0%)", texto)
         self.assertEqual(reg.dados["previsoes"], antes)
 
 
