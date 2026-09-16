@@ -21,24 +21,39 @@ except ImportError:
 class BuscadorJogosReais:
     ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
     ESPN_LEAGUES = (
-        "eng.1",
-        "esp.1",
-        "ita.1",
-        "ger.1",
-        "fra.1",
+        "eng.1", "eng.2", "eng.3", "eng.4",
+        "esp.1", "esp.2",
+        "ita.1", "ita.2",
+        "ger.1", "ger.2",
+        "fra.1", "fra.2",
         "por.1",
-        "ned.1",
+        "ned.1", "ned.2",
         "bel.1",
-        "uefa.champions",
-        "uefa.europa",
-        "uefa.europa.conf",
-        "uefa.nations",
-        "fifa.world",
+        "tur.1",
+        "sco.1", "sco.2",
+        "aut.1", "den.1", "gre.1", "sui.1",
+        "swe.1", "nor.1",
+        "uefa.champions", "uefa.europa", "uefa.europa.conf",
+        "uefa.nations", "fifa.world",
         "usa.1",
-        "bra.1",
+        "bra.1", "bra.2",
         "arg.1",
     )
     ESPN_SLUG_NOMES = (
+        # Específicos primeiro para evitar que LaLiga 2 seja confundida com LaLiga.
+        ("spanish-laliga-2", "Spanish LALIGA 2"),
+        ("english-league-championship", "English League Championship"),
+        ("english-league-one", "English League One"),
+        ("english-league-two", "English League Two"),
+        ("italian-serie-b", "Italian Serie B"),
+        ("german-2-bundesliga", "German 2. Bundesliga"),
+        ("scottish-premiership", "Scottish Premiership"),
+        ("scottish-championship", "Scottish Championship"),
+        ("austrian-bundesliga", "Austrian Bundesliga"),
+        ("danish-superliga", "Danish Superliga"),
+        ("greek-super-league", "Greek Super League"),
+        ("swiss-super-league", "Swiss Super League"),
+        ("major-league-soccer", "Major League Soccer"),
         ("english-premier-league", "English Premier League"),
         ("spanish-laliga", "Spanish LaLiga"),
         ("italian-serie-a", "Italian Serie A"),
@@ -266,7 +281,7 @@ class BuscadorJogosReais:
         except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
             erro_global = exc
 
-        # Se /all falhar ou vier vazio, tenta ligas principais individualmente.
+        # Se /all falhar ou vier vazio, tenta a whitelist de ligas individualmente.
         respostas_validas = 0
         for league in self.ESPN_LEAGUES:
             try:
