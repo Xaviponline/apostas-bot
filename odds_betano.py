@@ -24,6 +24,7 @@ class OddsBetano:
         ).strip()
         self.papi_bookmaker = os.getenv("ODDS_PAPI_BOOKMAKER", "betano.pt").strip() or "betano.pt"
         self._catalogo_mercados = None
+        self.ultimo_erro_evento = {}
 
         if provider:
             self.provider = provider
@@ -52,6 +53,26 @@ class OddsBetano:
         if self.provider == "odds-api.io":
             return "Odds-API.io / Betano"
         return "não configurada"
+
+    def diagnostico_evento(self, event_id):
+        """Devolve apenas um motivo técnico seguro; nunca inclui chave ou payload."""
+        return str(self.ultimo_erro_evento.get(str(event_id)) or "")
+
+    @staticmethod
+    def _motivo_excecao(exc):
+        if isinstance(exc, requests.Timeout):
+            return "odds_timeout"
+        if isinstance(exc, requests.ConnectionError):
+            return "odds_ligacao_indisponivel"
+        if isinstance(exc, requests.HTTPError):
+            response = getattr(exc, "response", None)
+            status = getattr(response, "status_code", None)
+            return f"odds_http_{status}" if status else "odds_http_erro"
+        if isinstance(exc, requests.RequestException):
+            return "odds_rede_indisponivel"
+        if isinstance(exc, (ValueError, TypeError)):
+            return "odds_resposta_invalida"
+        return "odds_erro_tecnico"
 
     def _get_legacy(self, path, params):
         if not self.legacy_key:
@@ -320,8 +341,11 @@ class OddsBetano:
         }
 
     def odds_evento(self, event_id):
+        chave = str(event_id)
+        self.ultimo_erro_evento.pop(chave, None)
         if not self.configurada:
             self.estado = "não configurada"
+            self.ultimo_erro_evento[chave] = "odds_fonte_nao_configurada"
             return None
         try:
             dados = (
@@ -330,9 +354,12 @@ class OddsBetano:
                 else self._odds_evento_legacy(event_id)
             )
             self.estado = "operacional" if dados else "sem odds"
+            if dados is None:
+                self.ultimo_erro_evento[chave] = "odds_evento_sem_resposta"
             return dados
-        except (requests.RequestException, ValueError, TypeError):
+        except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
             self.estado = "indisponível"
+            self.ultimo_erro_evento[chave] = self._motivo_excecao(exc)
             return None
 
     @staticmethod
