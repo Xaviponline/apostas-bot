@@ -1,1 +1,1 @@
-worker: python main_diario.py
+worker: python main_enriquecido.py
