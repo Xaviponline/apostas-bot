@@ -6,27 +6,38 @@ from estatisticas_hibridas_competicoes import EstatisticasHibridasCompeticoes
 
 
 class SofaFake:
-    def __init__(self, codigo_nome="UEFA Europa League", total=24):
-        self.codigo_nome = codigo_nome
+    def __init__(self, total=24, temporada="26/27", temporada_id=9999):
         self.total = total
+        self.temporada = temporada
+        self.temporada_id = temporada_id
         self.chamadas = []
 
     def _get_sofa(self, caminho):
         self.chamadas.append(caminho)
-        if caminho.startswith("/sport/football/scheduled-events/"):
+        if caminho == "/unique-tournament/679/seasons":
             return {
-                "events": [
+                "seasons": [
                     {
-                        "id": 1,
-                        "tournament": {
-                            "name": self.codigo_nome,
-                            "uniqueTournament": {"id": 679, "name": self.codigo_nome},
-                        },
-                        "season": {"id": 9999},
+                        "id": self.temporada_id,
+                        "name": f"UEFA Europa League {self.temporada}",
+                        "year": self.temporada,
                     }
                 ]
             }
-        if caminho.startswith("/unique-tournament/679/season/9999/events/last/"):
+        if caminho == "/unique-tournament/21/seasons":
+            return {
+                "seasons": [
+                    {"id": 96185, "name": "EFL Cup 26/27", "year": "26/27"}
+                ]
+            }
+        if caminho == "/unique-tournament/1024/seasons":
+            return {
+                "seasons": [
+                    {"id": 88001, "name": "Copa Argentina 2026", "year": "2026"}
+                ]
+            }
+        prefixo = f"/unique-tournament/679/season/{self.temporada_id}/events/last/"
+        if caminho.startswith(prefixo):
             eventos = []
             for i in range(self.total):
                 eventos.append(
@@ -96,13 +107,33 @@ class HistoricoHibridoTests(unittest.TestCase):
         historico = stats._fetch_liga("uefa.europa", self.REF)
         self.assertGreaterEqual(len(historico), stats.MIN_JOGOS_BASE)
         self.assertEqual(stats.diagnostico_base["uefa.europa"]["fonte"], "sofascore")
-        self.assertTrue(any("unique-tournament/679" in x for x in sofa.chamadas))
+        self.assertIn("/unique-tournament/679/seasons", sofa.chamadas)
+        self.assertTrue(any("unique-tournament/679/season/9999" in x for x in sofa.chamadas))
+
+    def test_descoberta_nao_depende_da_agenda_diaria(self):
+        sofa = SofaFake()
+        stats = EstatisticasHibridasCompeticoes(sofa_client=sofa)
+        self.assertEqual(stats._descobrir_competicao_sofa("uefa.europa", self.REF), (679, 9999))
+        self.assertFalse(any("scheduled-events" in x for x in sofa.chamadas))
+
+    def test_ano_calendario_e_temporada_cruzada(self):
+        stats = EstatisticasHibridasCompeticoes(sofa_client=SofaFake())
+        self.assertEqual(stats._ano_alvo_sofa("arg.copa", self.REF), "2026")
+        self.assertEqual(stats._ano_alvo_sofa("eng.league_cup", self.REF), "26/27")
+        ref_janeiro = datetime(2027, 1, 10, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
+        self.assertEqual(stats._ano_alvo_sofa("eng.league_cup", ref_janeiro), "26/27")
+
+    def test_ids_estaveis_das_tres_competicoes(self):
+        sofa = SofaFake()
+        stats = EstatisticasHibridasCompeticoes(sofa_client=sofa)
+        self.assertEqual(stats._descobrir_competicao_sofa("eng.league_cup", self.REF), (21, 96185))
+        self.assertEqual(stats._descobrir_competicao_sofa("arg.copa", self.REF), (1024, 88001))
 
     def test_host_www_e_tentado_quando_api_falha(self):
-        sofa = SofaApiFalhaFake({"events": []})
+        sofa = SofaApiFalhaFake({"seasons": []})
         stats = EstatisticasHibridasCompeticoes(sofa_client=sofa)
-        dados = stats._sofa_get("/sport/football/scheduled-events/2026-09-16")
-        self.assertEqual(dados, {"events": []})
+        dados = stats._sofa_get("/unique-tournament/679/seasons")
+        self.assertEqual(dados, {"seasons": []})
         self.assertEqual(len(sofa.sofa_session.urls), 1)
         self.assertTrue(
             sofa.sofa_session.urls[0].startswith("https://www.sofascore.com/api/v1/")
@@ -125,8 +156,8 @@ class HistoricoHibridoTests(unittest.TestCase):
         self.assertEqual(item["golos_casa"], 1)
         self.assertEqual(item["golos_fora"], 1)
 
-    def test_correspondencia_de_competicao_e_exata_e_conservadora(self):
-        sofa = SofaFake(codigo_nome="UEFA Europa Conference League")
+    def test_epoca_errada_e_rejeitada(self):
+        sofa = SofaFake(temporada="25/26")
         stats = EstatisticasHibridasCompeticoes(sofa_client=sofa)
         with self.assertRaises(ValueError):
             stats._descobrir_competicao_sofa("uefa.europa", self.REF)
