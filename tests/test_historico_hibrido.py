@@ -44,6 +44,45 @@ class SofaFake:
         raise ValueError("caminho inesperado")
 
 
+class RespostaFake:
+    def __init__(self, dados, status_code=200):
+        self._dados = dados
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._dados
+
+
+class SessaoWWWFake:
+    def __init__(self, dados):
+        self.dados = dados
+        self.urls = []
+
+    def get(self, url, **kwargs):
+        self.urls.append(url)
+        return RespostaFake(self.dados)
+
+
+class SofaApiFalhaFake:
+    def __init__(self, dados_www):
+        self.sofa_http_status = 403
+        self.ultimo_http_status = 403
+        self.browser_mode = False
+        self.sofa_session = SessaoWWWFake(dados_www)
+
+    @staticmethod
+    def _headers_sofa():
+        return {"Accept": "application/json"}
+
+    def _get_sofa(self, caminho):
+        self.sofa_http_status = 403
+        raise ValueError("Fonte SofaScore indisponível.")
+
+
 class HistoricoHibridoTests(unittest.TestCase):
     REF = datetime(2026, 9, 16, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
 
@@ -58,6 +97,16 @@ class HistoricoHibridoTests(unittest.TestCase):
         self.assertGreaterEqual(len(historico), stats.MIN_JOGOS_BASE)
         self.assertEqual(stats.diagnostico_base["uefa.europa"]["fonte"], "sofascore")
         self.assertTrue(any("unique-tournament/679" in x for x in sofa.chamadas))
+
+    def test_host_www_e_tentado_quando_api_falha(self):
+        sofa = SofaApiFalhaFake({"events": []})
+        stats = EstatisticasHibridasCompeticoes(sofa_client=sofa)
+        dados = stats._sofa_get("/sport/football/scheduled-events/2026-09-16")
+        self.assertEqual(dados, {"events": []})
+        self.assertEqual(len(sofa.sofa_session.urls), 1)
+        self.assertTrue(
+            sofa.sofa_session.urls[0].startswith("https://www.sofascore.com/api/v1/")
+        )
 
     def test_normalizacao_sofa_prefere_resultado_90_minutos(self):
         stats = EstatisticasHibridasCompeticoes(sofa_client=SofaFake())
@@ -87,10 +136,9 @@ class HistoricoHibridoTests(unittest.TestCase):
         stats = EstatisticasHibridasCompeticoes(sofa_client=sofa)
         with self.assertRaises(ValueError):
             stats._fetch_liga("uefa.europa", self.REF)
-        self.assertEqual(
-            stats.diagnostico_base["uefa.europa"]["fonte"],
-            "sofascore_indisponivel",
-        )
+        diag = stats.diagnostico_base["uefa.europa"]
+        self.assertEqual(diag["fonte"], "sofascore_indisponivel")
+        self.assertIn("base insuficiente", diag["motivo"])
 
     def test_liga_normal_nao_usa_sofascore(self):
         class Probe(EstatisticasHibridasCompeticoes):
