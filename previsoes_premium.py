@@ -2,7 +2,8 @@
 
 Cada previsão é guardada antes do jogo e não é alterada por novas execuções do
 /analisa. Depois do resultado final, pode ser liquidada e usada para medir taxa
-de acerto e Brier Score. ROI só deve ser calculado quando existirem odds reais.
+de acerto e Brier Score. ROI só é calculado para previsões que tenham uma odd
+real congelada no momento do registo.
 """
 from datetime import datetime, timezone
 from pathlib import Path
@@ -69,6 +70,14 @@ class RegistoPrevisoes:
     def _chave(event_id, mercado):
         return f"{event_id}|{mercado}"
 
+    @staticmethod
+    def _odd_real_valida(valor):
+        try:
+            odd = float(valor)
+        except (TypeError, ValueError):
+            return None
+        return odd if odd > 1.0 else None
+
     def registar(self, selecoes):
         """Guarda apenas previsões novas. Nunca reescreve uma previsão existente."""
         existentes = {
@@ -94,29 +103,43 @@ class RegistoPrevisoes:
                 odd_minima = float(s["odd_minima"])
             except (KeyError, TypeError, ValueError):
                 continue
-            self.dados["previsoes"].append(
-                {
-                    "chave": chave,
-                    "event_id": int(event_id),
-                    "data_jogo": self._data_jogo(jogo),
-                    "timestamp_jogo": jogo.get("timestamp"),
-                    "casa": str(jogo.get("casa") or ""),
-                    "fora": str(jogo.get("fora") or ""),
-                    "liga": str(jogo.get("liga") or ""),
-                    "mercado": str(mercado),
-                    "probabilidade": round(prob, 6),
-                    "probabilidade_bruta": round(prob_bruta, 6),
-                    "qualidade": qualidade,
-                    "odd_justa": round(odd_justa, 4),
-                    "odd_minima": round(odd_minima, 4),
-                    "criada_em": agora,
-                    "estado": "pendente",
-                    "resultado_binario": None,
-                    "golos_casa": None,
-                    "golos_fora": None,
-                    "liquidada_em": None,
-                }
-            )
+
+            registo = {
+                "chave": chave,
+                "event_id": int(event_id),
+                "data_jogo": self._data_jogo(jogo),
+                "timestamp_jogo": jogo.get("timestamp"),
+                "casa": str(jogo.get("casa") or ""),
+                "fora": str(jogo.get("fora") or ""),
+                "liga": str(jogo.get("liga") or ""),
+                "mercado": str(mercado),
+                "probabilidade": round(prob, 6),
+                "probabilidade_bruta": round(prob_bruta, 6),
+                "qualidade": qualidade,
+                "odd_justa": round(odd_justa, 4),
+                "odd_minima": round(odd_minima, 4),
+                "criada_em": agora,
+                "estado": "pendente",
+                "resultado_binario": None,
+                "golos_casa": None,
+                "golos_fora": None,
+                "liquidada_em": None,
+            }
+
+            odd_real = self._odd_real_valida(s.get("odd_real"))
+            if odd_real is not None:
+                registo.update(
+                    {
+                        "odd_real": round(odd_real, 4),
+                        "ev_real": round((prob * odd_real) - 1.0, 6),
+                        "odds_fonte": str(s.get("odds_fonte") or ""),
+                        "odds_event_id": str(s.get("odds_event_id") or ""),
+                        "odds_atualizada_em": str(s.get("odds_atualizada_em") or ""),
+                        "odds_capturada_em": agora,
+                    }
+                )
+
+            self.dados["previsoes"].append(registo)
             existentes.add(chave)
             adicionadas += 1
         if adicionadas:
@@ -239,6 +262,23 @@ class RegistoPrevisoes:
             ) / len(liquidados)
         else:
             brier = None
+
+        com_odds = []
+        for p in liquidados:
+            odd = self._odd_real_valida(p.get("odd_real"))
+            if odd is not None:
+                com_odds.append((p, odd))
+        lucro_unidades = sum(
+            (odd - 1.0) if int(p["resultado_binario"]) == 1 else -1.0
+            for p, odd in com_odds
+        )
+        roi = (lucro_unidades / len(com_odds)) if com_odds else None
+        ev_medio = (
+            sum((float(p["probabilidade"]) * odd) - 1.0 for p, odd in com_odds)
+            / len(com_odds)
+            if com_odds
+            else None
+        )
         return {
             "total": len(todos),
             "pendentes": pendentes,
@@ -247,6 +287,10 @@ class RegistoPrevisoes:
             "perdas": perdas,
             "hit_rate": hit_rate,
             "brier": brier,
+            "odds_liquidadas": len(com_odds),
+            "lucro_unidades": lucro_unidades,
+            "roi": roi,
+            "ev_medio": ev_medio,
         }
 
     def relatorio(self):
@@ -276,10 +320,12 @@ class RegistoPrevisoes:
                     hora = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(
                         ZoneInfo("Europe/Lisbon")
                     ).strftime("%H:%M")
+                odd = self._odd_real_valida(p.get("odd_real"))
+                sufixo_odd = f" | Odd {odd:.2f}" if odd is not None else ""
                 linhas.append(
                     f"• {p.get('data_jogo') or '--'} {hora} — "
                     f"{p.get('casa') or '?'} vs {p.get('fora') or '?'} | "
-                    f"{p.get('mercado') or 'Mercado desconhecido'}"
+                    f"{p.get('mercado') or 'Mercado desconhecido'}{sufixo_odd}"
                 )
 
         if not s["liquidadas"]:
@@ -291,15 +337,36 @@ class RegistoPrevisoes:
                 ]
             )
             return "\n".join(linhas)
+
         linhas.extend(
             [
                 "",
                 f"✅ Acertos: {s['ganhos']} | ❌ Falhas: {s['perdas']}",
                 f"🎯 Taxa de acerto: {s['hit_rate']*100:.1f}%",
                 f"📐 Brier Score: {s['brier']:.4f} (menor é melhor)",
-                "",
-                "ROI ainda não é apresentado porque não temos odds reais guardadas no momento da previsão.",
-                "Quando ligarmos odds reais de mercado/multi-casa, o ROI passará a fazer parte desta auditoria.",
             ]
         )
+        if s["odds_liquidadas"]:
+            sinal_lucro = "+" if s["lucro_unidades"] >= 0 else ""
+            sinal_roi = "+" if s["roi"] >= 0 else ""
+            sinal_ev = "+" if s["ev_medio"] >= 0 else ""
+            linhas.extend(
+                [
+                    "",
+                    "💶 AUDITORIA DE ODDS REAIS",
+                    f"Previsões liquidadas com odd congelada: {s['odds_liquidadas']}",
+                    f"Resultado a 1u por previsão: {sinal_lucro}{s['lucro_unidades']:.2f}u",
+                    f"ROI observado: {sinal_roi}{s['roi']*100:.1f}%",
+                    f"EV médio no snapshot: {sinal_ev}{s['ev_medio']*100:.1f}%",
+                    "As odds servem apenas para auditoria e não alteram retroativamente as seleções da V1.",
+                ]
+            )
+        else:
+            linhas.extend(
+                [
+                    "",
+                    "ROI ainda não é apresentado porque não há previsões liquidadas com odds reais congeladas no momento da previsão.",
+                    "As previsões antigas sem snapshot de odd continuam válidas para hit rate/Brier, mas não entram no ROI.",
+                ]
+            )
         return "\n".join(linhas)
