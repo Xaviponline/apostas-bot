@@ -17,7 +17,7 @@ class EstatisticasTudoValido:
         return {
             "jogo": jogo,
             "qualidade": 90,
-            "probabilidades": {"Over 2.5 Golos": 0.80},
+            "probabilidades": {"Over 2.5 Golos": 0.70},
         }
 
 
