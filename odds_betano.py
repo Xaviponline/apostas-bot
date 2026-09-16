@@ -91,6 +91,15 @@ class OddsBetano:
             fim_local.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
         )
 
+    @staticmethod
+    def _numero_ou_none(valor):
+        if valor is None or isinstance(valor, bool):
+            return None
+        try:
+            return float(valor)
+        except (TypeError, ValueError):
+            return None
+
     def _eventos_papi(self):
         inicio, fim = self._janela_hoje_utc()
         dados = self._get_papi(
@@ -186,6 +195,10 @@ class OddsBetano:
                 }
                 catalogo[mid] = {
                     "name": str(mercado.get("marketName") or f"Market {mid}"),
+                    "handicap": self._numero_ou_none(mercado.get("handicap")),
+                    "period": str(mercado.get("period") or "").strip(),
+                    "marketType": str(mercado.get("marketType") or "").strip(),
+                    "playerProp": bool(mercado.get("playerProp", False)),
                     "outcomes": outcomes,
                 }
             except (KeyError, TypeError, ValueError):
@@ -221,6 +234,7 @@ class OddsBetano:
                 continue
             meta = catalogo.get(str(market_id), {})
             odds_saida = []
+            timestamps = []
             for outcome_id, outcome in (mercado.get("outcomes") or {}).items():
                 if not isinstance(outcome, dict):
                     continue
@@ -236,12 +250,28 @@ class OddsBetano:
                         item["jogador"] = player.get("playerName")
                     if player.get("bookmakerOutcomeId"):
                         item["ref"] = player.get("bookmakerOutcomeId")
+                    if "mainLine" in player:
+                        item["mainLine"] = bool(player.get("mainLine"))
+                    changed_at = str(player.get("changedAt") or "").strip()
+                    bookmaker_changed_at = str(player.get("bookmakerChangedAt") or "").strip()
+                    if changed_at:
+                        item["changedAt"] = changed_at
+                        timestamps.append(changed_at)
+                    if bookmaker_changed_at:
+                        item["bookmakerChangedAt"] = bookmaker_changed_at
+                        timestamps.append(bookmaker_changed_at)
                     odds_saida.append(item)
             if odds_saida:
+                atualizado = max(timestamps) if timestamps else str(dados.get("updatedAt") or "")
                 mercados_saida.append(
                     {
+                        "id": str(market_id),
                         "name": meta.get("name") or f"Market {market_id}",
-                        "updatedAt": dados.get("updatedAt") or "",
+                        "handicap": meta.get("handicap"),
+                        "period": meta.get("period") or "",
+                        "marketType": meta.get("marketType") or "",
+                        "playerProp": bool(meta.get("playerProp", False)),
+                        "updatedAt": atualizado,
                         "odds": odds_saida,
                     }
                 )
@@ -251,6 +281,7 @@ class OddsBetano:
             "casa": dados.get("participant1Name"),
             "fora": dados.get("participant2Name"),
             "liga": dados.get("tournamentName"),
+            "updatedAt": dados.get("updatedAt") or "",
             "mercados": mercados_saida,
             "fonte": self.nome_fonte,
         }
@@ -303,6 +334,14 @@ class OddsBetano:
         return "\n".join(linhas)
 
     @staticmethod
+    def _formatar_linha(valor):
+        try:
+            numero = float(valor)
+        except (TypeError, ValueError):
+            return str(valor)
+        return f"{numero:g}"
+
+    @staticmethod
     def formatar_odds(dados):
         if not dados:
             return "Não foi possível obter odds Betano para esse evento."
@@ -314,10 +353,29 @@ class OddsBetano:
         for mercado in dados.get("mercados", []):
             nome = str(mercado.get("name") or "Mercado")
             atualizado = str(mercado.get("updatedAt") or "")
-            linhas.append(f"• {nome}" + (f" (atualizado {atualizado})" if atualizado else ""))
+            meta = []
+            handicap = mercado.get("handicap")
+            if handicap not in (None, 0, 0.0, "0", "0.0"):
+                meta.append(f"linha {OddsBetano._formatar_linha(handicap)}")
+            periodo = str(mercado.get("period") or "").strip()
+            if periodo and periodo.casefold() != "fulltime":
+                meta.append(periodo)
+            sufixo = f" — {', '.join(meta)}" if meta else ""
+            if atualizado:
+                sufixo += f" (atualizado {atualizado})"
+            linhas.append(f"• {nome}{sufixo}")
             for odd in (mercado.get("odds") or [])[:12]:
                 if isinstance(odd, dict):
-                    partes = [f"{k}={v}" for k, v in odd.items()]
+                    chaves = ["seleção", "odd", "jogador", "ref", "mainLine"]
+                    partes = []
+                    for chave in chaves:
+                        if chave not in odd:
+                            continue
+                        valor = odd[chave]
+                        if chave == "mainLine":
+                            valor = "sim" if valor else "não"
+                            chave = "principal"
+                        partes.append(f"{chave}={valor}")
                     linhas.append("  " + " | ".join(partes))
         linhas.extend(["", f"Fonte externa: {dados.get('fonte') or 'agregador de odds'}. Confirma sempre na Betano antes de apostar."])
         return "\n".join(linhas)
