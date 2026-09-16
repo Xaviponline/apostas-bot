@@ -1,17 +1,159 @@
 """Arranque de produção com cobertura V1 e histórico híbrido de competições."""
 import logging
 from collections import Counter
+from datetime import datetime
 
 from estatisticas_forma_web import EstatisticasFormaWeb
-from main_diario import RegistoPrevisoesDiario
+from main_diario import RegistoPrevisoesDiario, TZ_PORTUGAL
 from main_enriquecido import (
     AnalisadorInteligenteEnriquecido,
     BotPremiumDiarioDiagnostico,
     BuscadorJogosEnriquecido,
 )
+from odds_auditoria import AuditoriaOdds
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
+    def _executar_valor(self):
+        """Compara previsões congeladas futuras com odds atuais sem persistir nada."""
+        if not self.odds.configurada:
+            return (
+                "💎 VALOR AGORA\n\n"
+                "Odds atuais indisponíveis: a fonte Betano não está configurada.\n"
+                "As previsões congeladas não foram alteradas."
+            )
+
+        agora = datetime.now(TZ_PORTUGAL)
+        agora_ts = agora.timestamp()
+        data_iso = agora.strftime("%Y-%m-%d")
+        selecoes = []
+
+        for p in self.previsoes.dados.get("previsoes", []):
+            if p.get("data_jogo") != data_iso or p.get("estado") != "pendente":
+                continue
+            ts = p.get("timestamp_jogo")
+            if not isinstance(ts, (int, float)) or float(ts) <= agora_ts:
+                continue
+            try:
+                prob = float(p["probabilidade"])
+                odd_minima = float(p["odd_minima"])
+                odd_justa = float(p["odd_justa"])
+                qualidade = int(p["qualidade"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            selecoes.append(
+                {
+                    "jogo": {
+                        "id": p.get("event_id"),
+                        "casa": p.get("casa") or "?",
+                        "fora": p.get("fora") or "?",
+                        "liga": p.get("liga") or "Competição",
+                        "timestamp": ts,
+                    },
+                    "mercado": p.get("mercado") or "Mercado desconhecido",
+                    "probabilidade": prob,
+                    "qualidade": qualidade,
+                    "odd_justa": odd_justa,
+                    "odd_minima": odd_minima,
+                }
+            )
+
+        if not selecoes:
+            return (
+                f"💎 VALOR AGORA — {agora.strftime('%d/%m/%Y')}\n\n"
+                "Não existem previsões congeladas ainda por começar hoje.\n"
+                "O histórico não foi alterado."
+            )
+
+        atuais = AuditoriaOdds(self.odds).enriquecer(selecoes)
+        atuais.sort(
+            key=lambda s: (
+                float((s.get("jogo") or {}).get("timestamp") or 0),
+                str(s.get("mercado") or ""),
+            )
+        )
+
+        confirmadas = abaixo = indisponiveis = 0
+        linhas = [
+            f"💎 VALOR AGORA — {agora.strftime('%d/%m/%Y')}",
+            "📌 Odds atuais vs previsão V1 congelada",
+            "",
+        ]
+
+        for s in atuais:
+            jogo = s.get("jogo") or {}
+            mercado = str(s.get("mercado") or "Mercado desconhecido")
+            hora = self._hora_portugal(jogo.get("timestamp"))
+            odd_minima = float(s.get("odd_minima") or 0)
+            prob = float(s.get("probabilidade") or 0)
+            odd_atual = s.get("odd_real")
+            linhas.append(f"⏰ {hora} — {jogo.get('casa') or '?'} vs {jogo.get('fora') or '?'}")
+            linhas.append(f"   💰 {mercado} | mínima {odd_minima:.2f}".replace(".", ","))
+
+            try:
+                odd_atual = float(odd_atual)
+            except (TypeError, ValueError):
+                odd_atual = None
+
+            if odd_atual is None or odd_atual <= 1.0:
+                indisponiveis += 1
+                motivo = str(s.get("_odds_diag") or "odd atual indisponível")
+                linhas.append(f"   ⚪ Odd atual indisponível — {motivo}")
+            else:
+                ev_atual = (prob * odd_atual) - 1.0
+                if odd_atual >= odd_minima:
+                    confirmadas += 1
+                    estado = "🟢 VALOR AGORA"
+                else:
+                    abaixo += 1
+                    estado = "🔴 ABAIXO DA MÍNIMA"
+                linha = (
+                    f"   {estado} — atual {odd_atual:.2f} | EV {ev_atual*100:+.1f}%"
+                ).replace(".", ",")
+                linhas.append(linha)
+                if odd_minima > 0 and odd_atual >= odd_minima * 1.25:
+                    linhas.append(
+                        "   ⚠️ Diferença elevada face à odd mínima — confirmar evento/mercado."
+                    )
+            linhas.append("")
+
+        linhas.extend(
+            [
+                f"📊 Agora: {confirmadas} com valor | {abaixo} abaixo da mínima | {indisponiveis} sem odd",
+                "🔒 Esta consulta não altera a previsão nem a odd congelada para auditoria.",
+            ]
+        )
+        return "\n".join(linhas).rstrip()
+
+    def processar_comando(self, chat_id, texto, user_id=None, update_id=None):
+        comando = texto.strip().partition(" ")[0]
+        if "@" in comando:
+            base, alvo = comando.split("@", 1)
+            if self.username is None or alvo.lower() != self.username.lower():
+                return
+            comando = base
+
+        if comando == "/valor":
+            if (
+                not self.owner_id
+                or not self.chat_id
+                or chat_id != self.chat_id
+                or user_id != self.owner_id
+            ):
+                return
+            try:
+                resposta = self._executar_valor()
+            except (RuntimeError, ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "Não foi possível consultar as odds atuais. "
+                    "As previsões e as odds congeladas não foram alteradas."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        super().processar_comando(chat_id, texto, user_id, update_id)
+
     def _executar_cobertura(self):
         base = super()._executar_cobertura()
         estatisticas = self.analisador.estatisticas
