@@ -22,9 +22,10 @@ class RespostaFake:
 
 
 class SessaoFake:
-    def __init__(self, falhar_site=False, score_objeto=False):
+    def __init__(self, falhar_site=False, score_objeto=False, status_na_competicao=False):
         self.falhar_site = falhar_site
         self.score_objeto = score_objeto
+        self.status_na_competicao = status_na_competicao
         self.chamadas = []
 
     def _score(self, valor):
@@ -36,21 +37,27 @@ class SessaoFake:
         adversario = 100 + i
         casa_id, fora_id = (team_id, adversario) if i % 2 == 0 else (adversario, team_id)
         data = datetime(2026, 9, 10 - i, 18, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
-        return {
+        status = {"type": {"state": "post", "completed": True, "name": "STATUS_FINAL"}}
+        comp = {
+            "date": data,
+            "competitors": [
+                {"homeAway": "home", "score": self._score(2), "team": {"id": str(casa_id), "displayName": f"T{casa_id}"}},
+                {"homeAway": "away", "score": self._score(1), "team": {"id": str(fora_id), "displayName": f"T{fora_id}"}},
+            ],
+        }
+        evento = {
             "id": 5000 + i,
             "date": data,
             "name": f"Jogo {i}",
             "season": {"displayName": "2026-27 Official League"},
             "league": {"name": "Official League", "slug": "official-league"},
-            "status": {"type": {"state": "post", "completed": True, "name": "STATUS_FINAL"}},
-            "competitions": [{
-                "date": data,
-                "competitors": [
-                    {"homeAway": "home", "score": self._score(2), "team": {"id": str(casa_id), "displayName": f"T{casa_id}"}},
-                    {"homeAway": "away", "score": self._score(1), "team": {"id": str(fora_id), "displayName": f"T{fora_id}"}},
-                ],
-            }],
+            "competitions": [comp],
         }
+        if self.status_na_competicao:
+            comp["status"] = status
+        else:
+            evento["status"] = status
+        return evento
 
     def get(self, url, params=None, timeout=None):
         self.chamadas.append((url, params))
@@ -90,6 +97,15 @@ class FormaWebTests(unittest.TestCase):
         self.assertEqual(len(forma), 8)
         self.assertEqual(forma[0]["golos_casa"], 2)
         self.assertEqual(forma[0]["golos_fora"], 1)
+
+    def test_forma_global_aceita_status_na_competicao(self):
+        sessao = SessaoFake(status_na_competicao=True)
+        stats = EstatisticasFormaWeb(session=sessao)
+        forma = stats._fetch_forma_global(10, self.REF)
+        self.assertEqual(len(forma), 8)
+        diag = stats.diagnostico_forma_global[10]["tentativas"][0]
+        self.assertEqual(diag["concluidos"], 8)
+        self.assertEqual(diag["normalizados"], 8)
 
     def test_forma_global_mantem_ids_espn_da_equipa(self):
         sessao = SessaoFake()
