@@ -6,6 +6,7 @@ As chaves são lidas apenas de variáveis de ambiente e nunca devem ser guardada
 """
 import os
 from datetime import datetime, timedelta, timezone
+from time import monotonic, sleep
 from zoneinfo import ZoneInfo
 import requests
 
@@ -13,6 +14,10 @@ import requests
 class OddsBetano:
     PAPI_BASE_URL = "https://api.oddspapi.io/v4"
     LEGACY_BASE_URL = "https://api.odds-api.io/v3"
+    # A documentação/medições do OddsPapi mostram rate limit por endpoint.
+    # Para /odds, ~1 pedido/segundo evita rajadas de 429.
+    PAPI_ODDS_INTERVALO = 1.05
+    PAPI_MAX_TENTATIVAS_429 = 3
 
     def __init__(self, api_key=None, session=None, papi_key=None, provider=None):
         self.session = session or requests.Session()
@@ -25,6 +30,7 @@ class OddsBetano:
         self.papi_bookmaker = os.getenv("ODDS_PAPI_BOOKMAKER", "betano.pt").strip() or "betano.pt"
         self._catalogo_mercados = None
         self.ultimo_erro_evento = {}
+        self._papi_proximo_pedido = {}
 
         if provider:
             self.provider = provider
@@ -88,19 +94,94 @@ class OddsBetano:
         r.raise_for_status()
         return r.json()
 
+    @staticmethod
+    def _retry_429_segundos(response, tentativa):
+        """Extrai retry seguro do 429, sem depender do texto do erro."""
+        espera = 1.05 * (tentativa + 1)
+        try:
+            headers = getattr(response, "headers", {}) or {}
+            retry_after = headers.get("Retry-After")
+            if retry_after is not None:
+                espera = max(espera, float(retry_after))
+        except (TypeError, ValueError):
+            pass
+
+        try:
+            corpo = response.json()
+        except (TypeError, ValueError, AttributeError):
+            corpo = {}
+        if isinstance(corpo, dict):
+            erro = corpo.get("error") if isinstance(corpo.get("error"), dict) else {}
+            retry_ms = erro.get("retryMs") or corpo.get("retryMs")
+            try:
+                if retry_ms is not None:
+                    espera = max(espera, float(retry_ms) / 1000.0)
+            except (TypeError, ValueError):
+                pass
+        return min(max(espera, 0.05), 10.0)
+
+    @staticmethod
+    def _codigo_429(response):
+        try:
+            corpo = response.json()
+        except (TypeError, ValueError, AttributeError):
+            return ""
+        if not isinstance(corpo, dict):
+            return ""
+        erro = corpo.get("error") if isinstance(corpo.get("error"), dict) else {}
+        return str(erro.get("code") or corpo.get("code") or "").strip().upper()
+
+    def _esperar_cooldown_papi(self, path):
+        if path != "/odds":
+            return
+        agora = monotonic()
+        pronto = float(self._papi_proximo_pedido.get(path) or 0.0)
+        if pronto > agora:
+            sleep(pronto - agora)
+
+    def _marcar_cooldown_papi(self, path, segundos=None):
+        if path != "/odds":
+            return
+        intervalo = self.PAPI_ODDS_INTERVALO if segundos is None else float(segundos)
+        self._papi_proximo_pedido[path] = monotonic() + max(intervalo, 0.0)
+
     def _get_papi(self, path, params):
         if not self.papi_key:
             raise ValueError("ODDS_PAPI_KEY não configurada.")
         params = dict(params)
         params["apiKey"] = self.papi_key
-        r = self.session.get(
-            f"{self.PAPI_BASE_URL}{path}",
-            params=params,
-            headers={"Accept": "application/json"},
-            timeout=(5, 25),
-        )
-        r.raise_for_status()
-        return r.json()
+        tentativas = self.PAPI_MAX_TENTATIVAS_429 if path == "/odds" else 1
+
+        ultimo = None
+        for tentativa in range(tentativas):
+            self._esperar_cooldown_papi(path)
+            r = self.session.get(
+                f"{self.PAPI_BASE_URL}{path}",
+                params=params,
+                headers={"Accept": "application/json"},
+                timeout=(5, 25),
+            )
+            ultimo = r
+            self._marcar_cooldown_papi(path)
+
+            if getattr(r, "status_code", None) != 429:
+                r.raise_for_status()
+                return r.json()
+
+            # REQUEST_LIMIT_EXCEEDED é cota do plano, não cooldown. Não vale
+            # esperar e repetir porque o resultado continuará 429.
+            if self._codigo_429(r) == "REQUEST_LIMIT_EXCEEDED":
+                r.raise_for_status()
+
+            if tentativa + 1 >= tentativas:
+                r.raise_for_status()
+
+            espera = self._retry_429_segundos(r, tentativa)
+            self._marcar_cooldown_papi(path, espera)
+
+        if ultimo is not None:
+            ultimo.raise_for_status()
+        raise RuntimeError("Falha inesperada na fonte OddsPapi.")
 
     @staticmethod
     def _janela_hoje_utc():
