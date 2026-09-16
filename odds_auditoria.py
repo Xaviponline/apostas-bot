@@ -12,15 +12,11 @@ from copy import deepcopy
 
 
 class AuditoriaOdds:
-    # Siglas institucionais comuns que variam entre fornecedores e não
-    # identificam, por si só, a equipa.
     TOKENS_CLUBE = {
         "fc", "cf", "afc", "ac", "sc", "ca", "cd", "ud", "rcd",
         "sl", "ss", "fk", "sk", "bk", "aif",
     }
 
-    # Equivalências muito específicas e controladas. Não é fuzzy matching.
-    # A chave e o valor são avaliados depois da normalização básica.
     ALIASES_EQUIPA = {
         "athletic club": "athletic bilbao",
         "athletic bilbao": "athletic bilbao",
@@ -45,12 +41,7 @@ class AuditoriaOdds:
 
     @classmethod
     def _nome_equipa_compativel(cls, a, b):
-        """Compara nomes sem aceitar aproximações abertas.
-
-        Aceita igualdade canónica e relações de subconjunto de tokens, úteis
-        para diferenças como AIK/AIK Solna ou Deportivo/Deportivo La Coruna.
-        A decisão final continua a exigir um único evento casa+fora compatível.
-        """
+        """Compara nomes sem aceitar aproximações abertas."""
         a_n = cls._canon_equipa(a)
         b_n = cls._canon_equipa(b)
         if not a_n or not b_n:
@@ -114,8 +105,6 @@ class AuditoriaOdds:
         if not nome:
             return False
 
-        # Evita mercados estruturalmente parecidos mas que não representam o
-        # resultado/golos totais do jogo: cantos, cartões, equipa, jogador, etc.
         if mercado_modelo in {"Vitória Casa", "Vitória Fora"}:
             proibidos = ("corner", "handicap", "first half", "second half")
             if any(x in nome for x in proibidos):
@@ -203,6 +192,8 @@ class AuditoriaOdds:
     def _extrair_odd_diagnostico(cls, dados, mercado_modelo):
         if not isinstance(dados, dict):
             return None, "odds_evento_indisponiveis"
+        if dados.get("bookmaker_disponivel") is False:
+            return None, "betano_sem_odds_no_evento"
 
         casa = dados.get("casa") or ""
         fora = dados.get("fora") or ""
@@ -254,6 +245,23 @@ class AuditoriaOdds:
             ):
                 candidatos.append(evento)
         return candidatos
+
+    @classmethod
+    def _payload_evento_compativel(cls, dados, jogo, event_id):
+        """Confirma que /odds continua a descrever o fixture selecionado."""
+        if not isinstance(dados, dict):
+            return True
+        payload_id = dados.get("id")
+        if payload_id not in (None, "") and str(payload_id) != str(event_id):
+            return False
+
+        casa_payload = str(dados.get("casa") or "").strip()
+        fora_payload = str(dados.get("fora") or "").strip()
+        if not casa_payload or not fora_payload:
+            return True
+        return cls._nome_equipa_compativel(jogo.get("casa"), casa_payload) and cls._nome_equipa_compativel(
+            jogo.get("fora"), fora_payload
+        )
 
     @staticmethod
     def _registar_diagnostico(selecao, motivo):
@@ -307,6 +315,11 @@ class AuditoriaOdds:
             if event_id not in cache_odds:
                 cache_odds[event_id] = self.fonte.odds_evento(event_id)
             dados = cache_odds[event_id]
+
+            if not self._payload_evento_compativel(dados, jogo, event_id):
+                self._registar_diagnostico(selecao, "odds_payload_evento_divergente")
+                continue
+
             extraida, motivo = self._extrair_odd_diagnostico(
                 dados, str(selecao.get("mercado") or "")
             )
