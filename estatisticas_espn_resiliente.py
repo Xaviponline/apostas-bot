@@ -1,8 +1,9 @@
 """Carregamento resiliente de histórico ESPN sem alterar o modelo V1.
 
 Tenta primeiro a mesma janela longa usada pela V1. Se a ESPN rejeitar essa
-consulta, repete a recolha em blocos menores. Nunca aceita um histórico parcial:
-se algum bloco falhar, a competição continua marcada como indisponível.
+consulta, repete a recolha em blocos menores e, por fim, por datas individuais.
+Nunca aceita um histórico parcial: se qualquer consulta necessária falhar, a
+competição continua marcada como indisponível.
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
@@ -16,6 +17,7 @@ from estatisticas_espn import EstatisticasESPN
 
 class EstatisticasESPNResiliente(EstatisticasESPN):
     DIAS_POR_BLOCO = 14
+    TRABALHADORES_DIARIOS = 4
 
     def _consultar_intervalo(self, liga_codigo, inicio, fim):
         url = f"{self.BASE}/{liga_codigo}/scoreboard"
@@ -32,6 +34,21 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
         eventos = dados.get("events") if isinstance(dados, dict) else None
         if not isinstance(eventos, list):
             raise ValueError("Histórico ESPN inválido.")
+        return eventos
+
+    def _consultar_dia(self, liga_codigo, data):
+        """Consulta ESPN com o formato diário, sem hífen/range no parâmetro dates."""
+        url = f"{self.BASE}/{liga_codigo}/scoreboard"
+        resposta = self.session.get(
+            url,
+            params={"dates": data.strftime("%Y%m%d"), "limit": 500},
+            timeout=(5, 25),
+        )
+        resposta.raise_for_status()
+        dados = resposta.json()
+        eventos = dados.get("events") if isinstance(dados, dict) else None
+        if not isinstance(eventos, list):
+            raise ValueError("Histórico ESPN diário inválido.")
         return eventos
 
     def _normalizar_eventos(self, eventos, liga_codigo):
@@ -60,6 +77,45 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
             return "erro de execução"
         return "erro desconhecido"
 
+    def _recolher_por_blocos(self, liga_codigo, inicio, fim):
+        por_id = {}
+        cursor = inicio
+        while cursor <= fim:
+            bloco_fim = min(cursor + timedelta(days=self.DIAS_POR_BLOCO - 1), fim)
+            eventos = self._consultar_intervalo(liga_codigo, cursor, bloco_fim)
+            por_id.update(self._normalizar_eventos(eventos, liga_codigo))
+            cursor = bloco_fim + timedelta(days=1)
+        return por_id
+
+    def _recolher_por_dias(self, liga_codigo, inicio, fim):
+        """Último fallback: datas singulares em paralelo, sem aceitar dias em falta."""
+        datas = []
+        cursor = inicio
+        while cursor <= fim:
+            datas.append(cursor)
+            cursor += timedelta(days=1)
+
+        por_id = {}
+        primeiro_erro = None
+        with ThreadPoolExecutor(
+            max_workers=min(self.TRABALHADORES_DIARIOS, max(1, len(datas)))
+        ) as executor:
+            futuros = {
+                executor.submit(self._consultar_dia, liga_codigo, data): data
+                for data in datas
+            }
+            for futuro in as_completed(futuros):
+                try:
+                    eventos = futuro.result()
+                except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
+                    primeiro_erro = primeiro_erro or exc
+                    continue
+                por_id.update(self._normalizar_eventos(eventos, liga_codigo))
+
+        if primeiro_erro is not None:
+            raise primeiro_erro
+        return por_id
+
     def _fetch_liga(self, liga_codigo, data_ref=None):
         agora = data_ref or datetime.now(ZoneInfo("Europe/Lisbon"))
         if agora.tzinfo is None:
@@ -77,14 +133,10 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
             eventos = self._consultar_intervalo(liga_codigo, inicio, fim)
             por_id = self._normalizar_eventos(eventos, liga_codigo)
         except (requests.RequestException, RuntimeError, ValueError, TypeError):
-            por_id = {}
-            cursor = inicio
-            while cursor <= fim:
-                bloco_fim = min(cursor + timedelta(days=self.DIAS_POR_BLOCO - 1), fim)
-                # Integridade primeiro: qualquer bloco em falta invalida a liga.
-                eventos = self._consultar_intervalo(liga_codigo, cursor, bloco_fim)
-                por_id.update(self._normalizar_eventos(eventos, liga_codigo))
-                cursor = bloco_fim + timedelta(days=1)
+            try:
+                por_id = self._recolher_por_blocos(liga_codigo, inicio, fim)
+            except (requests.RequestException, RuntimeError, ValueError, TypeError):
+                por_id = self._recolher_por_dias(liga_codigo, inicio, fim)
 
         resultados = sorted(
             por_id.values(), key=lambda x: x["timestamp"], reverse=True
