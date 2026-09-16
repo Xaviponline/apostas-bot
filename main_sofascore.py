@@ -11,6 +11,7 @@ from gestor_apostas import GestorApostas
 from rastreador_resultados import RastreadorResultados
 from analisador_inteligente import AnalisadorInteligente
 from buscador_jogos_reais import BuscadorJogosReais
+from odds_auditoria import AuditoriaOdds
 from odds_betano import OddsBetano
 from previsoes_premium import RegistoPrevisoes
 
@@ -31,7 +32,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 
 No /analisa, a odd mínima é o preço a partir do qual o modelo aponta para uma margem teórica de 5%.
 As previsões ficam guardadas antes do jogo para auditoria; não são reescritas depois.
-ROI/EV só serão mostrados quando existirem odds reais guardadas no momento da previsão.
+ROI/EV só são mostrados quando existirem odds reais guardadas no momento da previsão.
 As probabilidades são estimativas estatísticas e não garantias.
 As apostas não são colocadas na Betano pelo bot.'''
 
@@ -143,6 +144,11 @@ class BotPremiumReal:
         if not jogos:
             return self.buscador.formatar_jogos(jogos)
         selecoes = self.analisador.gerar_todas_apostas(jogos)
+        try:
+            selecoes = AuditoriaOdds(self.odds).enriquecer(selecoes)
+        except (RuntimeError, ValueError, TypeError):
+            # Odds são opcionais; falhas nesta camada nunca bloqueiam a V1.
+            pass
         if tecnica:
             resposta = self.analisador.gerar_relatorio_tecnico(jogos, selecoes=selecoes)
         else:
@@ -204,7 +210,7 @@ class BotPremiumReal:
                     'Apresentação: /analisa compacto + /analisa_full técnico.\n'
                     'Filtro: amostra mínima + qualidade dos dados + probabilidade conservadora + odd mínima alvo.\n'
                     'Auditoria de previsões: ativa e persistente em /data.\n'
-                    'ROI do modelo: só será ativado com odds reais registadas.'
+                    'ROI do modelo: calculado apenas nas previsões com odd real congelada.'
                 )
             elif comando == '/resultados':
                 resposta = self.gestor.gerar_relatorio()
