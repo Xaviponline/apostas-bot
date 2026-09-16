@@ -217,6 +217,9 @@ class AnalisadorInteligente:
 
         numero = 1
         odds_reais = 0
+        com_valor = 0
+        abaixo_minima = 0
+        sem_odd = 0
         for hora, itens in grupos.items():
             linhas.extend(["", f"⏰ {hora} — JOGOS"])
             for indice_item, s in enumerate(itens):
@@ -237,17 +240,30 @@ class AnalisadorInteligente:
                         f"   ✅ Odd mínima: ≥ {self._fmt_num(s['odd_minima'])}",
                     ]
                 )
+                tem_odd_real = False
                 try:
                     odd_real = float(s.get("odd_real"))
                     if odd_real > 1.0:
+                        tem_odd_real = True
                         ev = float(s.get("ev_real", (float(s["probabilidade"]) * odd_real) - 1.0))
                         sinal = "+" if ev >= 0 else ""
                         linhas.append(
                             f"   💶 Odd real {self._fmt_num(odd_real)} | EV {sinal}{self._fmt_num(ev*100, 1)}%"
                         )
                         odds_reais += 1
+                        if odd_real >= float(s["odd_minima"]):
+                            linhas.append("   🟢 VALOR CONFIRMADO — odd real ≥ odd mínima")
+                            com_valor += 1
+                        else:
+                            linhas.append("   🔴 SEM VALOR À ODD ATUAL — abaixo da odd mínima")
+                            abaixo_minima += 1
                 except (TypeError, ValueError):
-                    pass
+                    tem_odd_real = False
+
+                if not tem_odd_real:
+                    linhas.append("   ⚪ ODD REAL INDISPONÍVEL — valor de mercado por validar")
+                    sem_odd += 1
+
                 linhas.extend(
                     [
                         f"   ⭐ {estrelas}",
@@ -265,6 +281,9 @@ class AnalisadorInteligente:
             linhas.append(
                 "ℹ️ Sem odds reais de mercado não mostramos ROI/EV. Esses valores só entram quando forem medidos com odds reais."
             )
+        linhas.append(
+            f"🧭 Validação de mercado: {com_valor} com valor | {abaixo_minima} abaixo da mínima | {sem_odd} sem odd real."
+        )
         linhas.append(
             f"📚 Jogos analisados: {r['jogos']} | Com dados suficientes: {r['com_dados']}"
         )
@@ -325,8 +344,14 @@ class AnalisadorInteligente:
                     ev = float(s.get("ev_real", (float(s["probabilidade"]) * odd_real) - 1.0))
                     sinal = "+" if ev >= 0 else ""
                     linhas.append(f"💶 Odd real: {odd_real:.2f} | EV snapshot: {sinal}{ev*100:.1f}%")
+                    if odd_real >= float(s["odd_minima"]):
+                        linhas.append("🟢 VALOR CONFIRMADO — odd real ≥ odd mínima")
+                    else:
+                        linhas.append("🔴 SEM VALOR À ODD ATUAL — abaixo da odd mínima")
+                else:
+                    linhas.append("⚪ ODD REAL INDISPONÍVEL — valor de mercado por validar")
             except (TypeError, ValueError):
-                pass
+                linhas.append("⚪ ODD REAL INDISPONÍVEL — valor de mercado por validar")
 
         linhas.extend(
             [
