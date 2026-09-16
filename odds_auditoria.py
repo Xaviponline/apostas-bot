@@ -275,6 +275,15 @@ class AuditoriaOdds:
             motivo,
         )
 
+    def _motivo_fonte(self, event_id):
+        diagnostico = getattr(self.fonte, "diagnostico_evento", None)
+        if not callable(diagnostico):
+            return ""
+        try:
+            return str(diagnostico(event_id) or "")
+        except (TypeError, ValueError, RuntimeError):
+            return ""
+
     def enriquecer(self, selecoes):
         """Devolve cópias das seleções; nunca filtra nem reordena o V1."""
         saida = deepcopy(list(selecoes or []))
@@ -315,6 +324,11 @@ class AuditoriaOdds:
             if event_id not in cache_odds:
                 cache_odds[event_id] = self.fonte.odds_evento(event_id)
             dados = cache_odds[event_id]
+
+            if dados is None:
+                motivo = self._motivo_fonte(event_id) or "odds_evento_indisponiveis"
+                self._registar_diagnostico(selecao, motivo)
+                continue
 
             if not self._payload_evento_compativel(dados, jogo, event_id):
                 self._registar_diagnostico(selecao, "odds_payload_evento_divergente")
