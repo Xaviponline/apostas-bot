@@ -9,7 +9,7 @@ class FonteFake:
 
     def eventos_hoje(self):
         return [
-            {"id": "evt1", "casa": "Atlético Madrid", "fora": "Osasuna"},
+            {"id": "evt1", "casa": "Atlético Madrid", "fora": "CA Osasuna"},
             {"id": "evt2", "casa": "AIK", "fora": "Mjällby AIF"},
         ]
 
@@ -17,7 +17,7 @@ class FonteFake:
         if event_id == "evt1":
             return {
                 "casa": "Atletico Madrid",
-                "fora": "Osasuna",
+                "fora": "CA Osasuna",
                 "fonte": "Fonte Teste",
                 "mercados": [
                     {
@@ -75,6 +75,14 @@ class OddsAuditoriaTests(unittest.TestCase):
         self.assertAlmostEqual(saida[0]["ev_real"], (0.634 * 1.80) - 1, places=6)
         self.assertEqual(saida[1]["odd_real"], 1.72)
         self.assertEqual(saida[1]["odds_fonte"], "Fonte Teste")
+
+    def test_normaliza_siglas_de_clube_sem_fuzzy_matching(self):
+        self.assertEqual(
+            AuditoriaOdds._chave_jogo("Atlético Madrid", "Osasuna"),
+            AuditoriaOdds._chave_jogo("Atletico Madrid", "CA Osasuna"),
+        )
+        self.assertEqual(AuditoriaOdds._normalizar("AC Milan"), "milan")
+        self.assertNotEqual(AuditoriaOdds._normalizar("Inter Milan"), "milan")
 
     def test_sem_fonte_nao_inventa_odds(self):
         selecoes = [
