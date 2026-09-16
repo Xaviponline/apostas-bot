@@ -194,17 +194,33 @@ class BotPremiumDiario(BotPremiumReal):
         ).strftime("%H:%M")
 
     @staticmethod
-    def _diagnostico_zero(total_jogos, total_futuros, resumo_novo, selecoes_novas):
+    def _diagnostico_zero(
+        total_jogos,
+        total_futuros,
+        total_suportados,
+        resumo_novo,
+        selecoes_novas,
+        erros_historico=0,
+    ):
         """Explica um dia sem seleções sem alterar qualquer filtro do V1."""
         com_dados = int((resumo_novo or {}).get("com_dados", 0) or 0)
         selecionadas = len(selecoes_novas or [])
+        futuros = int(total_futuros)
+        suportados = int(total_suportados)
+        fora_cobertura = max(futuros - suportados, 0)
+        sem_amostra = max(suportados - com_dados, 0)
         sem_selecao = max(com_dados - selecionadas, 0)
-        return (
-            f"📚 Jogos encontrados hoje: {int(total_jogos)} | "
-            f"Futuros avaliados: {int(total_futuros)}\n"
-            f"🧪 Com dados suficientes: {com_dados} | "
-            f"Sem seleção após filtros: {sem_selecao}"
-        )
+        linhas = [
+            f"📚 Jogos encontrados hoje: {int(total_jogos)} | Futuros avaliados: {futuros}",
+            f"🧭 Dentro da cobertura V1: {suportados} | Fora da cobertura: {fora_cobertura}",
+            f"🧪 Com dados suficientes: {com_dados} | Sem amostra suficiente: {sem_amostra}",
+            f"🎯 Sem seleção após filtros: {sem_selecao}",
+        ]
+        if int(erros_historico or 0) > 0:
+            linhas.append(
+                f"⚠️ Histórico indisponível em {int(erros_historico)} competição(ões)."
+            )
+        return "\n".join(linhas)
 
     def _selecoes_registadas_da_data(self, data_iso):
         """Reconstrói cartões compactos a partir dos snapshots auditados."""
@@ -270,12 +286,18 @@ class BotPremiumDiario(BotPremiumReal):
             and isinstance(j.get("timestamp"), (int, float))
             and float(j["timestamp"]) > agora_ts
         ]
+        jogos_suportados = [
+            j
+            for j in jogos_futuros
+            if self.analisador.estatisticas.resolver_liga(j) is not None
+        ]
 
         selecoes_novas = []
         resumo_novo = {"jogos": len(jogos), "com_dados": 0, "selecoes": 0}
         if jogos_futuros:
             selecoes_novas = self.analisador.gerar_todas_apostas(jogos_futuros)
             resumo_novo = dict(self.analisador.ultimo_resumo)
+        erros_historico = len(self.analisador.estatisticas.ultimo_erros or {})
 
         novas = self.previsoes.registar(selecoes_novas)
         selecoes_dia = self._selecoes_registadas_da_data(data_iso)
@@ -304,7 +326,12 @@ class BotPremiumDiario(BotPremiumReal):
         resposta = self.analisador.gerar_relatorio(jogos, selecoes=selecoes_dia)
         if not selecoes_dia:
             resposta += "\n" + self._diagnostico_zero(
-                len(jogos), len(jogos_futuros), resumo_novo, selecoes_novas
+                len(jogos),
+                len(jogos_futuros),
+                len(jogos_suportados),
+                resumo_novo,
+                selecoes_novas,
+                erros_historico,
             )
         resposta += "\n🕛 Janela diária: 00:00–23:59 (hora de Portugal)."
         if novas:
