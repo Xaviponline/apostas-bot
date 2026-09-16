@@ -12,6 +12,7 @@ import requests
 
 from analisador_inteligente import AnalisadorInteligente
 from main_sofascore import BotPremiumReal
+from odds_auditoria import AuditoriaOdds
 from previsoes_premium import RegistoPrevisoes
 
 
@@ -176,12 +177,13 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         if not segmentado:
             return base
 
-        marcador = (
-            "\n\nROI ainda não é apresentado porque não temos odds reais guardadas "
-            "no momento da previsão."
+        marcadores = (
+            "\n\n💶 AUDITORIA DE ODDS REAIS",
+            "\n\nROI ainda não é apresentado",
         )
-        if marcador in base:
-            return base.replace(marcador, f"\n\n{segmentado}{marcador}", 1)
+        for marcador in marcadores:
+            if marcador in base:
+                return base.replace(marcador, f"\n\n{segmentado}{marcador}", 1)
         return f"{base}\n\n{segmentado}"
 
 
@@ -260,26 +262,33 @@ class BotPremiumDiario(BotPremiumReal):
                 continue
 
             timestamp = p.get("timestamp_jogo")
-            selecoes.append(
-                {
-                    "jogo": {
-                        "id": p.get("event_id"),
-                        "casa": p.get("casa") or "?",
-                        "fora": p.get("fora") or "?",
-                        "liga": p.get("liga") or "Competição",
-                        "timestamp": timestamp,
-                        "horario": self._hora_portugal(timestamp),
-                    },
-                    "mercado": p.get("mercado") or "Mercado desconhecido",
-                    "probabilidade": prob,
-                    "probabilidade_bruta": prob_bruta,
-                    "qualidade": qualidade,
-                    "odd_justa": odd_justa,
-                    "odd_minima": odd_minima,
-                    "confianca": self.analisador._confianca(qualidade, prob),
-                    "score": (prob * 0.62) + ((qualidade / 100.0) * 0.38),
-                }
-            )
+            item = {
+                "jogo": {
+                    "id": p.get("event_id"),
+                    "casa": p.get("casa") or "?",
+                    "fora": p.get("fora") or "?",
+                    "liga": p.get("liga") or "Competição",
+                    "timestamp": timestamp,
+                    "horario": self._hora_portugal(timestamp),
+                },
+                "mercado": p.get("mercado") or "Mercado desconhecido",
+                "probabilidade": prob,
+                "probabilidade_bruta": prob_bruta,
+                "qualidade": qualidade,
+                "odd_justa": odd_justa,
+                "odd_minima": odd_minima,
+                "confianca": self.analisador._confianca(qualidade, prob),
+                "score": (prob * 0.62) + ((qualidade / 100.0) * 0.38),
+            }
+            try:
+                odd_real = float(p.get("odd_real"))
+                if odd_real > 1.0:
+                    item["odd_real"] = odd_real
+                    item["ev_real"] = float(p.get("ev_real", (prob * odd_real) - 1.0))
+                    item["odds_fonte"] = p.get("odds_fonte") or ""
+            except (TypeError, ValueError):
+                pass
+            selecoes.append(item)
 
         selecoes.sort(
             key=lambda s: (
@@ -317,6 +326,11 @@ class BotPremiumDiario(BotPremiumReal):
         if jogos_futuros:
             selecoes_novas = self.analisador.gerar_todas_apostas(jogos_futuros)
             resumo_novo = dict(self.analisador.ultimo_resumo)
+            try:
+                selecoes_novas = AuditoriaOdds(self.odds).enriquecer(selecoes_novas)
+            except (RuntimeError, ValueError, TypeError):
+                # A camada de odds é opcional e nunca pode impedir a análise V1.
+                pass
 
         erros_historico = dict(self.analisador.estatisticas.ultimo_erros or {})
         codigos_erro = set(erros_historico)
