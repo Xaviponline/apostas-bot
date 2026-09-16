@@ -24,6 +24,7 @@ NOMES_PT = {
     "portuguese liga 2": "Liga Portugal 2",
     "taca de portugal": "Taça de Portugal",
     "portuguese cup": "Taça de Portugal",
+    "portuguese taca de portugal": "Taça de Portugal",
     "liga revelacao sub-23": "Liga Revelação Sub-23",
 
     # UEFA / seleções
@@ -87,6 +88,8 @@ NOMES_PT = {
     "german 3. liga": "3. Liga",
     "3. liga": "3. Liga",
     "dfb pokal": "Taça da Alemanha",
+    "german cup": "Taça da Alemanha",
+    "german dfb-pokal": "Taça da Alemanha",
 
     # França
     "french ligue 1": "Ligue 1",
@@ -94,6 +97,7 @@ NOMES_PT = {
     "french ligue 2": "Ligue 2",
     "ligue 2": "Ligue 2",
     "coupe de france": "Taça de França",
+    "french coupe de france": "Taça de França",
 
     # Países Baixos
     "dutch eredivisie": "Eredivisie",
@@ -102,6 +106,7 @@ NOMES_PT = {
     "keuken kampioen divisie": "Eerste Divisie",
     "eerste divisie": "Eerste Divisie",
     "knvb beker": "Taça dos Países Baixos",
+    "dutch knvb beker": "Taça dos Países Baixos",
 
     # Turquia
     "turkish super lig": "Super Liga Turca",
@@ -121,6 +126,8 @@ NOMES_PT = {
     # Escócia / Áustria / Grécia / Suíça
     "scottish premiership": "Premiership Escocesa",
     "scottish championship": "Championship Escocês",
+    "scottish cup": "Taça da Escócia",
+    "scottish league cup": "Taça da Liga Escocesa",
     "austrian bundesliga": "Bundesliga Austríaca",
     "greek super league": "Super Liga Grega",
     "swiss super league": "Super Liga Suíça",
@@ -130,7 +137,11 @@ NOMES_PT = {
     "brazilian serie a": "Brasileirão Série A",
     "brasileiro serie b": "Brasileirão Série B",
     "brazilian serie b": "Brasileirão Série B",
+    "brazilian copa do brasil": "Copa do Brasil",
+    "copa do brasil": "Copa do Brasil",
     "argentine liga profesional": "Liga Argentina",
+    "argentine copa argentina": "Copa Argentina",
+    "copa argentina": "Copa Argentina",
     "copa libertadores": "Copa Libertadores",
     "conmebol libertadores": "Copa Libertadores",
     "copa sudamericana": "Copa Sul-Americana",
@@ -144,14 +155,12 @@ NOMES_PT = {
 
 
 def nome_liga_pt(nome):
-    """Devolve um nome familiar em PT-PT, preservando nomes não mapeados."""
+    """Devolve um nome familiar em PT-PT, preservando nomes não mapeados.
+
+    A correspondência é deliberadamente exata. Isto evita colisões como
+    "Russian Premier League" ser apresentada como a Premier League inglesa.
+    Os conectores normalizam as competições suportadas para nomes canónicos.
+    """
     original = str(nome or "Competição").strip() or "Competição"
     chave = _normalizar(original)
-    if chave in NOMES_PT:
-        return NOMES_PT[chave]
-
-    # Algumas fontes acrescentam prefixos/sufixos ao nome canónico.
-    for conhecido, traduzido in sorted(NOMES_PT.items(), key=lambda item: len(item[0]), reverse=True):
-        if conhecido and conhecido in chave:
-            return traduzido
-    return original
+    return NOMES_PT.get(chave, original)
