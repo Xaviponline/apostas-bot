@@ -17,15 +17,10 @@ TZ_PORTUGAL = ZoneInfo("Europe/Lisbon")
 
 
 class RegistoPrevisoesDiario(RegistoPrevisoes):
-    """Liquidação tolerante às diferenças de data/fuso usadas pela ESPN.
-
-    A previsão continua identificada exclusivamente pelo event_id da ESPN. Para
-    jogos perto da meia-noite em Portugal, a página diária da ESPN pode colocar
-    o evento no dia anterior/seguinte. Consultamos uma janela de três datas e
-    apenas aceitamos o mesmo event_id, evitando associações por nome.
-    """
+    """Liquidação robusta e auditoria segmentada das previsões diárias."""
 
     def _resultados_espn(self, data_iso):
+        """Procura o mesmo event_id numa janela de três datas ESPN."""
         try:
             data_base = datetime.strptime(str(data_iso), "%Y-%m-%d").date()
         except (TypeError, ValueError) as exc:
@@ -48,6 +43,84 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         if not consultas_validas:
             raise ValueError("Não foi possível consultar resultados ESPN.") from ultimo_erro
         return resultados
+
+    @staticmethod
+    def _metricas_grupo(previsoes):
+        liquidados = [
+            p for p in (previsoes or []) if p.get("resultado_binario") in (0, 1)
+        ]
+        if not liquidados:
+            return None
+        ganhos = sum(int(p["resultado_binario"]) for p in liquidados)
+        total = len(liquidados)
+        brier = sum(
+            (float(p["probabilidade"]) - int(p["resultado_binario"])) ** 2
+            for p in liquidados
+        ) / total
+        return {
+            "total": total,
+            "ganhos": ganhos,
+            "perdas": total - ganhos,
+            "hit_rate": ganhos / total,
+            "brier": brier,
+        }
+
+    def _relatorio_segmentado(self):
+        """Mostra apenas estatísticas; não altera previsões nem o modelo V1."""
+        liquidados = [
+            p
+            for p in self.dados.get("previsoes", [])
+            if p.get("resultado_binario") in (0, 1)
+        ]
+        if not liquidados:
+            return ""
+
+        por_dia = {}
+        por_mercado = {}
+        for p in liquidados:
+            por_dia.setdefault(str(p.get("data_jogo") or "Sem data"), []).append(p)
+            por_mercado.setdefault(
+                str(p.get("mercado") or "Mercado desconhecido"), []
+            ).append(p)
+
+        linhas = ["📅 DESEMPENHO POR DIA"]
+        for data_iso in sorted(por_dia):
+            m = self._metricas_grupo(por_dia[data_iso])
+            if m is None:
+                continue
+            try:
+                etiqueta = datetime.strptime(data_iso, "%Y-%m-%d").strftime("%d/%m")
+            except ValueError:
+                etiqueta = data_iso
+            linhas.append(
+                f"• {etiqueta}: {m['ganhos']}/{m['total']} "
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+            )
+
+        linhas.extend(["", "🎯 DESEMPENHO POR MERCADO"])
+        for mercado in sorted(por_mercado):
+            m = self._metricas_grupo(por_mercado[mercado])
+            if m is None:
+                continue
+            linhas.append(
+                f"• {mercado}: {m['ganhos']}/{m['total']} "
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+            )
+        return "\n".join(linhas)
+
+    def relatorio(self):
+        base = super().relatorio()
+        segmentado = self._relatorio_segmentado()
+        if not segmentado:
+            return base
+
+        marcador = (
+            "\n\nROI ainda não é apresentado porque não temos odds reais guardadas "
+            "no momento da previsão."
+        )
+        if marcador in base:
+            return base.replace(marcador, f"\n\n{segmentado}{marcador}", 1)
+        return f"{base}\n\n{segmentado}"
 
 
 class BotPremiumDiario(BotPremiumReal):
@@ -137,7 +210,9 @@ class BotPremiumDiario(BotPremiumReal):
             return self.buscador.formatar_jogos(jogos)
 
         ids_futuros = {
-            j.get("id") for j in jogos_futuros if isinstance(j, dict) and j.get("id") is not None
+            j.get("id")
+            for j in jogos_futuros
+            if isinstance(j, dict) and j.get("id") is not None
         }
         ids_guardados_fora_da_consulta = {
             (s.get("jogo") or {}).get("id")
