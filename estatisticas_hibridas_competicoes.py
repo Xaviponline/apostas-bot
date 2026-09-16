@@ -7,7 +7,6 @@ O modelo, os filtros e a forma recente das equipas não são alterados.
 """
 from datetime import datetime
 import re
-import unicodedata
 from time import monotonic
 from zoneinfo import ZoneInfo
 
@@ -23,24 +22,20 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "eng.league_cup",
         "uefa.europa",
     }
-    SOFA_ALIASES = {
-        "arg.copa": {"copa argentina"},
-        "eng.league_cup": {"efl cup", "carabao cup", "english league cup", "league cup"},
-        "uefa.europa": {"uefa europa league", "europa league"},
+    # IDs públicos e estáveis das provas no SofaScore. Evita depender da agenda
+    # diária, que em produção devolveu HTTP 404 mesmo com as provas existentes.
+    SOFA_TOURNAMENT_IDS = {
+        "arg.copa": 1024,
+        "eng.league_cup": 21,
+        "uefa.europa": 679,
     }
+    SOFA_ANO_CALENDARIO = {"arg.copa"}
     SOFA_WWW_BASE = "https://www.sofascore.com/api/v1"
     MAX_PAGINAS_SOFA = 8
 
     def __init__(self, *args, sofa_client=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._sofa_client = sofa_client
-
-    @staticmethod
-    def _nome_sofa(valor):
-        texto = unicodedata.normalize("NFKD", str(valor or ""))
-        texto = "".join(c for c in texto if not unicodedata.combining(c))
-        texto = re.sub(r"[^a-z0-9]+", " ", texto.lower()).strip()
-        return re.sub(r"\s+", " ", texto)
 
     @staticmethod
     def _motivo_seguro_sofa(exc):
@@ -119,58 +114,51 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
             agora = agora.replace(tzinfo=ZoneInfo("Europe/Lisbon"))
         return agora
 
-    def _eventos_sofa_do_dia(self, data_iso):
-        ultimo_erro = None
-        for sufixo in ("/inverse", ""):
-            try:
-                dados = self._sofa_get(
-                    f"/sport/football/scheduled-events/{data_iso}{sufixo}"
-                )
-                eventos = dados.get("events") if isinstance(dados, dict) else None
-                if isinstance(eventos, list):
-                    return eventos
-                ultimo_erro = ValueError("lista diária ausente")
-            except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
-                ultimo_erro = exc
-        if ultimo_erro is not None:
-            raise ValueError(f"agenda: {self._motivo_seguro_sofa(ultimo_erro)}") from None
-        raise ValueError("agenda: SofaScore indisponível")
+    @classmethod
+    def _ano_alvo_sofa(cls, liga_codigo, agora):
+        if liga_codigo in cls.SOFA_ANO_CALENDARIO:
+            return str(agora.year)
+        inicio = agora.year if agora.month >= 7 else agora.year - 1
+        return f"{inicio % 100:02d}/{(inicio + 1) % 100:02d}"
 
     def _descobrir_competicao_sofa(self, liga_codigo, data_ref=None):
-        aliases = {
-            self._nome_sofa(nome)
-            for nome in self.SOFA_ALIASES.get(liga_codigo, set())
-        }
-        if not aliases:
-            raise ValueError("competição não mapeada")
+        try:
+            unique_id = int(self.SOFA_TOURNAMENT_IDS[liga_codigo])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("competição não mapeada") from None
 
         agora = self._data_ref(data_ref)
-        eventos = self._eventos_sofa_do_dia(agora.date().isoformat())
-        pares = set()
-        for evento in eventos:
-            if not isinstance(evento, dict):
+        alvo = self._ano_alvo_sofa(liga_codigo, agora)
+        try:
+            dados = self._sofa_get(f"/unique-tournament/{unique_id}/seasons")
+        except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
+            raise ValueError(
+                f"épocas torneio {unique_id}: {self._motivo_seguro_sofa(exc)}"
+            ) from None
+
+        temporadas = dados.get("seasons") if isinstance(dados, dict) else None
+        if not isinstance(temporadas, list):
+            raise ValueError(f"épocas torneio {unique_id}: lista ausente")
+
+        candidatos = []
+        for temporada in temporadas:
+            if not isinstance(temporada, dict):
                 continue
-            torneio = evento.get("tournament") or {}
-            unico = torneio.get("uniqueTournament") or {}
-            nomes = {
-                self._nome_sofa(unico.get("name")),
-                self._nome_sofa(torneio.get("name")),
-            }
-            if not (nomes & aliases):
+            ano = str(temporada.get("year") or "").strip()
+            nome = str(temporada.get("name") or "").strip()
+            if ano != alvo and alvo not in nome:
                 continue
-            temporada = evento.get("season") or {}
             try:
-                unique_id = int(unico["id"])
-                season_id = int(temporada["id"])
+                candidatos.append(int(temporada["id"]))
             except (KeyError, TypeError, ValueError):
                 continue
-            pares.add((unique_id, season_id))
 
-        if not pares:
-            raise ValueError("competição não identificada na agenda")
-        if len(pares) != 1:
-            raise ValueError("competição ambígua na agenda")
-        return next(iter(pares))
+        candidatos = sorted(set(candidatos))
+        if not candidatos:
+            raise ValueError(f"época {alvo} não encontrada para torneio {unique_id}")
+        if len(candidatos) != 1:
+            raise ValueError(f"época {alvo} ambígua para torneio {unique_id}")
+        return unique_id, candidatos[0]
 
     @staticmethod
     def _score_sofa(score):
@@ -274,6 +262,8 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
             "fonte": "sofascore",
             "jogos": len(resultados),
             "paginas": paginas,
+            "torneio_id": unique_id,
+            "temporada_id": season_id,
         }
         if len(resultados) < self.MIN_JOGOS_BASE:
             raise ValueError(f"base insuficiente: {len(resultados)}/{self.MIN_JOGOS_BASE}")
