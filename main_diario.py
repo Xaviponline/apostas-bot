@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import logging
 import requests
 
+from analisador_inteligente import AnalisadorInteligente
 from main_sofascore import BotPremiumReal
 from previsoes_premium import RegistoPrevisoes
 
@@ -65,6 +66,29 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             "brier": brier,
         }
 
+    @staticmethod
+    def _confianca_snapshot(previsao):
+        try:
+            qualidade = int(previsao["qualidade"])
+            prob = float(previsao["probabilidade"])
+        except (KeyError, TypeError, ValueError):
+            return "DESCONHECIDA"
+        return AnalisadorInteligente._confianca(qualidade, prob)
+
+    @staticmethod
+    def _faixa_qualidade(previsao):
+        try:
+            qualidade = int(previsao["qualidade"])
+        except (KeyError, TypeError, ValueError):
+            return "Desconhecida"
+        if qualidade >= 85:
+            return "85–100"
+        if qualidade >= 70:
+            return "70–84"
+        if qualidade >= 55:
+            return "55–69"
+        return "<55"
+
     def _relatorio_segmentado(self):
         """Mostra apenas estatísticas; não altera previsões nem o modelo V1."""
         liquidados = [
@@ -77,11 +101,15 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
 
         por_dia = {}
         por_mercado = {}
+        por_confianca = {}
+        por_qualidade = {}
         for p in liquidados:
             por_dia.setdefault(str(p.get("data_jogo") or "Sem data"), []).append(p)
             por_mercado.setdefault(
                 str(p.get("mercado") or "Mercado desconhecido"), []
             ).append(p)
+            por_confianca.setdefault(self._confianca_snapshot(p), []).append(p)
+            por_qualidade.setdefault(self._faixa_qualidade(p), []).append(p)
 
         linhas = ["📅 DESEMPENHO POR DIA"]
         for data_iso in sorted(por_dia):
@@ -104,6 +132,39 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 continue
             linhas.append(
                 f"• {mercado}: {m['ganhos']}/{m['total']} "
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+            )
+
+        ordem_confianca = ["ALTA", "MÉDIA-ALTA", "MÉDIA", "BAIXA", "DESCONHECIDA"]
+        estrelas = {
+            "ALTA": "⭐⭐⭐⭐⭐",
+            "MÉDIA-ALTA": "⭐⭐⭐⭐",
+            "MÉDIA": "⭐⭐⭐",
+            "BAIXA": "⭐⭐",
+            "DESCONHECIDA": "—",
+        }
+        linhas.extend(["", "⭐ DESEMPENHO POR CONFIANÇA"])
+        for confianca in ordem_confianca:
+            if confianca not in por_confianca:
+                continue
+            m = self._metricas_grupo(por_confianca[confianca])
+            if m is None:
+                continue
+            linhas.append(
+                f"• {estrelas[confianca]} {confianca}: {m['ganhos']}/{m['total']} "
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+            )
+
+        ordem_qualidade = ["85–100", "70–84", "55–69", "<55", "Desconhecida"]
+        linhas.extend(["", "🧪 DESEMPENHO POR QUALIDADE DOS DADOS"])
+        for faixa in ordem_qualidade:
+            if faixa not in por_qualidade:
+                continue
+            m = self._metricas_grupo(por_qualidade[faixa])
+            if m is None:
+                continue
+            linhas.append(
+                f"• Dados {faixa}: {m['ganhos']}/{m['total']} "
                 f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
             )
         return "\n".join(linhas)
