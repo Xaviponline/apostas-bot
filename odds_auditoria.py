@@ -82,7 +82,11 @@ class AuditoriaOdds:
         if m:
             lado = m.group(1).casefold()
             linha = cls._normalizar(m.group(2))
-            return lado in texto and linha in texto
+            escolha = cls._normalizar(
+                " ".join([str(odd.get("seleção") or ""), str(odd.get("ref") or "")])
+            )
+            nome_mercado = cls._normalizar(mercado.get("name"))
+            return lado in escolha and (linha in escolha or linha in nome_mercado)
         return False
 
     @classmethod
