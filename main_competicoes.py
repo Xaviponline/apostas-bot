@@ -36,7 +36,10 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 )
                 continue
             if fonte == "sofascore_indisponivel":
-                linhas.append(f"• {codigo}: 0 jogos | SofaScore indisponível")
+                motivo = str(diag.get("motivo") or "sem detalhe")
+                linhas.append(
+                    f"• {codigo}: 0 jogos | SofaScore indisponível | {motivo}"
+                )
                 continue
 
             blocos = int(diag.get("blocos") or 0)
