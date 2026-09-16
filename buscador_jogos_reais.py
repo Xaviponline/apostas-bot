@@ -134,6 +134,15 @@ class BuscadorJogosReais:
 
     @classmethod
     def _nome_liga_espn(cls, evento, competicao):
+        # Na rota global da ESPN, league.name pode conter apenas a fase
+        # ("League Phase", "Group Stage", etc.). Quando o slug identifica
+        # uma competição conhecida, ele é a fonte mais específica e ganha
+        # prioridade sobre esses nomes genéricos.
+        slug = cls._season_slug_espn(evento)
+        nome_slug = cls._nome_liga_por_slug(slug)
+        if nome_slug:
+            return nome_slug
+
         candidatos_liga = [
             (evento.get("league") or {}).get("name")
             if isinstance(evento.get("league"), dict)
@@ -145,14 +154,6 @@ class BuscadorJogosReais:
         for valor in candidatos_liga:
             if isinstance(valor, str) and valor.strip():
                 return valor.strip()
-
-        # O season.name da rota global ESPN pode ser apenas a fase da prova
-        # ("League Phase", "Group Stage", etc.). O slug preserva normalmente
-        # a identidade da competição e é também usado pelo motor V1.
-        slug = cls._season_slug_espn(evento)
-        nome_slug = cls._nome_liga_por_slug(slug)
-        if nome_slug:
-            return nome_slug
 
         season = evento.get("season") or {}
         nome_season = season.get("name") if isinstance(season, dict) else None
