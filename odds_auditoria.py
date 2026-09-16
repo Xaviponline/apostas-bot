@@ -10,16 +10,25 @@ from copy import deepcopy
 
 
 class AuditoriaOdds:
+    # Siglas institucionais comuns que variam entre fornecedores e não
+    # identificam, por si só, a equipa. Removê-las permite casar, por exemplo,
+    # "CA Osasuna" com "Osasuna" e "AC Milan" com "Milan" sem recorrer a
+    # fuzzy matching.
+    TOKENS_CLUBE = {
+        "fc", "cf", "afc", "ac", "sc", "ca", "cd", "ud", "rcd",
+        "sl", "ss", "fk", "sk", "bk",
+    }
+
     def __init__(self, fonte_odds):
         self.fonte = fonte_odds
 
-    @staticmethod
-    def _normalizar(texto):
+    @classmethod
+    def _normalizar(cls, texto):
         texto = unicodedata.normalize("NFKD", str(texto or ""))
         texto = "".join(c for c in texto if not unicodedata.combining(c))
         texto = texto.casefold()
         texto = re.sub(r"[^a-z0-9]+", " ", texto)
-        tokens = [t for t in texto.split() if t not in {"fc", "cf", "afc"}]
+        tokens = [t for t in texto.split() if t not in cls.TOKENS_CLUBE]
         return " ".join(tokens).strip()
 
     @classmethod
