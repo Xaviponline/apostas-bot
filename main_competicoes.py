@@ -18,7 +18,10 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         diagnosticos = dict(getattr(estatisticas, "diagnostico_base", {}) or {})
         formas = dict(getattr(estatisticas, "_formas_globais", {}) or {})
         erros_forma = dict(getattr(estatisticas, "ultimo_erros_forma", {}) or {})
-        if not diagnosticos and not formas and not erros_forma:
+        diagnostico_formas = dict(
+            getattr(estatisticas, "diagnostico_forma_global", {}) or {}
+        )
+        if not diagnosticos and not formas and not erros_forma and not diagnostico_formas:
             return base
 
         linhas = []
@@ -56,7 +59,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     f"falhas {falhas}{extra}"
                 )
 
-        if formas or erros_forma:
+        if formas or erros_forma or diagnostico_formas:
             suficientes = sum(1 for jogos in formas.values() if len(jogos or []) >= 4)
             insuficientes = sum(1 for jogos in formas.values() if len(jogos or []) < 4)
             linhas.extend([
@@ -68,6 +71,37 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 contagem = Counter(str(motivo or "indisponível") for motivo in erros_forma.values())
                 resumo = ", ".join(f"{motivo} ×{n}" for motivo, n in sorted(contagem.items()))
                 linhas.append(f"• Falhas: {resumo}")
+
+            melhores = []
+            for diag in diagnostico_formas.values():
+                if not isinstance(diag, dict):
+                    continue
+                tentativas = [
+                    t for t in (diag.get("tentativas") or [])
+                    if isinstance(t, dict) and "eventos" in t
+                ]
+                if not tentativas:
+                    continue
+                melhores.append(max(
+                    tentativas,
+                    key=lambda t: (
+                        int(t.get("normalizados") or 0),
+                        int(t.get("concluidos") or 0),
+                        int(t.get("eventos") or 0),
+                    ),
+                ))
+            if melhores:
+                eventos = sum(int(t.get("eventos") or 0) for t in melhores)
+                concluidos = sum(int(t.get("concluidos") or 0) for t in melhores)
+                normalizados = sum(int(t.get("normalizados") or 0) for t in melhores)
+                rotas = Counter(str(t.get("rota") or "-") for t in melhores)
+                resumo_rotas = ", ".join(
+                    f"{rota} ×{n}" for rota, n in sorted(rotas.items())
+                )
+                linhas.append(
+                    f"• Melhor resposta/equipa: {eventos} eventos | {concluidos} concluídos | {normalizados} normalizados"
+                )
+                linhas.append(f"• Rotas: {resumo_rotas}")
 
         return base + "\n" + "\n".join(linhas)
 
