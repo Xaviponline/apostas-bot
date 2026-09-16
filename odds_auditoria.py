@@ -34,6 +34,15 @@ class AuditoriaOdds:
             return None
         return odd if odd > 1.0 else None
 
+    @staticmethod
+    def _linha_numero(valor):
+        if valor is None or isinstance(valor, bool):
+            return None
+        try:
+            return float(valor)
+        except (TypeError, ValueError):
+            return None
+
     @classmethod
     def _texto_item(cls, mercado, odd):
         return cls._normalizar(
@@ -47,8 +56,17 @@ class AuditoriaOdds:
         )
 
     @classmethod
-    def _mercado_compativel(cls, mercado_modelo, nome_mercado):
-        nome = cls._normalizar(nome_mercado)
+    def _periodo_compativel(cls, mercado):
+        periodo = cls._normalizar(mercado.get("period"))
+        if not periodo:
+            return True
+        return periodo.replace(" ", "") in {"fulltime", "ft", "match", "regulartime"}
+
+    @classmethod
+    def _mercado_compativel(cls, mercado_modelo, mercado):
+        if not cls._periodo_compativel(mercado):
+            return False
+        nome = cls._normalizar(mercado.get("name"))
         if mercado_modelo in {"Vitória Casa", "Vitória Fora"}:
             return any(x in nome for x in ("full time result", "match result", "1x2"))
         if mercado_modelo == "Ambas Marcam":
@@ -81,13 +99,30 @@ class AuditoriaOdds:
         m = re.match(r"^(Over|Under) ([0-9]+(?:\.[0-9]+)?) Golos$", mercado_modelo)
         if m:
             lado = m.group(1).casefold()
-            linha = cls._normalizar(m.group(2))
+            linha_alvo = float(m.group(2))
             escolha = cls._normalizar(
                 " ".join([str(odd.get("seleção") or ""), str(odd.get("ref") or "")])
             )
+            if lado not in escolha:
+                return False
+
+            linha_mercado = cls._linha_numero(mercado.get("handicap"))
+            if linha_mercado is not None:
+                return abs(linha_mercado - linha_alvo) < 1e-9
+
+            linha_texto = cls._normalizar(m.group(2))
             nome_mercado = cls._normalizar(mercado.get("name"))
-            return lado in escolha and (linha in escolha or linha in nome_mercado)
+            return linha_texto in escolha or linha_texto in nome_mercado
         return False
+
+    @staticmethod
+    def _timestamp_odd(mercado, odd):
+        return str(
+            odd.get("bookmakerChangedAt")
+            or odd.get("changedAt")
+            or mercado.get("updatedAt")
+            or ""
+        )
 
     @classmethod
     def _extrair_odd(cls, dados, mercado_modelo):
@@ -99,7 +134,7 @@ class AuditoriaOdds:
         for mercado in dados.get("mercados") or []:
             if not isinstance(mercado, dict):
                 continue
-            if not cls._mercado_compativel(mercado_modelo, mercado.get("name")):
+            if not cls._mercado_compativel(mercado_modelo, mercado):
                 continue
             for odd in mercado.get("odds") or []:
                 if not isinstance(odd, dict):
@@ -108,7 +143,7 @@ class AuditoriaOdds:
                 if valor is None:
                     continue
                 if cls._item_compativel(mercado_modelo, mercado, odd, casa, fora):
-                    encontrados.append((valor, str(mercado.get("updatedAt") or "")))
+                    encontrados.append((valor, cls._timestamp_odd(mercado, odd)))
         if len(encontrados) != 1:
             return None
         return encontrados[0]
