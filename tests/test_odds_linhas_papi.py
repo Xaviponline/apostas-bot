@@ -166,6 +166,63 @@ class OddsLinhasPapiTests(unittest.TestCase):
         }
         self.assertIsNone(AuditoriaOdds._extrair_odd(dados, "Under 3.5 Golos"))
 
+    def test_totais_do_jogo_ignoram_cantos_e_totais_por_equipa(self):
+        dados = {
+            "casa": "Atlético Madrid",
+            "fora": "CA Osasuna",
+            "mercados": [
+                {
+                    "name": "Corners - Over Under Full Time",
+                    "handicap": 3.5,
+                    "period": "fulltime",
+                    "marketType": "totals",
+                    "odds": [{"seleção": "Under", "odd": 6.90}],
+                },
+                {
+                    "name": "Over Under Team 1",
+                    "handicap": 3.5,
+                    "period": "fulltime",
+                    "marketType": "totals",
+                    "odds": [{"seleção": "Under", "odd": 1.15}],
+                },
+                {
+                    "name": "Over Under Full Time",
+                    "handicap": 3.5,
+                    "period": "fulltime",
+                    "marketType": "totals",
+                    "updatedAt": "2026-09-16T10:03:32.526Z",
+                    "odds": [{"seleção": "Under", "odd": 1.37}],
+                },
+            ],
+        }
+        self.assertEqual(
+            AuditoriaOdds._extrair_odd(dados, "Under 3.5 Golos"),
+            (1.37, "2026-09-16T10:03:32.526Z"),
+        )
+
+    def test_resultado_1x2_ignora_cantos(self):
+        dados = {
+            "casa": "Casa",
+            "fora": "Fora",
+            "mercados": [
+                {
+                    "name": "Corners - 1X2",
+                    "period": "fulltime",
+                    "odds": [{"seleção": "1", "odd": 1.16}],
+                },
+                {
+                    "name": "Full Time Result",
+                    "period": "fulltime",
+                    "updatedAt": "2026-09-16T11:59:53.778Z",
+                    "odds": [{"seleção": "1", "odd": 1.38}],
+                },
+            ],
+        }
+        self.assertEqual(
+            AuditoriaOdds._extrair_odd(dados, "Vitória Casa"),
+            (1.38, "2026-09-16T11:59:53.778Z"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
