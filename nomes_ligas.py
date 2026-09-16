@@ -53,13 +53,19 @@ NOMES_PT = {
     "efl championship": "Championship",
     "championship": "Championship",
     "english league one": "League One",
+    "efl league one": "League One",
     "league one": "League One",
+    "english league two": "League Two",
+    "efl league two": "League Two",
+    "league two": "League Two",
 
     # Espanha
     "spanish laliga": "LaLiga",
     "laliga": "LaLiga",
-    "spanish segunda division": "Segunda Divisão",
-    "segunda division": "Segunda Divisão",
+    "spanish laliga 2": "LaLiga 2",
+    "laliga 2": "LaLiga 2",
+    "spanish segunda division": "LaLiga 2",
+    "segunda division": "LaLiga 2",
     "copa del rey": "Taça do Rei",
     "spanish copa del rey": "Taça do Rei",
 
@@ -110,6 +116,14 @@ NOMES_PT = {
     "allsvenskan": "Allsvenskan",
     "norwegian eliteserien": "Eliteserien",
     "eliteserien": "Eliteserien",
+    "danish superliga": "Superliga Dinamarquesa",
+
+    # Escócia / Áustria / Grécia / Suíça
+    "scottish premiership": "Premiership Escocesa",
+    "scottish championship": "Championship Escocês",
+    "austrian bundesliga": "Bundesliga Austríaca",
+    "greek super league": "Super Liga Grega",
+    "swiss super league": "Super Liga Suíça",
 
     # América do Sul
     "brasileiro serie a": "Brasileirão Série A",
