@@ -18,6 +18,30 @@ class FakeResponse:
         return self.payload
 
 
+def evento_exemplo():
+    return {
+        "id": "9001",
+        "date": "2026-09-10T20:00:00Z",
+        "status": {"type": {"state": "post", "completed": True}},
+        "competitions": [
+            {
+                "competitors": [
+                    {
+                        "homeAway": "home",
+                        "score": "2",
+                        "team": {"id": "1", "displayName": "Casa"},
+                    },
+                    {
+                        "homeAway": "away",
+                        "score": "1",
+                        "team": {"id": "2", "displayName": "Fora"},
+                    },
+                ]
+            }
+        ],
+    }
+
+
 class SessaoJanelaCurta:
     def __init__(self):
         self.calls = []
@@ -31,29 +55,22 @@ class SessaoJanelaCurta:
         dias = (fim - inicio).days + 1
         if dias > 14:
             return FakeResponse(status_code=400)
+        return FakeResponse({"events": [evento_exemplo()]})
 
-        evento = {
-            "id": "9001",
-            "date": "2026-09-10T20:00:00Z",
-            "status": {"type": {"state": "post", "completed": True}},
-            "competitions": [
-                {
-                    "competitors": [
-                        {
-                            "homeAway": "home",
-                            "score": "2",
-                            "team": {"id": "1", "displayName": "Casa"},
-                        },
-                        {
-                            "homeAway": "away",
-                            "score": "1",
-                            "team": {"id": "2", "displayName": "Fora"},
-                        },
-                    ]
-                }
-            ],
-        }
-        return FakeResponse({"events": [evento]})
+
+class SessaoApenasDia:
+    def __init__(self):
+        self.calls = []
+
+    def get(self, url, params=None, **kwargs):
+        datas = str((params or {}).get("dates") or "")
+        self.calls.append(datas)
+        if "-" in datas:
+            return FakeResponse(status_code=400)
+        # Só uma data do período contém o jogo; as restantes respondem vazio.
+        if datas == "20260910":
+            return FakeResponse({"events": [evento_exemplo()]})
+        return FakeResponse({"events": []})
 
 
 class HistoricoResilienteTests(unittest.TestCase):
@@ -67,6 +84,21 @@ class HistoricoResilienteTests(unittest.TestCase):
         )
 
         self.assertGreater(len(sessao.calls), 1)
+        self.assertEqual(len(dados), 1)
+        self.assertEqual(dados[0]["id"], 9001)
+        self.assertEqual(dados[0]["liga_codigo"], "esp.1")
+
+    def test_fallback_diario_quando_todos_os_intervalos_falham(self):
+        sessao = SessaoApenasDia()
+        stats = EstatisticasESPNResiliente(
+            session=sessao, dias_historico=30, cache_segundos=60
+        )
+        dados = stats._fetch_liga(
+            "esp.1", datetime(2026, 9, 16, tzinfo=ZoneInfo("Europe/Lisbon"))
+        )
+
+        self.assertTrue(any("-" in chamada for chamada in sessao.calls))
+        self.assertIn("20260910", sessao.calls)
         self.assertEqual(len(dados), 1)
         self.assertEqual(dados[0]["id"], 9001)
         self.assertEqual(dados[0]["liga_codigo"], "esp.1")
