@@ -2,7 +2,7 @@
 
 Não usa probabilidades aleatórias nem odds fabricadas. A versão atual calcula
 probabilidades de modelo e uma odd justa/mínima; odds reais de mercado entram
-mais tarde como camada independente de validação de value.
+como camada independente de auditoria e não alteram a seleção da V1.
 """
 from collections import OrderedDict
 from datetime import datetime
@@ -210,13 +210,13 @@ class AnalisadorInteligente:
             )
             return "\n".join(linhas)
 
-        # A apresentação é agrupada por hora; o ranking do motor não é alterado.
         grupos = OrderedDict()
         for s in sorted(selecoes, key=lambda x: str((x.get("jogo") or {}).get("horario") or "99:99")):
             hora = str((s.get("jogo") or {}).get("horario") or "--:--")
             grupos.setdefault(hora, []).append(s)
 
         numero = 1
+        odds_reais = 0
         for hora, itens in grupos.items():
             linhas.extend(["", f"⏰ {hora} — JOGOS"])
             for indice_item, s in enumerate(itens):
@@ -235,18 +235,38 @@ class AnalisadorInteligente:
                         f"   💰 {s['mercado']}",
                         f"   📈 {self._fmt_num(s['probabilidade']*100, 1)}% | Odd justa {self._fmt_num(s['odd_justa'])}",
                         f"   ✅ Odd mínima: ≥ {self._fmt_num(s['odd_minima'])}",
+                    ]
+                )
+                try:
+                    odd_real = float(s.get("odd_real"))
+                    if odd_real > 1.0:
+                        ev = float(s.get("ev_real", (float(s["probabilidade"]) * odd_real) - 1.0))
+                        sinal = "+" if ev >= 0 else ""
+                        linhas.append(
+                            f"   💶 Odd real {self._fmt_num(odd_real)} | EV {sinal}{self._fmt_num(ev*100, 1)}%"
+                        )
+                        odds_reais += 1
+                except (TypeError, ValueError):
+                    pass
+                linhas.extend(
+                    [
                         f"   ⭐ {estrelas}",
                         f"   🧪 Dados {s['qualidade']}/100",
                     ]
                 )
                 numero += 1
 
-        linhas.extend(
-            [
-                "",
-                "ℹ️ Sem odds reais de mercado não mostramos ROI/EV. Esses valores só entram quando forem medidos com odds reais.",
-                f"📚 Jogos analisados: {r['jogos']} | Com dados suficientes: {r['com_dados']}",
-            ]
+        linhas.append("")
+        if odds_reais:
+            linhas.append(
+                f"💶 Odds reais congeladas: {odds_reais}/{len(selecoes)}. Servem apenas para auditoria e não alteraram as seleções da V1."
+            )
+        else:
+            linhas.append(
+                "ℹ️ Sem odds reais de mercado não mostramos ROI/EV. Esses valores só entram quando forem medidos com odds reais."
+            )
+        linhas.append(
+            f"📚 Jogos analisados: {r['jogos']} | Com dados suficientes: {r['com_dados']}"
         )
         return "\n".join(linhas)
 
@@ -261,7 +281,7 @@ class AnalisadorInteligente:
             "",
             "Modelo: resultados ESPN reais + forma casa/fora + médias da liga + Poisson.",
             "A probabilidade exibida é conservadora e penaliza amostras menos robustas.",
-            "Sem odds reais em tempo real: mostramos odd justa e odd mínima para 5% de margem teórica.",
+            "Odds reais, quando disponíveis, são uma camada de auditoria e não mudam a seleção da V1.",
             "",
             f"Jogos do dia: {r['jogos']} | Com dados suficientes: {r['com_dados']} | Seleções: {r['selecoes']}",
         ]
@@ -299,6 +319,14 @@ class AnalisadorInteligente:
                     f"📚 Amostra: {s['amostra_casa']} + {s['amostra_fora']} jogos das equipas; {s['amostra_liga']} jogos da liga",
                 ]
             )
+            try:
+                odd_real = float(s.get("odd_real"))
+                if odd_real > 1.0:
+                    ev = float(s.get("ev_real", (float(s["probabilidade"]) * odd_real) - 1.0))
+                    sinal = "+" if ev >= 0 else ""
+                    linhas.append(f"💶 Odd real: {odd_real:.2f} | EV snapshot: {sinal}{ev*100:.1f}%")
+            except (TypeError, ValueError):
+                pass
 
         linhas.extend(
             [
