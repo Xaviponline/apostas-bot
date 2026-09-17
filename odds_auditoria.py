@@ -9,6 +9,7 @@ import logging
 import re
 import unicodedata
 from copy import deepcopy
+from datetime import datetime, timezone
 
 
 class AuditoriaOdds:
@@ -20,7 +21,14 @@ class AuditoriaOdds:
     ALIASES_EQUIPA = {
         "athletic club": "athletic bilbao",
         "athletic bilbao": "athletic bilbao",
+        "ferencvaros": "ferencvaros",
+        "ferencvarosi": "ferencvaros",
+        "ferencvarosi tc": "ferencvaros",
     }
+
+    # Só usamos a hora para desempatar candidatos que já passaram a validação
+    # pelos nomes das duas equipas. Uma diferença maior continua ambígua.
+    TOLERANCIA_HORA_EVENTO_SEG = 90 * 60
 
     def __init__(self, fonte_odds):
         self.fonte = fonte_odds
@@ -57,6 +65,49 @@ class AuditoriaOdds:
     @classmethod
     def _chave_jogo(cls, casa, fora):
         return cls._canon_equipa(casa), cls._canon_equipa(fora)
+
+    @staticmethod
+    def _timestamp_iso(valor):
+        if not isinstance(valor, str) or not valor.strip():
+            return None
+        try:
+            dt = datetime.fromisoformat(valor.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+
+    @classmethod
+    def _desempatar_evento_por_hora(cls, candidatos, timestamp_jogo):
+        """Escolhe só um fixture quando a hora torna a correspondência inequívoca."""
+        if len(candidatos or []) <= 1:
+            return list(candidatos or [])
+        try:
+            alvo = float(timestamp_jogo)
+        except (TypeError, ValueError):
+            return list(candidatos)
+
+        distancias = []
+        for evento in candidatos:
+            if not isinstance(evento, dict):
+                continue
+            ts = cls._timestamp_iso(evento.get("data"))
+            if ts is None:
+                continue
+            distancias.append((abs(ts - alvo), evento))
+
+        if not distancias:
+            return list(candidatos)
+        distancias.sort(key=lambda item: item[0])
+        menor = distancias[0][0]
+        if menor > cls.TOLERANCIA_HORA_EVENTO_SEG:
+            return list(candidatos)
+
+        melhores = [evento for distancia, evento in distancias if abs(distancia - menor) < 1.0]
+        if len(melhores) == 1:
+            return melhores
+        return list(candidatos)
 
     @staticmethod
     def _odd_numero(valor):
@@ -312,6 +363,10 @@ class AuditoriaOdds:
             if not candidatos:
                 self._registar_diagnostico(selecao, "evento_nao_encontrado")
                 continue
+            if len(candidatos) != 1:
+                candidatos = self._desempatar_evento_por_hora(
+                    candidatos, jogo.get("timestamp")
+                )
             if len(candidatos) != 1:
                 self._registar_diagnostico(selecao, "evento_ambiguo")
                 continue
