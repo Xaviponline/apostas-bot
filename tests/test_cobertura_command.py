@@ -43,6 +43,15 @@ class AnalisadorCoberturaFake:
         return {"score": 0.80, "qualidade": 80}
 
 
+
+
+class BuscadorVazioFake:
+    estado = "operacional"
+    fonte = "ESPN"
+    espn_http_status = 200
+    sofa_http_status = None
+
+
 class CoberturaCommandTests(unittest.TestCase):
     def test_mapa_producao_inclui_novas_ligas(self):
         esperados = {
@@ -86,6 +95,20 @@ class CoberturaCommandTests(unittest.TestCase):
         self.assertIn("Dentro da cobertura: 2", texto)
         self.assertIn("Fora: 1", texto)
         self.assertIn("Seleção atual: 1/15 máximo", texto)
+
+    def test_cobertura_zero_expoe_diagnostico_da_fonte(self):
+        bot = object.__new__(BotPremiumDiarioDiagnostico)
+        bot.analisador = AnalisadorCoberturaFake()
+        bot.buscador = BuscadorVazioFake()
+        bot._jogos_hoje_portugal = lambda: []
+
+        texto = bot._executar_cobertura()
+
+        self.assertIn("listagem de jogos veio vazia", texto)
+        self.assertIn("estado operacional", texto)
+        self.assertIn("fonte ESPN", texto)
+        self.assertIn("ESPN HTTP 200", texto)
+        self.assertIn("Limite configurado: 15 seleções", texto)
 
 
 if __name__ == "__main__":
