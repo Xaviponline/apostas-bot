@@ -13,6 +13,7 @@ from nomes_ligas import nome_liga_pt
 
 
 class AnalisadorInteligente:
+    MODELO_VERSAO = "V1.1"
     MARGEM_VALUE_ALVO = 0.05
     QUALIDADE_MINIMA = 55
     ODD_MINIMA_PERFIL = 1.50
@@ -225,7 +226,7 @@ class AnalisadorInteligente:
         linhas = [
             f"🎯 ANÁLISE PREMIUM — {self.data_hoje}",
             f"📊 {r['selecoes']} {nome_selecoes} PARA HOJE",
-            "🧠 Modelo V1 • Probabilidade conservadora",
+            f"🧠 Modelo {self.MODELO_VERSAO} • Probabilidade conservadora",
         ]
 
         if not selecoes:
@@ -323,7 +324,7 @@ class AnalisadorInteligente:
             selecoes = self.gerar_todas_apostas(jogos)
         r = self.ultimo_resumo
         linhas = [
-            "🧠 ANÁLISE TÉCNICA — MODELO V1",
+            f"🧠 ANÁLISE TÉCNICA — MODELO {self.MODELO_VERSAO}",
             f"📅 {self.data_hoje}",
             "",
             "Modelo: resultados ESPN reais + forma casa/fora + médias da liga + Poisson.",
