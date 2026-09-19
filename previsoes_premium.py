@@ -148,6 +148,13 @@ class RegistoPrevisoes:
             except (KeyError, TypeError, ValueError):
                 continue
 
+            try:
+                ranking_modelo = int(s.get("ranking_modelo"))
+                if ranking_modelo <= 0:
+                    ranking_modelo = None
+            except (TypeError, ValueError):
+                ranking_modelo = None
+
             registo = {
                 "chave": chave,
                 "event_id": int(event_id),
@@ -158,6 +165,7 @@ class RegistoPrevisoes:
                 "liga": str(jogo.get("liga") or ""),
                 "mercado": str(mercado),
                 "modelo_versao": self.MODELO_VERSAO,
+                "ranking_modelo": ranking_modelo,
                 "probabilidade": round(prob, 6),
                 "probabilidade_bruta": round(prob_bruta, 6),
                 "qualidade": qualidade,
