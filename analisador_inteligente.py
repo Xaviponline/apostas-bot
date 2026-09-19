@@ -17,7 +17,7 @@ class AnalisadorInteligente:
     MARGEM_VALUE_ALVO = 0.05
     QUALIDADE_MINIMA = 55
     ODD_MINIMA_PERFIL = 1.50
-    MAX_SELECOES = 15
+    MAX_SELECOES = 20
 
     LIMITES = {
         "Vitória Casa": 0.56,
@@ -209,6 +209,8 @@ class AnalisadorInteligente:
                 selecoes.append(melhor)
 
         selecoes.sort(key=lambda x: (x["score"], x["qualidade"]), reverse=True)
+        for posicao, selecao in enumerate(selecoes, 1):
+            selecao["ranking_modelo"] = posicao
         self.ultimas_selecoes = selecoes[: self.MAX_SELECOES]
         self.ultimo_resumo = {
             "jogos": len(jogos),
@@ -265,6 +267,7 @@ class AnalisadorInteligente:
                         f"   ⚽ {j.get('casa')} vs {j.get('fora')}",
                         f"   🏆 {bandeira} {liga}",
                         f"   💰 {s['mercado']}",
+                        f"   🏅 Ranking modelo: #{s['ranking_modelo']}" if s.get("ranking_modelo") else "   🏅 Ranking modelo: histórico",
                         f"   📈 {self._fmt_num(s['probabilidade']*100, 1)}% | Odd justa {self._fmt_num(s['odd_justa'])}",
                         f"   ✅ Odd mínima: ≥ {self._fmt_num(s['odd_minima'])}",
                     ]
@@ -358,6 +361,7 @@ class AnalisadorInteligente:
                     f"{i}. ⚽ {j.get('casa')} vs {j.get('fora')}",
                     f"🏆 {nome_liga_pt(j.get('liga') or 'Competição')} — {j.get('horario') or '--:--'}",
                     f"🎯 {s['mercado']}",
+                    f"🏅 Ranking modelo: #{s['ranking_modelo']}" if s.get("ranking_modelo") else "🏅 Ranking modelo: histórico",
                     prob_linha,
                     f"💰 Odd justa: {s['odd_justa']:.2f}",
                     f"✅ Só considerar se odd ≥ {s['odd_minima']:.2f}",
