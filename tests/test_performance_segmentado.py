@@ -14,6 +14,7 @@ class PerformanceSegmentadoTests(unittest.TestCase):
                 "previsoes": [
                     {
                         "data_jogo": "2026-09-14",
+                        "liga": "English Premier League",
                         "mercado": "Vitória Casa",
                         "probabilidade": 0.65,
                         "qualidade": 90,
@@ -22,6 +23,7 @@ class PerformanceSegmentadoTests(unittest.TestCase):
                     },
                     {
                         "data_jogo": "2026-09-14",
+                        "liga": "English Premier League",
                         "mercado": "Over 2.5 Golos",
                         "probabilidade": 0.60,
                         "qualidade": 60,
@@ -30,7 +32,9 @@ class PerformanceSegmentadoTests(unittest.TestCase):
                     },
                     {
                         "data_jogo": "2026-09-15",
+                        "liga": "Spanish LaLiga",
                         "mercado": "Vitória Casa",
+                        "modelo_versao": "V1.1",
                         "probabilidade": 0.70,
                         "qualidade": 75,
                         "resultado_binario": 1,
@@ -47,6 +51,15 @@ class PerformanceSegmentadoTests(unittest.TestCase):
         self.assertIn("🎯 DESEMPENHO POR MERCADO", texto)
         self.assertIn("• Vitória Casa: 2/2 (100.0%)", texto)
         self.assertIn("• Over 2.5 Golos: 0/1 (0.0%)", texto)
+        self.assertIn("🏆 DESEMPENHO POR COMPETIÇÃO", texto)
+        self.assertIn("Premier League: 1/2 (50.0%)", texto)
+        self.assertIn("LaLiga: 1/1 (100.0%)", texto)
+        self.assertIn("📈 DESEMPENHO POR PROBABILIDADE", texto)
+        self.assertIn("60–64%: 1/2 (50.0%)", texto)
+        self.assertIn("70%+: 1/1 (100.0%)", texto)
+        self.assertIn("🧩 DESEMPENHO POR VERSÃO", texto)
+        self.assertIn("V1.0 (histórico): 1/2 (50.0%)", texto)
+        self.assertIn("V1.1: 1/1 (100.0%)", texto)
         self.assertIn("⭐ DESEMPENHO POR CONFIANÇA", texto)
         self.assertIn("⭐⭐⭐⭐⭐ ALTA: 1/1 (100.0%)", texto)
         self.assertIn("⭐⭐⭐⭐ MÉDIA-ALTA: 1/1 (100.0%)", texto)
