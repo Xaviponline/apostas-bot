@@ -14,6 +14,7 @@ from analisador_inteligente import AnalisadorInteligente
 from main_sofascore import BotPremiumReal
 from odds_auditoria import AuditoriaOdds
 from previsoes_premium import RegistoPrevisoes
+from nomes_ligas import nome_liga_pt
 
 
 TZ_PORTUGAL = ZoneInfo("Europe/Lisbon")
@@ -91,6 +92,32 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             return "55–69"
         return "<55"
 
+    @staticmethod
+    def _faixa_probabilidade(previsao):
+        try:
+            prob = float(previsao["probabilidade"]) * 100.0
+        except (KeyError, TypeError, ValueError):
+            return "Desconhecida"
+        if prob >= 70.0:
+            return "70%+"
+        if prob >= 65.0:
+            return "65–69%"
+        if prob >= 60.0:
+            return "60–64%"
+        if prob >= 55.0:
+            return "55–59%"
+        return "<55%"
+
+    @staticmethod
+    def _versao_snapshot(previsao):
+        versao = str(previsao.get("modelo_versao") or "").strip()
+        return versao or "V1.0 (histórico)"
+
+    @staticmethod
+    def _competicao_snapshot(previsao):
+        liga = str(previsao.get("liga") or "Competição").strip() or "Competição"
+        return nome_liga_pt(liga)
+
     def _relatorio_segmentado(self):
         """Mostra apenas estatísticas; não altera previsões nem o modelo V1."""
         liquidados = [
@@ -103,6 +130,9 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
 
         por_dia = {}
         por_mercado = {}
+        por_competicao = {}
+        por_probabilidade = {}
+        por_versao = {}
         por_confianca = {}
         por_qualidade = {}
         for p in liquidados:
@@ -110,6 +140,9 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             por_mercado.setdefault(
                 str(p.get("mercado") or "Mercado desconhecido"), []
             ).append(p)
+            por_competicao.setdefault(self._competicao_snapshot(p), []).append(p)
+            por_probabilidade.setdefault(self._faixa_probabilidade(p), []).append(p)
+            por_versao.setdefault(self._versao_snapshot(p), []).append(p)
             por_confianca.setdefault(self._confianca_snapshot(p), []).append(p)
             por_qualidade.setdefault(self._faixa_qualidade(p), []).append(p)
 
@@ -134,6 +167,39 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 continue
             linhas.append(
                 f"• {mercado}: {m['ganhos']}/{m['total']} "
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+            )
+
+        linhas.extend(["", "🏆 DESEMPENHO POR COMPETIÇÃO"])
+        for competicao in sorted(por_competicao):
+            m = self._metricas_grupo(por_competicao[competicao])
+            if m is None:
+                continue
+            linhas.append(
+                f"• {competicao}: {m['ganhos']}/{m['total']} "
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+            )
+
+        ordem_probabilidade = ["55–59%", "60–64%", "65–69%", "70%+", "<55%", "Desconhecida"]
+        linhas.extend(["", "📈 DESEMPENHO POR PROBABILIDADE"])
+        for faixa in ordem_probabilidade:
+            if faixa not in por_probabilidade:
+                continue
+            m = self._metricas_grupo(por_probabilidade[faixa])
+            if m is None:
+                continue
+            linhas.append(
+                f"• {faixa}: {m['ganhos']}/{m['total']} "
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+            )
+
+        linhas.extend(["", "🧩 DESEMPENHO POR VERSÃO"])
+        for versao in sorted(por_versao):
+            m = self._metricas_grupo(por_versao[versao])
+            if m is None:
+                continue
+            linhas.append(
+                f"• {versao}: {m['ganhos']}/{m['total']} "
                 f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
             )
 
