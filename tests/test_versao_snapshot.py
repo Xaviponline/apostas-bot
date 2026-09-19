@@ -17,6 +17,7 @@ class VersaoSnapshotTests(unittest.TestCase):
                 "timestamp": time.time() + 3600,
             },
             "mercado": "Vitória Casa",
+            "ranking_modelo": 17,
             "probabilidade": 0.61,
             "probabilidade_bruta": 0.63,
             "qualidade": 75,
@@ -31,6 +32,7 @@ class VersaoSnapshotTests(unittest.TestCase):
 
             self.assertEqual(adicionadas, 1)
             self.assertEqual(reg.dados["previsoes"][0]["modelo_versao"], "V1.1")
+            self.assertEqual(reg.dados["previsoes"][0]["ranking_modelo"], 17)
 
     def test_registo_legacy_nao_e_reescrito_com_versao(self):
         with tempfile.TemporaryDirectory() as tmp:
