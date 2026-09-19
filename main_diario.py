@@ -109,6 +109,22 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         return "<55%"
 
     @staticmethod
+    def _faixa_ranking(previsao):
+        try:
+            ranking = int(previsao["ranking_modelo"])
+        except (KeyError, TypeError, ValueError):
+            return "Sem ranking (histórico)"
+        if ranking <= 5:
+            return "#1–5"
+        if ranking <= 10:
+            return "#6–10"
+        if ranking <= 15:
+            return "#11–15"
+        if ranking <= 20:
+            return "#16–20"
+        return "#21+"
+
+    @staticmethod
     def _versao_snapshot(previsao):
         versao = str(previsao.get("modelo_versao") or "").strip()
         return versao or "V1.0 (histórico)"
@@ -132,6 +148,7 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         por_mercado = {}
         por_competicao = {}
         por_probabilidade = {}
+        por_ranking = {}
         por_versao = {}
         por_confianca = {}
         por_qualidade = {}
@@ -142,6 +159,7 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             ).append(p)
             por_competicao.setdefault(self._competicao_snapshot(p), []).append(p)
             por_probabilidade.setdefault(self._faixa_probabilidade(p), []).append(p)
+            por_ranking.setdefault(self._faixa_ranking(p), []).append(p)
             por_versao.setdefault(self._versao_snapshot(p), []).append(p)
             por_confianca.setdefault(self._confianca_snapshot(p), []).append(p)
             por_qualidade.setdefault(self._faixa_qualidade(p), []).append(p)
@@ -186,6 +204,19 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             if faixa not in por_probabilidade:
                 continue
             m = self._metricas_grupo(por_probabilidade[faixa])
+            if m is None:
+                continue
+            linhas.append(
+                f"• {faixa}: {m['ganhos']}/{m['total']} "
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+            )
+
+        ordem_ranking = ["#1–5", "#6–10", "#11–15", "#16–20", "#21+", "Sem ranking (histórico)"]
+        linhas.extend(["", "🏅 DESEMPENHO POR RANKING DO MODELO"])
+        for faixa in ordem_ranking:
+            if faixa not in por_ranking:
+                continue
+            m = self._metricas_grupo(por_ranking[faixa])
             if m is None:
                 continue
             linhas.append(
@@ -343,6 +374,7 @@ class BotPremiumDiario(BotPremiumReal):
                 "qualidade": qualidade,
                 "odd_justa": odd_justa,
                 "odd_minima": odd_minima,
+                "ranking_modelo": p.get("ranking_modelo"),
                 "confianca": self.analisador._confianca(qualidade, prob),
                 "score": (prob * 0.62) + ((qualidade / 100.0) * 0.38),
             }
