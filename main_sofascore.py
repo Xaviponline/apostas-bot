@@ -38,6 +38,9 @@ As apostas não são colocadas na Betano pelo bot.'''
 
 
 class BotPremiumReal:
+    ODDS_AUTO_INTERVALO_SEG = 30 * 60
+    ODDS_AUTO_JANELA_SEG = 6 * 60 * 60
+
     def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None, analisador=None, previsoes=None):
         self.token = token or (os.getenv('TELEGRAM_BOT_TOKEN') or os.getenv('TELEGRAM_TOKEN', '')).strip()
         if not self.token:
@@ -53,6 +56,7 @@ class BotPremiumReal:
         self.analisador = analisador or AnalisadorInteligente(self.buscador)
         self.previsoes = previsoes or RegistoPrevisoes()
         self.username = None
+        self._proxima_captura_odds = 0.0
 
     def api(self, metodo, data):
         r = self.session.post(f'{self.base_url}/{metodo}', json=data, timeout=(5, 40))
@@ -158,6 +162,90 @@ class BotPremiumReal:
             resposta += f'\n\n🧾 Auditoria: {novas} nova(s) previsão(ões) guardada(s) antes dos jogos.'
         return resposta
 
+    def _selecoes_sem_odd_proximas(self):
+        """Reconstrói snapshots pendentes sem odd, apenas antes do início do jogo."""
+        if not self.odds.configurada:
+            return []
+
+        agora = datetime.now(ZoneInfo('Europe/Lisbon'))
+        agora_ts = agora.timestamp()
+        limite_ts = agora_ts + self.ODDS_AUTO_JANELA_SEG
+        data_iso = agora.strftime('%Y-%m-%d')
+        selecoes = []
+
+        for p in self.previsoes.dados.get('previsoes', []):
+            if p.get('data_jogo') != data_iso or p.get('estado') != 'pendente':
+                continue
+            if self.previsoes._odd_real_valida(p.get('odd_real')) is not None:
+                continue
+            ts = p.get('timestamp_jogo')
+            if not isinstance(ts, (int, float)):
+                continue
+            if float(ts) <= agora_ts or float(ts) > limite_ts:
+                continue
+            try:
+                prob = float(p['probabilidade'])
+                qualidade = int(p['qualidade'])
+                odd_justa = float(p['odd_justa'])
+                odd_minima = float(p['odd_minima'])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            selecoes.append(
+                {
+                    'jogo': {
+                        'id': p.get('event_id'),
+                        'casa': p.get('casa') or '?',
+                        'fora': p.get('fora') or '?',
+                        'liga': p.get('liga') or 'Competição',
+                        'timestamp': ts,
+                    },
+                    'mercado': p.get('mercado') or 'Mercado desconhecido',
+                    'probabilidade': prob,
+                    'qualidade': qualidade,
+                    'odd_justa': odd_justa,
+                    'odd_minima': odd_minima,
+                }
+            )
+        return selecoes
+
+    def _capturar_odds_pendentes(self):
+        """Anexa a primeira odd válida aos snapshots; nunca recria previsões."""
+        selecoes = self._selecoes_sem_odd_proximas()
+        if not selecoes:
+            return 0
+
+        antes = sum(
+            1
+            for p in self.previsoes.dados.get('previsoes', [])
+            if self.previsoes._odd_real_valida(p.get('odd_real')) is not None
+        )
+        enriquecidas = AuditoriaOdds(self.odds).enriquecer(selecoes)
+        self.previsoes.registar(enriquecidas)
+        depois = sum(
+            1
+            for p in self.previsoes.dados.get('previsoes', [])
+            if self.previsoes._odd_real_valida(p.get('odd_real')) is not None
+        )
+        capturadas = max(depois - antes, 0)
+        if capturadas:
+            logging.info('ODDS_AUTO | %s odd(s) congelada(s) antes do jogo', capturadas)
+        return capturadas
+
+    def _capturar_odds_se_devida(self):
+        """Executa no máximo uma ronda a cada 30 minutos."""
+        agora = time.monotonic()
+        if agora < self._proxima_captura_odds:
+            return 0
+        self._proxima_captura_odds = agora + self.ODDS_AUTO_INTERVALO_SEG
+        if not self.odds.configurada:
+            return 0
+        try:
+            return self._capturar_odds_pendentes()
+        except (requests.RequestException, RuntimeError, ValueError, TypeError):
+            logging.warning('ODDS_AUTO | ronda automática indisponível; tenta novamente mais tarde')
+            return 0
+
     def enviar_mensagem(self, chat_id, texto):
         for parte in self._dividir_texto(texto):
             self.api('sendMessage', {'chat_id': chat_id, 'text': parte})
@@ -210,6 +298,7 @@ class BotPremiumReal:
                     'Apresentação: /analisa compacto + /analisa_full técnico.\n'
                     'Filtro: amostra mínima + qualidade dos dados + probabilidade conservadora + odd mínima alvo.\n'
                     'Auditoria de previsões: ativa e persistente em /data.\n'
+                    'Captura automática de odds: ativa para previsões pendentes próximas do início.\n'
                     'ROI do modelo: calculado apenas nas previsões com odd real congelada.'
                 )
             elif comando == '/resultados':
@@ -264,6 +353,7 @@ class BotPremiumReal:
                             update['update_id'],
                         )
                     self.gestor.marcar_update(update['update_id'])
+                self._capturar_odds_se_devida()
             except (requests.RequestException, RuntimeError, ValueError):
                 logging.warning('Falha na comunicação Telegram; nova tentativa em 5 segundos.')
                 time.sleep(5)
