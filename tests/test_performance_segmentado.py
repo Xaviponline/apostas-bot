@@ -35,6 +35,7 @@ class PerformanceSegmentadoTests(unittest.TestCase):
                         "liga": "Spanish LaLiga",
                         "mercado": "Vitória Casa",
                         "modelo_versao": "V1.1",
+                        "ranking_modelo": 16,
                         "probabilidade": 0.70,
                         "qualidade": 75,
                         "resultado_binario": 1,
@@ -58,6 +59,9 @@ class PerformanceSegmentadoTests(unittest.TestCase):
         self.assertIn("60–64%: 0/1 (0.0%)", texto)
         self.assertIn("65–69%: 1/1 (100.0%)", texto)
         self.assertIn("70%+: 1/1 (100.0%)", texto)
+        self.assertIn("🏅 DESEMPENHO POR RANKING DO MODELO", texto)
+        self.assertIn("#16–20: 1/1 (100.0%)", texto)
+        self.assertIn("Sem ranking (histórico): 1/2 (50.0%)", texto)
         self.assertIn("🧩 DESEMPENHO POR VERSÃO", texto)
         self.assertIn("V1.0 (histórico): 1/2 (50.0%)", texto)
         self.assertIn("V1.1: 1/1 (100.0%)", texto)
