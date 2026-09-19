@@ -17,6 +17,7 @@ import requests
 
 class RegistoPrevisoes:
     VERSAO = 1
+    MODELO_VERSAO = "V1.1"
     ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
     def __init__(self, path=None, session=None):
@@ -156,6 +157,7 @@ class RegistoPrevisoes:
                 "fora": str(jogo.get("fora") or ""),
                 "liga": str(jogo.get("liga") or ""),
                 "mercado": str(mercado),
+                "modelo_versao": self.MODELO_VERSAO,
                 "probabilidade": round(prob, 6),
                 "probabilidade_bruta": round(prob_bruta, 6),
                 "qualidade": qualidade,
