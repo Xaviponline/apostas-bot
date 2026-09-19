@@ -40,6 +40,7 @@ As apostas não são colocadas na Betano pelo bot.'''
 class BotPremiumReal:
     ODDS_AUTO_INTERVALO_SEG = 30 * 60
     ODDS_AUTO_JANELA_SEG = 6 * 60 * 60
+    JOGOS_RETRY_VAZIO_SEG = 1.0
 
     def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None, analisador=None, previsoes=None):
         self.token = token or (os.getenv('TELEGRAM_BOT_TOKEN') or os.getenv('TELEGRAM_TOKEN', '')).strip()
@@ -140,8 +141,18 @@ class BotPremiumReal:
 
     def _jogos_hoje_portugal(self):
         data_iso = datetime.now(ZoneInfo('Europe/Lisbon')).strftime('%Y-%m-%d')
-        jogos = self.buscador.buscar_todos_jogos_hoje(data_iso)
-        return self._filtrar_data_portugal(jogos, data_iso)
+        for tentativa in range(2):
+            jogos = self.buscador.buscar_todos_jogos_hoje(data_iso)
+            filtrados = self._filtrar_data_portugal(jogos, data_iso)
+            if filtrados:
+                return filtrados
+            if tentativa == 0:
+                logging.warning(
+                    'JOGOS | listagem vazia na primeira tentativa; repetir em %.1fs',
+                    self.JOGOS_RETRY_VAZIO_SEG,
+                )
+                time.sleep(self.JOGOS_RETRY_VAZIO_SEG)
+        return []
 
     def _executar_analise(self, tecnica=False):
         jogos = self._jogos_hoje_portugal()
