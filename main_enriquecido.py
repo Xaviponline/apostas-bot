@@ -264,6 +264,29 @@ class BotPremiumDiarioDiagnostico(BotPremiumDiario):
         agora = datetime.now(TZ_PORTUGAL)
         agora_ts = agora.timestamp()
         jogos = self._jogos_hoje_portugal()
+        if not jogos:
+            limite = int(getattr(self.analisador, "MAX_SELECOES", 15) or 15)
+            estado = str(getattr(self.buscador, "estado", "desconhecido") or "desconhecido")
+            fonte = str(getattr(self.buscador, "fonte", "") or "sem fonte confirmada")
+            espn_http = getattr(self.buscador, "espn_http_status", None)
+            sofa_http = getattr(self.buscador, "sofa_http_status", None)
+            diagnostico = [f"estado {estado}", f"fonte {fonte}"]
+            if espn_http is not None:
+                diagnostico.append(f"ESPN HTTP {espn_http}")
+            if sofa_http is not None:
+                diagnostico.append(f"SofaScore HTTP {sofa_http}")
+            return "\n".join(
+                [
+                    f"🧭 COBERTURA V1 — {agora.strftime('%d/%m/%Y')}",
+                    "📚 Jogos do dia: 0 | Ainda por começar: 0",
+                    "",
+                    "⚠️ A listagem de jogos veio vazia mesmo após a repetição automática.",
+                    "🔎 " + " | ".join(diagnostico),
+                    f"🎯 Limite configurado: {limite} seleções",
+                    "ℹ️ Não foram gravadas previsões nem alterado o modelo.",
+                ]
+            )
+
         futuros = [
             j for j in jogos
             if isinstance(j, dict)
