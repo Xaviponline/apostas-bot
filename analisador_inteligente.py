@@ -13,7 +13,7 @@ from nomes_ligas import nome_liga_pt
 
 
 class AnalisadorInteligente:
-    MODELO_VERSAO = "V1.1"
+    MODELO_VERSAO = "V1.2"
     MARGEM_VALUE_ALVO = 0.05
     QUALIDADE_MINIMA = 55
     ODD_MINIMA_PERFIL = 1.50
@@ -107,20 +107,23 @@ class AnalisadorInteligente:
 
     @staticmethod
     def _confianca(qualidade, prob):
-        if qualidade >= 85 and prob >= 0.62:
+        """Confiança V1.2 baseada na probabilidade, não na quantidade de dados."""
+        prob = float(prob)
+        if prob >= 0.68:
             return "ALTA"
-        if qualidade >= 70 and prob >= 0.58:
+        if prob >= 0.64:
             return "MÉDIA-ALTA"
-        if qualidade >= 55:
+        if prob >= 0.60:
             return "MÉDIA"
         return "BAIXA"
 
     @staticmethod
     def _probabilidade_conservadora(prob_bruta, qualidade):
-        """Reduz excesso de confiança quando a amostra ainda é limitada."""
+        """Shrink fixo: qualidade valida dados, mas não amplifica a probabilidade."""
         prob_bruta = float(prob_bruta)
-        q = max(0.0, min(1.0, float(qualidade) / 100.0))
-        fiabilidade = 0.55 + (0.45 * q)
+        # 0.80 aproxima o fator que a V1.1 já aplicava no limiar mínimo
+        # de qualidade (55/100), evitando premiar duplamente amostras maiores.
+        fiabilidade = 0.80
         ajustada = 0.50 + ((prob_bruta - 0.50) * fiabilidade)
         return max(0.01, min(0.99, ajustada))
 
@@ -168,7 +171,8 @@ class AnalisadorInteligente:
             if odd_minima < self.ODD_MINIMA_PERFIL:
                 continue
 
-            score = (prob * 0.62) + ((qualidade / 100.0) * 0.38)
+            # V1.2: qualidade é requisito de dados, não componente do ranking.
+            score = prob
             candidatos.append(
                 {
                     "mercado": mercado,
@@ -208,7 +212,10 @@ class AnalisadorInteligente:
             if melhor is not None:
                 selecoes.append(melhor)
 
-        selecoes.sort(key=lambda x: (x["score"], x["qualidade"]), reverse=True)
+        selecoes.sort(
+            key=lambda x: (x["score"], x["probabilidade_bruta"]),
+            reverse=True,
+        )
         for posicao, selecao in enumerate(selecoes, 1):
             selecao["ranking_modelo"] = posicao
         self.ultimas_selecoes = selecoes[: self.MAX_SELECOES]
@@ -331,7 +338,7 @@ class AnalisadorInteligente:
             f"📅 {self.data_hoje}",
             "",
             "Modelo: resultados ESPN reais + forma casa/fora + médias da liga + Poisson.",
-            "A probabilidade exibida é conservadora e penaliza amostras menos robustas.",
+            "A probabilidade exibida aplica shrink conservador fixo; a qualidade funciona como requisito mínimo de dados.",
             "Odds reais, quando disponíveis, são uma camada de auditoria e não mudam a seleção da V1.",
             "",
             f"Jogos do dia: {r['jogos']} | Com dados suficientes: {r['com_dados']} | Seleções: {r['selecoes']}",
