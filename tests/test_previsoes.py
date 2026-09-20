@@ -73,13 +73,18 @@ class PredictionTests(unittest.TestCase):
         self.assertAlmostEqual(stats["brier"], (0.65 - 1) ** 2)
         self.assertIn("Brier Score", self.reg.relatorio())
 
-    def test_conservative_probability_penalizes_lower_quality(self):
+    def test_conservative_probability_uses_fixed_shrink_in_v12(self):
         bruta = 0.70
         baixa = AnalisadorInteligente._probabilidade_conservadora(bruta, 55)
         alta = AnalisadorInteligente._probabilidade_conservadora(bruta, 95)
-        self.assertLess(baixa, alta)
+        self.assertAlmostEqual(baixa, 0.66)
+        self.assertAlmostEqual(alta, 0.66)
         self.assertLess(alta, bruta)
         self.assertGreater(baixa, 0.50)
+
+    def test_v12_confidence_is_not_promoted_by_quality(self):
+        self.assertEqual(AnalisadorInteligente._confianca(100, 0.63), "MÉDIA")
+        self.assertEqual(AnalisadorInteligente._confianca(55, 0.69), "ALTA")
 
 
 if __name__ == "__main__":
