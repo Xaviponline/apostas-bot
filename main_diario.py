@@ -11,6 +11,7 @@ import logging
 import requests
 
 from analisador_inteligente import AnalisadorInteligente
+from estatisticas_espn import EstatisticasESPN
 from main_sofascore import BotPremiumReal
 from odds_auditoria import AuditoriaOdds
 from previsoes_premium import RegistoPrevisoes
@@ -22,6 +23,27 @@ TZ_PORTUGAL = ZoneInfo("Europe/Lisbon")
 
 class RegistoPrevisoesDiario(RegistoPrevisoes):
     """Liquidação robusta e auditoria segmentada das previsões diárias."""
+
+    RESULTADO_LIGAS_EXTRA = {
+        "english fa cup": "eng.fa",
+        "english carabao cup": "eng.league_cup",
+        "english league cup": "eng.league_cup",
+        "spanish copa del rey": "esp.copa_del_rey",
+        "german dfb-pokal": "ger.dfb_pokal",
+        "italian coppa italia": "ita.coppa_italia",
+        "french coupe de france": "fra.coupe_de_france",
+        "portuguese taca de portugal": "por.taca.portugal",
+        "dutch knvb beker": "ned.cup",
+        "scottish cup": "sco.tennents",
+        "scottish league cup": "sco.cis",
+        "brazilian copa do brasil": "bra.copa_do_brazil",
+        "argentine copa argentina": "arg.copa",
+    }
+
+    @classmethod
+    def _codigo_liga_snapshot(cls, previsao):
+        nome = " ".join(str((previsao or {}).get("liga") or "").lower().split())
+        return cls.RESULTADO_LIGAS_EXTRA.get(nome) or EstatisticasESPN.LIGAS.get(nome)
 
     def _resultados_espn(self, data_iso):
         """Procura o mesmo event_id numa janela de três datas ESPN."""
@@ -46,6 +68,53 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
 
         if not consultas_validas:
             raise ValueError("Não foi possível consultar resultados ESPN.") from ultimo_erro
+
+        # A rota global /all pode omitir eventos que a descoberta encontrou
+        # nos endpoints específicos. Para event_id ainda em falta, consulta
+        # apenas as competições necessárias e nunca altera snapshots.
+        pendentes_data = [
+            p
+            for p in self.dados.get("previsoes", [])
+            if p.get("estado") == "pendente"
+            and str(p.get("data_jogo") or "") == str(data_iso)
+            and p.get("event_id") is not None
+        ]
+        faltam = {
+            int(p["event_id"])
+            for p in pendentes_data
+            if int(p["event_id"]) not in resultados
+        }
+
+        por_codigo = {}
+        for p in pendentes_data:
+            try:
+                event_id = int(p["event_id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if event_id not in faltam:
+                continue
+            codigo = self._codigo_liga_snapshot(p)
+            if codigo:
+                por_codigo.setdefault(codigo, set()).add(event_id)
+
+        for codigo, ids_codigo in sorted(por_codigo.items()):
+            restantes = set(ids_codigo) - set(resultados)
+            if not restantes:
+                continue
+
+            # Primeiro a data local gravada; só procura datas adjacentes se
+            # ainda houver event_id em falta (proteção para jogos perto da meia-noite).
+            for deslocamento in (0, -1, 1):
+                if not restantes:
+                    break
+                alvo = (data_base + timedelta(days=deslocamento)).isoformat()
+                try:
+                    encontrados = super()._resultados_espn(alvo, codigo)
+                except (requests.RequestException, RuntimeError, ValueError, TypeError):
+                    continue
+                resultados.update(encontrados)
+                restantes -= set(encontrados)
+
         return resultados
 
     @staticmethod
