@@ -130,13 +130,27 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             (float(p["probabilidade"]) - int(p["resultado_binario"])) ** 2
             for p in liquidados
         ) / total
+        prob_media = sum(float(p["probabilidade"]) for p in liquidados) / total
+        hit_rate = ganhos / total
         return {
             "total": total,
             "ganhos": ganhos,
             "perdas": total - ganhos,
-            "hit_rate": ganhos / total,
+            "hit_rate": hit_rate,
             "brier": brier,
+            "prob_media": prob_media,
+            "gap_calibracao": hit_rate - prob_media,
         }
+
+    @staticmethod
+    def _calibracao_texto(metricas):
+        gap = float(metricas["gap_calibracao"]) * 100.0
+        sinal = "+" if gap >= 0 else ""
+        return (
+            f"Prev {metricas['prob_media']*100:.1f}% | "
+            f"Real {metricas['hit_rate']*100:.1f}% | "
+            f"Gap {sinal}{gap:.1f}pp"
+        )
 
     @staticmethod
     def _confianca_snapshot(previsao):
@@ -277,7 +291,8 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 continue
             linhas.append(
                 f"• {faixa}: {m['ganhos']}/{m['total']} "
-                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f} | "
+                f"{self._calibracao_texto(m)}"
             )
 
         ordem_ranking = ["#1–5", "#6–10", "#11–15", "#16–20", "#21+", "Sem ranking (histórico)"]
@@ -290,7 +305,8 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 continue
             linhas.append(
                 f"• {faixa}: {m['ganhos']}/{m['total']} "
-                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f} | "
+                f"{self._calibracao_texto(m)}"
             )
 
         linhas.extend(["", "🧩 DESEMPENHO POR VERSÃO"])
@@ -320,7 +336,8 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 continue
             linhas.append(
                 f"• {estrelas[confianca]} {confianca}: {m['ganhos']}/{m['total']} "
-                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f} | "
+                f"{self._calibracao_texto(m)}"
             )
 
         ordem_qualidade = ["85–100", "70–84", "55–69", "<55", "Desconhecida"]
@@ -333,7 +350,8 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 continue
             linhas.append(
                 f"• Dados {faixa}: {m['ganhos']}/{m['total']} "
-                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
+                f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f} | "
+                f"{self._calibracao_texto(m)}"
             )
         return "\n".join(linhas)
 
