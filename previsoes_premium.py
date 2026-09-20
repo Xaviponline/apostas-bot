@@ -17,7 +17,7 @@ import requests
 
 class RegistoPrevisoes:
     VERSAO = 1
-    MODELO_VERSAO = "V1.1"
+    MODELO_VERSAO = "V1.2"
     ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
     def __init__(self, path=None, session=None):
@@ -155,6 +155,12 @@ class RegistoPrevisoes:
             except (TypeError, ValueError):
                 ranking_modelo = None
 
+            confianca_modelo = str(s.get("confianca") or "").strip() or None
+            try:
+                score_modelo = float(s.get("score"))
+            except (TypeError, ValueError):
+                score_modelo = None
+
             registo = {
                 "chave": chave,
                 "event_id": int(event_id),
@@ -166,6 +172,8 @@ class RegistoPrevisoes:
                 "mercado": str(mercado),
                 "modelo_versao": self.MODELO_VERSAO,
                 "ranking_modelo": ranking_modelo,
+                "confianca_modelo": confianca_modelo,
+                "score_modelo": round(score_modelo, 6) if score_modelo is not None else None,
                 "probabilidade": round(prob, 6),
                 "probabilidade_bruta": round(prob_bruta, 6),
                 "qualidade": qualidade,
