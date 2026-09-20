@@ -18,6 +18,8 @@ class VersaoSnapshotTests(unittest.TestCase):
             },
             "mercado": "Vitória Casa",
             "ranking_modelo": 17,
+            "confianca": "MÉDIA",
+            "score": 0.61,
             "probabilidade": 0.61,
             "probabilidade_bruta": 0.63,
             "qualidade": 75,
@@ -25,14 +27,16 @@ class VersaoSnapshotTests(unittest.TestCase):
             "odd_minima": 1.72,
         }
 
-    def test_nova_previsao_recebe_versao_v11(self):
+    def test_nova_previsao_recebe_versao_v12(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
             adicionadas = reg.registar([self._selecao()])
 
             self.assertEqual(adicionadas, 1)
-            self.assertEqual(reg.dados["previsoes"][0]["modelo_versao"], "V1.1")
+            self.assertEqual(reg.dados["previsoes"][0]["modelo_versao"], "V1.2")
             self.assertEqual(reg.dados["previsoes"][0]["ranking_modelo"], 17)
+            self.assertEqual(reg.dados["previsoes"][0]["confianca_modelo"], "MÉDIA")
+            self.assertAlmostEqual(reg.dados["previsoes"][0]["score_modelo"], 0.61)
 
     def test_registo_legacy_nao_e_reescrito_com_versao(self):
         with tempfile.TemporaryDirectory() as tmp:
