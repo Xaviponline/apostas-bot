@@ -229,11 +229,12 @@ class RegistoPrevisoes:
         except (TypeError, ValueError):
             return None
 
-    def _resultados_espn(self, data_iso):
-        """Obtém resultados finais pela rota global ESPN sem User-Agent customizado."""
+    def _resultados_espn(self, data_iso, liga_codigo="all"):
+        """Obtém resultados finais ESPN por rota global ou competição específica."""
         compacta = str(data_iso).replace("-", "")
+        liga_codigo = str(liga_codigo or "all").strip() or "all"
         r = self.session.get(
-            f"{self.ESPN_BASE}/all/scoreboard",
+            f"{self.ESPN_BASE}/{liga_codigo}/scoreboard",
             params={"dates": compacta},
             timeout=(5, 25),
         )
