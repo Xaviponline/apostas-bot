@@ -78,6 +78,10 @@ class PerformanceSegmentadoTests(unittest.TestCase):
         self.assertIn("Dados 70–84: 1/1 (100.0%)", texto)
         self.assertIn("Dados 55–69: 0/1 (0.0%)", texto)
         self.assertIn("Prev 60.0% | Real 0.0% | Gap -60.0pp", texto)
+        self.assertIn("🔎 CRUZAMENTO DOS GRUPOS DE ALERTA", texto)
+        self.assertIn("• Dados 85–100 por mercado:", texto)
+        self.assertIn("↳ Vitória Casa: 1/1 (100.0%)", texto)
+        self.assertIn("• Confiança ALTA por mercado:", texto)
         self.assertEqual(reg.dados["previsoes"], antes)
 
 
