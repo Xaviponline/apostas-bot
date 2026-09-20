@@ -235,6 +235,8 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         por_versao = {}
         por_confianca = {}
         por_qualidade = {}
+        alta_por_mercado = {}
+        qualidade_alta_por_mercado = {}
         for p in liquidados:
             por_dia.setdefault(str(p.get("data_jogo") or "Sem data"), []).append(p)
             por_mercado.setdefault(
@@ -244,8 +246,15 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             por_probabilidade.setdefault(self._faixa_probabilidade(p), []).append(p)
             por_ranking.setdefault(self._faixa_ranking(p), []).append(p)
             por_versao.setdefault(self._versao_snapshot(p), []).append(p)
-            por_confianca.setdefault(self._confianca_snapshot(p), []).append(p)
-            por_qualidade.setdefault(self._faixa_qualidade(p), []).append(p)
+            confianca = self._confianca_snapshot(p)
+            faixa_qualidade = self._faixa_qualidade(p)
+            mercado = str(p.get("mercado") or "Mercado desconhecido")
+            por_confianca.setdefault(confianca, []).append(p)
+            por_qualidade.setdefault(faixa_qualidade, []).append(p)
+            if confianca == "ALTA":
+                alta_por_mercado.setdefault(mercado, []).append(p)
+            if faixa_qualidade == "85–100":
+                qualidade_alta_por_mercado.setdefault(mercado, []).append(p)
 
         linhas = ["📅 DESEMPENHO POR DIA"]
         for data_iso in sorted(por_dia):
@@ -353,6 +362,36 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f} | "
                 f"{self._calibracao_texto(m)}"
             )
+
+        linhas.extend(["", "🔎 CRUZAMENTO DOS GRUPOS DE ALERTA"])
+        linhas.append("• Dados 85–100 por mercado:")
+        if qualidade_alta_por_mercado:
+            for mercado in sorted(qualidade_alta_por_mercado):
+                m = self._metricas_grupo(qualidade_alta_por_mercado[mercado])
+                if m is None:
+                    continue
+                linhas.append(
+                    f"  ↳ {mercado}: {m['ganhos']}/{m['total']} "
+                    f"({m['hit_rate']*100:.1f}%) | "
+                    f"{self._calibracao_texto(m)}"
+                )
+        else:
+            linhas.append("  ↳ Sem amostra.")
+
+        linhas.append("• Confiança ALTA por mercado:")
+        if alta_por_mercado:
+            for mercado in sorted(alta_por_mercado):
+                m = self._metricas_grupo(alta_por_mercado[mercado])
+                if m is None:
+                    continue
+                linhas.append(
+                    f"  ↳ {mercado}: {m['ganhos']}/{m['total']} "
+                    f"({m['hit_rate']*100:.1f}%) | "
+                    f"{self._calibracao_texto(m)}"
+                )
+        else:
+            linhas.append("  ↳ Sem amostra.")
+
         return "\n".join(linhas)
 
     def relatorio(self):
