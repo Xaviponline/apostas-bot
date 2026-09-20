@@ -154,11 +154,28 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
 
     @staticmethod
     def _confianca_snapshot(previsao):
+        persistida = str((previsao or {}).get("confianca_modelo") or "").strip()
+        if persistida:
+            return persistida
+
         try:
             qualidade = int(previsao["qualidade"])
             prob = float(previsao["probabilidade"])
         except (KeyError, TypeError, ValueError):
             return "DESCONHECIDA"
+
+        # V1.0/V1.1 não guardavam a confiança. Reproduz exatamente a regra
+        # histórica para não reclassificar snapshots antigos ao introduzir V1.2.
+        versao = str(previsao.get("modelo_versao") or "").strip()
+        if not versao or versao == "V1.1":
+            if qualidade >= 85 and prob >= 0.62:
+                return "ALTA"
+            if qualidade >= 70 and prob >= 0.58:
+                return "MÉDIA-ALTA"
+            if qualidade >= 55:
+                return "MÉDIA"
+            return "BAIXA"
+
         return AnalisadorInteligente._confianca(qualidade, prob)
 
     @staticmethod
@@ -501,8 +518,16 @@ class BotPremiumDiario(BotPremiumReal):
                 "odd_justa": odd_justa,
                 "odd_minima": odd_minima,
                 "ranking_modelo": p.get("ranking_modelo"),
-                "confianca": self.analisador._confianca(qualidade, prob),
-                "score": (prob * 0.62) + ((qualidade / 100.0) * 0.38),
+                "confianca": RegistoPrevisoesDiario._confianca_snapshot(p),
+                "score": (
+                    float(p["score_modelo"])
+                    if isinstance(p.get("score_modelo"), (int, float))
+                    else (
+                        prob
+                        if str(p.get("modelo_versao") or "") == "V1.2"
+                        else (prob * 0.62) + ((qualidade / 100.0) * 0.38)
+                    )
+                ),
             }
             try:
                 odd_real = float(p.get("odd_real"))
