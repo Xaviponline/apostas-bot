@@ -59,9 +59,13 @@ class PerformanceSegmentadoTests(unittest.TestCase):
         self.assertIn("60–64%: 0/1 (0.0%)", texto)
         self.assertIn("65–69%: 1/1 (100.0%)", texto)
         self.assertIn("70%+: 1/1 (100.0%)", texto)
+        self.assertIn("Prev 60.0% | Real 0.0% | Gap -60.0pp", texto)
+        self.assertIn("Prev 65.0% | Real 100.0% | Gap +35.0pp", texto)
+        self.assertIn("Prev 70.0% | Real 100.0% | Gap +30.0pp", texto)
         self.assertIn("🏅 DESEMPENHO POR RANKING DO MODELO", texto)
         self.assertIn("#16–20: 1/1 (100.0%)", texto)
         self.assertIn("Sem ranking (histórico): 1/2 (50.0%)", texto)
+        self.assertIn("Prev 62.5% | Real 50.0% | Gap -12.5pp", texto)
         self.assertIn("🧩 DESEMPENHO POR VERSÃO", texto)
         self.assertIn("V1.0 (histórico): 1/2 (50.0%)", texto)
         self.assertIn("V1.1: 1/1 (100.0%)", texto)
@@ -73,6 +77,7 @@ class PerformanceSegmentadoTests(unittest.TestCase):
         self.assertIn("Dados 85–100: 1/1 (100.0%)", texto)
         self.assertIn("Dados 70–84: 1/1 (100.0%)", texto)
         self.assertIn("Dados 55–69: 0/1 (0.0%)", texto)
+        self.assertIn("Prev 60.0% | Real 0.0% | Gap -60.0pp", texto)
         self.assertEqual(reg.dados["previsoes"], antes)
 
 
