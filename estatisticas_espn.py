@@ -97,6 +97,8 @@ class EstatisticasESPN:
         "europa league": "uefa.europa",
         "uefa conference league": "uefa.europa.conf",
         "conference league": "uefa.europa.conf",
+        "uefa nations league": "uefa.nations",
+        "nations league": "uefa.nations",
     }
 
     # Ordem importante: slugs mais específicos, como LaLiga 2, têm de vir
@@ -134,6 +136,7 @@ class EstatisticasESPN:
         ("uefa-champions-league", "uefa.champions"),
         ("uefa-europa-league", "uefa.europa"),
         ("uefa-conference-league", "uefa.europa.conf"),
+        ("uefa-nations-league", "uefa.nations"),
     )
 
     def __init__(self, session=None, dias_historico=70, cache_segundos=1200):
