@@ -22,6 +22,7 @@ class CoberturaLigasV1Tests(unittest.TestCase):
             "Greek Super League": "gre.1",
             "Swiss Super League": "sui.1",
             "Major League Soccer": "usa.1",
+            "UEFA Nations League": "uefa.nations",
         }
         for nome, codigo in casos.items():
             with self.subTest(nome=nome):
@@ -42,6 +43,7 @@ class CoberturaLigasV1Tests(unittest.TestCase):
         esperadas = {
             "eng.2", "eng.3", "eng.4", "esp.2", "ita.2", "ger.2",
             "sco.1", "sco.2", "aut.1", "den.1", "gre.1", "sui.1", "usa.1",
+            "uefa.nations",
         }
         self.assertTrue(esperadas.issubset(set(BuscadorJogosReais.ESPN_LEAGUES)))
 
@@ -49,6 +51,7 @@ class CoberturaLigasV1Tests(unittest.TestCase):
         self.assertEqual(nome_liga_pt("Spanish LALIGA 2"), "LaLiga 2")
         self.assertEqual(nome_liga_pt("English League Two"), "League Two")
         self.assertEqual(nome_liga_pt("Scottish Premiership"), "Premiership Escocesa")
+        self.assertEqual(nome_liga_pt("UEFA Nations League"), "Liga das Nações")
         self.assertEqual(AnalisadorInteligente._bandeira_liga("Greek Super League"), "🇬🇷")
         self.assertEqual(AnalisadorInteligente._bandeira_liga("Swiss Super League"), "🇨🇭")
 
