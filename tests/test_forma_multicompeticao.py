@@ -106,9 +106,10 @@ class FormaMulticompeticaoTests(unittest.TestCase):
             {"league_code": "eng.league_cup", "casa_id": 1, "fora_id": 2},
             {"league_code": "esp.1", "casa_id": 3, "fora_id": 4},
             {"league_code": "uefa.europa", "casa_id": 5, "fora_id": 6},
+            {"league_code": "uefa.nations", "casa_id": 7, "fora_id": 8},
         ]
         stats.carregar_historicos(jogos)
-        self.assertEqual(set(stats.pedidos_forma), {1, 2, 5, 6})
+        self.assertEqual(set(stats.pedidos_forma), {1, 2, 5, 6, 7, 8})
 
     def test_amigavel_nao_entra_na_forma_global(self):
         evento = {
