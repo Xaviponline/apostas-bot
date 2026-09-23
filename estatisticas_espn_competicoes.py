@@ -22,6 +22,10 @@ from main_enriquecido import EstatisticasESPNEnriquecidas
 
 class EstatisticasESPNCompeticoes(EstatisticasESPNEnriquecidas):
     DIAS_BASE_COMPETICAO = 420
+    # Competições de seleções são muito espaçadas no calendário. Para a Liga
+    # das Nações precisamos alcançar pelo menos o ciclo anterior (2024/25)
+    # quando analisamos a edição 2026/27.
+    DIAS_BASE_POR_LIGA = {"uefa.nations": 900}
     DIAS_BLOCO_BASE = 14
     MIN_JOGOS_BASE = 10
     ALVO_JOGOS_BASE = 24
@@ -91,7 +95,10 @@ class EstatisticasESPNCompeticoes(EstatisticasESPNEnriquecidas):
         if agora.tzinfo is None:
             agora = agora.replace(tzinfo=ZoneInfo("Europe/Lisbon"))
         fim = agora.date() - timedelta(days=1)
-        inicio = fim - timedelta(days=self.DIAS_BASE_COMPETICAO)
+        dias_base = self.DIAS_BASE_POR_LIGA.get(
+            liga_codigo, self.DIAS_BASE_COMPETICAO
+        )
+        inicio = fim - timedelta(days=dias_base)
         chave = ("base_alargada_14d", liga_codigo, inicio.isoformat(), fim.isoformat())
 
         with self._lock:
