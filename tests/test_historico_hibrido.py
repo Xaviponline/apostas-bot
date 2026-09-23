@@ -39,7 +39,8 @@ class SofaFake:
         if caminho == "/unique-tournament/10783/seasons":
             return {
                 "seasons": [
-                    {"id": 1078301, "name": "UEFA Nations League 26/27", "year": "26/27"}
+                    {"id": 1078301, "name": "UEFA Nations League 26/27", "year": "26/27"},
+                    {"id": 1078299, "name": "UEFA Nations League 24/25", "year": "24/25"},
                 ]
             }
         prefixo = f"/unique-tournament/679/season/{self.temporada_id}/events/last/"
@@ -126,6 +127,7 @@ class HistoricoHibridoTests(unittest.TestCase):
         stats = EstatisticasHibridasCompeticoes(sofa_client=SofaFake())
         self.assertEqual(stats._ano_alvo_sofa("arg.copa", self.REF), "2026")
         self.assertEqual(stats._ano_alvo_sofa("eng.league_cup", self.REF), "26/27")
+        self.assertEqual(stats._ano_alvo_sofa("uefa.nations", self.REF), "24/25")
         ref_janeiro = datetime(2027, 1, 10, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
         self.assertEqual(stats._ano_alvo_sofa("eng.league_cup", ref_janeiro), "26/27")
 
@@ -136,7 +138,7 @@ class HistoricoHibridoTests(unittest.TestCase):
         self.assertEqual(stats._descobrir_competicao_sofa("arg.copa", self.REF), (1024, 88001))
         self.assertEqual(
             stats._descobrir_competicao_sofa("uefa.nations", self.REF),
-            (10783, 1078301),
+            (10783, 1078299),
         )
 
     def test_nations_bloqueada_vai_direto_ao_sofascore(self):
