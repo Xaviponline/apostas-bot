@@ -21,6 +21,7 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "arg.copa",
         "eng.league_cup",
         "uefa.europa",
+        "uefa.nations",
     }
     # IDs públicos e estáveis das provas no SofaScore. Evita depender da agenda
     # diária, que em produção devolveu HTTP 404 mesmo com as provas existentes.
@@ -28,6 +29,7 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "arg.copa": 1024,
         "eng.league_cup": 21,
         "uefa.europa": 679,
+        "uefa.nations": 10783,
     }
     SOFA_ANO_CALENDARIO = {"arg.copa"}
     SOFA_WWW_BASE = "https://www.sofascore.com/api/v1"
