@@ -36,6 +36,12 @@ class SofaFake:
                     {"id": 88001, "name": "Copa Argentina 2026", "year": "2026"}
                 ]
             }
+        if caminho == "/unique-tournament/10783/seasons":
+            return {
+                "seasons": [
+                    {"id": 1078301, "name": "UEFA Nations League 26/27", "year": "26/27"}
+                ]
+            }
         prefixo = f"/unique-tournament/679/season/{self.temporada_id}/events/last/"
         if caminho.startswith(prefixo):
             eventos = []
@@ -123,11 +129,24 @@ class HistoricoHibridoTests(unittest.TestCase):
         ref_janeiro = datetime(2027, 1, 10, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
         self.assertEqual(stats._ano_alvo_sofa("eng.league_cup", ref_janeiro), "26/27")
 
-    def test_ids_estaveis_das_tres_competicoes(self):
+    def test_ids_estaveis_das_competicoes_hibridas(self):
         sofa = SofaFake()
         stats = EstatisticasHibridasCompeticoes(sofa_client=sofa)
         self.assertEqual(stats._descobrir_competicao_sofa("eng.league_cup", self.REF), (21, 96185))
         self.assertEqual(stats._descobrir_competicao_sofa("arg.copa", self.REF), (1024, 88001))
+        self.assertEqual(
+            stats._descobrir_competicao_sofa("uefa.nations", self.REF),
+            (10783, 1078301),
+        )
+
+    def test_nations_bloqueada_vai_direto_ao_sofascore(self):
+        class Probe(EstatisticasHibridasCompeticoes):
+            def _recolher_base_tolerante(self, *args, **kwargs):
+                raise AssertionError("ESPN não deve ser chamada para Nations League")
+
+        stats = Probe(sofa_client=SofaFake())
+        self.assertIn("uefa.nations", stats.ESPN_HISTORICO_BLOQUEADO)
+        self.assertEqual(stats.SOFA_TOURNAMENT_IDS["uefa.nations"], 10783)
 
     def test_host_www_e_tentado_quando_api_falha(self):
         sofa = SofaApiFalhaFake({"seasons": []})
