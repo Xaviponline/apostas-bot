@@ -108,5 +108,25 @@ class BaseAlargadaCompeticoesTests(unittest.TestCase):
         self.assertLessEqual(stats.chamadas, 3)
 
 
+    def test_nations_league_alcanca_ciclo_anterior(self):
+        class Probe(EstatisticasESPNCompeticoes):
+            def __init__(self):
+                super().__init__(dias_historico=70)
+                self.intervalos = []
+
+            def _consultar_intervalo(self, liga_codigo, inicio, fim):
+                self.intervalos.append((liga_codigo, inicio, fim))
+                return []
+
+        stats = Probe()
+        ref = datetime(2026, 9, 24, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
+        stats._fetch_liga("uefa.nations", ref)
+        inicio_mais_antigo = min(inicio for _, inicio, _ in stats.intervalos)
+        fim = ref.date()
+        self.assertGreaterEqual((fim - inicio_mais_antigo).days, 890)
+        self.assertEqual(stats.DIAS_BASE_POR_LIGA["uefa.nations"], 900)
+
+
+
 if __name__ == "__main__":
     unittest.main()
