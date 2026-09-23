@@ -32,6 +32,7 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "uefa.nations": 10783,
     }
     SOFA_ANO_CALENDARIO = {"arg.copa"}
+    SOFA_EPOCA_ANTERIOR_BIENAL = {"uefa.nations"}
     SOFA_WWW_BASE = "https://www.sofascore.com/api/v1"
     MAX_PAGINAS_SOFA = 8
 
@@ -121,6 +122,8 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         if liga_codigo in cls.SOFA_ANO_CALENDARIO:
             return str(agora.year)
         inicio = agora.year if agora.month >= 7 else agora.year - 1
+        if liga_codigo in cls.SOFA_EPOCA_ANTERIOR_BIENAL:
+            inicio -= 2
         return f"{inicio % 100:02d}/{(inicio + 1) % 100:02d}"
 
     def _descobrir_competicao_sofa(self, liga_codigo, data_ref=None):
