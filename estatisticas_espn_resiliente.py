@@ -33,6 +33,7 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
         "uefa.champions",
         "uefa.europa",
         "uefa.europa.conf",
+        "uefa.nations",
         "eng.fa",
         "eng.league_cup",
         "esp.copa_del_rey",
