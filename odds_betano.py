@@ -18,6 +18,7 @@ class OddsBetano:
     # A documentação/medições do OddsPapi mostram rate limit por endpoint.
     # Para /odds, ~1 pedido/segundo evita rajadas de 429.
     PAPI_ODDS_INTERVALO = 1.05
+    PAPI_FIXTURES_INTERVALO = 1.05
     PAPI_MAX_TENTATIVAS_429 = 3
 
     def __init__(self, api_key=None, session=None, papi_key=None, provider=None):
@@ -133,8 +134,15 @@ class OddsBetano:
         erro = corpo.get("error") if isinstance(corpo.get("error"), dict) else {}
         return str(erro.get("code") or corpo.get("code") or "").strip().upper()
 
+    def _intervalo_papi(self, path):
+        if path == "/odds":
+            return self.PAPI_ODDS_INTERVALO
+        if path == "/fixtures":
+            return self.PAPI_FIXTURES_INTERVALO
+        return 0.0
+
     def _esperar_cooldown_papi(self, path):
-        if path != "/odds":
+        if self._intervalo_papi(path) <= 0:
             return
         agora = monotonic()
         pronto = float(self._papi_proximo_pedido.get(path) or 0.0)
@@ -142,9 +150,10 @@ class OddsBetano:
             sleep(pronto - agora)
 
     def _marcar_cooldown_papi(self, path, segundos=None):
-        if path != "/odds":
+        intervalo_base = self._intervalo_papi(path)
+        if intervalo_base <= 0 and segundos is None:
             return
-        intervalo = self.PAPI_ODDS_INTERVALO if segundos is None else float(segundos)
+        intervalo = intervalo_base if segundos is None else float(segundos)
         self._papi_proximo_pedido[path] = monotonic() + max(intervalo, 0.0)
 
     def _get_papi(self, path, params):
@@ -152,7 +161,7 @@ class OddsBetano:
             raise ValueError("ODDS_PAPI_KEY não configurada.")
         params = dict(params)
         params["apiKey"] = self.papi_key
-        tentativas = self.PAPI_MAX_TENTATIVAS_429 if path == "/odds" else 1
+        tentativas = self.PAPI_MAX_TENTATIVAS_429 if path in {"/odds", "/fixtures"} else 1
 
         ultimo = None
         for tentativa in range(tentativas):
