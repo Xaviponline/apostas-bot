@@ -27,6 +27,9 @@ class OddsBetano:
     # Para /odds, ~1 pedido/segundo evita rajadas de 429.
     PAPI_ODDS_INTERVALO = 1.05
     PAPI_FIXTURES_INTERVALO = 1.05
+    PAPI_BATCH_INTERVALO = 1.05
+    PAPI_ACCOUNT_INTERVALO = 1.05
+    PAPI_EVENTOS_CACHE_SEG = 30 * 60
     PAPI_MAX_TENTATIVAS_429 = 3
 
     def __init__(self, api_key=None, session=None, papi_key=None, provider=None):
@@ -42,6 +45,8 @@ class OddsBetano:
         self.ultimo_erro_evento = {}
         self.ultimo_diagnostico_eventos = ""
         self._papi_proximo_pedido = {}
+        self._eventos_cache = None
+        self._eventos_cache_expira = 0.0
 
         if provider:
             self.provider = provider
@@ -151,6 +156,10 @@ class OddsBetano:
             return self.PAPI_ODDS_INTERVALO
         if path == "/fixtures":
             return self.PAPI_FIXTURES_INTERVALO
+        if path == "/odds-by-tournaments":
+            return self.PAPI_BATCH_INTERVALO
+        if path == "/account":
+            return self.PAPI_ACCOUNT_INTERVALO
         return 0.0
 
     def _esperar_cooldown_papi(self, path):
@@ -171,7 +180,7 @@ class OddsBetano:
             raise ValueError("ODDS_PAPI_KEY não configurada.")
         params = dict(params)
         params["apiKey"] = self.papi_key
-        tentativas = self.PAPI_MAX_TENTATIVAS_429 if path in {"/odds", "/fixtures"} else 1
+        tentativas = self.PAPI_MAX_TENTATIVAS_429 if path in {"/odds", "/fixtures", "/odds-by-tournaments", "/account"} else 1
 
         ultimo = None
         for tentativa in range(tentativas):
@@ -331,9 +340,19 @@ class OddsBetano:
         if not self.configurada:
             self.estado = "não configurada"
             return []
+
+        if self.provider == "oddspapi":
+            agora = monotonic()
+            if self._eventos_cache is not None and agora < self._eventos_cache_expira:
+                logging.info("ODDS_DISCOVERY | cache=%s", len(self._eventos_cache))
+                return list(self._eventos_cache)
+
         try:
             eventos = self._eventos_papi() if self.provider == "oddspapi" else self._eventos_legacy()
             self.estado = "operacional"
+            if self.provider == "oddspapi":
+                self._eventos_cache = list(eventos)
+                self._eventos_cache_expira = monotonic() + self.PAPI_EVENTOS_CACHE_SEG
             return eventos
         except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
             self.estado = "indisponível"
@@ -371,17 +390,7 @@ class OddsBetano:
         self._catalogo_mercados = catalogo
         return catalogo
 
-    def _odds_evento_papi(self, event_id):
-        dados = self._get_papi(
-            "/odds",
-            {
-                "fixtureId": str(event_id),
-                "bookmakers": self.papi_bookmaker,
-                "oddsFormat": "decimal",
-                "language": "en",
-                "verbosity": 3,
-            },
-        )
+    def _normalizar_odds_papi(self, dados):
         if not isinstance(dados, dict):
             raise ValueError("Resposta OddsPapi inválida.")
         book = (dados.get("bookmakerOdds") or {}).get(self.papi_bookmaker)
@@ -399,7 +408,7 @@ class OddsBetano:
 
         try:
             catalogo = self._catalogo_papi()
-        except (requests.RequestException, ValueError, TypeError):
+        except (requests.RequestException, ValueError, TypeError, RuntimeError):
             catalogo = {}
 
         mercados_saida = []
@@ -459,6 +468,126 @@ class OddsBetano:
             "mercados": mercados_saida,
             "bookmaker_disponivel": True,
             "fonte": self.nome_fonte,
+        }
+
+    def _odds_evento_papi(self, event_id):
+        dados = self._get_papi(
+            "/odds",
+            {
+                "fixtureId": str(event_id),
+                "bookmakers": self.papi_bookmaker,
+                "oddsFormat": "decimal",
+                "language": "en",
+                "verbosity": 3,
+            },
+        )
+        return self._normalizar_odds_papi(dados)
+
+    def odds_eventos_em_lote(self, eventos):
+        """Obtém odds de vários fixtures OddsPapi em uma chamada por conjunto de torneios."""
+        if self.provider != "oddspapi":
+            return {}
+
+        eventos = [e for e in (eventos or []) if isinstance(e, dict)]
+        ids_evento = {
+            str(e.get("id"))
+            for e in eventos
+            if e.get("id") not in (None, "")
+        }
+        torneios = sorted(
+            {
+                int(e.get("tournament_id"))
+                for e in eventos
+                if e.get("tournament_id") not in (None, "")
+            }
+        )
+        if not ids_evento or not torneios:
+            return {}
+
+        try:
+            dados = self._get_papi(
+                "/odds-by-tournaments",
+                {
+                    "tournamentIds": ",".join(str(t) for t in torneios),
+                    "bookmakers": self.papi_bookmaker,
+                    "oddsFormat": "decimal",
+                    "language": "en",
+                    "verbosity": 3,
+                },
+            )
+            if isinstance(dados, list):
+                itens = dados
+            elif isinstance(dados, dict) and isinstance(dados.get("fixtures"), list):
+                itens = dados.get("fixtures") or []
+            elif isinstance(dados, dict) and dados.get("fixtureId") is not None:
+                itens = [dados]
+            else:
+                raise ValueError("Resposta OddsPapi em lote inválida.")
+
+            saida = {}
+            for item in itens:
+                if not isinstance(item, dict):
+                    continue
+                fixture_id = str(item.get("fixtureId") or "")
+                if fixture_id not in ids_evento:
+                    continue
+                saida[fixture_id] = self._normalizar_odds_papi(item)
+
+            for fixture_id in ids_evento:
+                if fixture_id not in saida:
+                    self.ultimo_erro_evento[fixture_id] = "betano_sem_odds_no_evento"
+                    saida[fixture_id] = None
+
+            logging.info(
+                "ODDS_BATCH | torneios=%s | fixtures=%s | respostas=%s",
+                len(torneios),
+                len(ids_evento),
+                sum(1 for v in saida.values() if v is not None),
+            )
+            return saida
+        except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
+            motivo = self._motivo_excecao(exc)
+            for fixture_id in ids_evento:
+                self.ultimo_erro_evento[fixture_id] = motivo
+            logging.info("ODDS_BATCH | falha=%s | fixtures=%s", motivo, len(ids_evento))
+            return {fixture_id: None for fixture_id in ids_evento}
+
+    def status_conta(self):
+        """Resumo seguro da quota OddsPapi; nunca devolve a api_key."""
+        if self.provider != "oddspapi" or not self.papi_key:
+            return None
+        dados = self._get_papi("/account", {})
+        if not isinstance(dados, dict):
+            raise ValueError("Resposta de conta OddsPapi inválida.")
+
+        subs = [s for s in (dados.get("subscriptions") or []) if isinstance(s, dict)]
+        atual_id = str(dados.get("current_subscription_id") or "")
+        atual = next(
+            (s for s in subs if str(s.get("subscription_id") or "") == atual_id),
+            None,
+        )
+        if atual is None:
+            atual = next((s for s in subs if s.get("is_active") is True), None)
+        if atual is None and subs:
+            atual = subs[0]
+        if not isinstance(atual, dict):
+            return None
+
+        try:
+            usados = int(atual.get("request_count") or 0)
+            limite = int(atual.get("request_limit") or 0)
+        except (TypeError, ValueError):
+            usados = limite = 0
+
+        return {
+            "request_count": usados,
+            "request_limit": limite,
+            "remaining": max(limite - usados, 0) if limite > 0 else None,
+            "is_active": bool(atual.get("is_active", False)),
+            "valid_from": atual.get("valid_from"),
+            "valid_until": atual.get("valid_until"),
+            "auto_renew": bool(atual.get("auto_renew", False)),
+            "last_request": atual.get("last_request"),
         }
 
     def _odds_evento_legacy(self, event_id):
