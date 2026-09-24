@@ -345,6 +345,66 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f}"
             )
 
+        # Acompanhamento isolado da versão atual. Evita misturar V1.0/V1.1
+        # quando se decide se a V1.2 precisa ou não de nova calibração.
+        v12 = [p for p in liquidados if self._versao_snapshot(p) == "V1.2"]
+        if v12:
+            m_v12 = self._metricas_grupo(v12)
+            linhas.extend(["", "🧬 V1.2 APENAS"])
+            linhas.append(
+                f"• Global: {m_v12['ganhos']}/{m_v12['total']} "
+                f"({m_v12['hit_rate']*100:.1f}%) | Brier {m_v12['brier']:.4f} | "
+                f"{self._calibracao_texto(m_v12)}"
+            )
+
+            grupos_v12 = {
+                "Mercado": {},
+                "Probabilidade": {},
+                "Ranking": {},
+                "Confiança": {},
+                "Qualidade": {},
+            }
+            for p in v12:
+                grupos_v12["Mercado"].setdefault(
+                    str(p.get("mercado") or "Mercado desconhecido"), []
+                ).append(p)
+                grupos_v12["Probabilidade"].setdefault(
+                    self._faixa_probabilidade(p), []
+                ).append(p)
+                grupos_v12["Ranking"].setdefault(
+                    self._faixa_ranking(p), []
+                ).append(p)
+                grupos_v12["Confiança"].setdefault(
+                    self._confianca_snapshot(p), []
+                ).append(p)
+                grupos_v12["Qualidade"].setdefault(
+                    self._faixa_qualidade(p), []
+                ).append(p)
+
+            ordens_v12 = {
+                "Mercado": sorted(grupos_v12["Mercado"]),
+                "Probabilidade": ["55–59%", "60–64%", "65–69%", "70%+", "<55%", "Desconhecida"],
+                "Ranking": ["#1–5", "#6–10", "#11–15", "#16–20", "#21+", "Sem ranking (histórico)"],
+                "Confiança": ["ALTA", "MÉDIA-ALTA", "MÉDIA", "BAIXA", "DESCONHECIDA"],
+                "Qualidade": ["85–100", "70–84", "55–69", "<55", "Desconhecida"],
+            }
+
+            for titulo in ("Mercado", "Probabilidade", "Ranking", "Confiança", "Qualidade"):
+                linhas.append(f"• {titulo}:")
+                for chave in ordens_v12[titulo]:
+                    grupo = grupos_v12[titulo].get(chave)
+                    if not grupo:
+                        continue
+                    m = self._metricas_grupo(grupo)
+                    if m is None:
+                        continue
+                    etiqueta = f"Dados {chave}" if titulo == "Qualidade" else chave
+                    linhas.append(
+                        f"  ↳ {etiqueta}: {m['ganhos']}/{m['total']} "
+                        f"({m['hit_rate']*100:.1f}%) | Brier {m['brier']:.4f} | "
+                        f"{self._calibracao_texto(m)}"
+                    )
+
         ordem_confianca = ["ALTA", "MÉDIA-ALTA", "MÉDIA", "BAIXA", "DESCONHECIDA"]
         estrelas = {
             "ALTA": "⭐⭐⭐⭐⭐",
