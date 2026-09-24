@@ -24,6 +24,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /odds — Listar eventos com odds Betano, se uma fonte de odds estiver configurada
 /odds ID — Consultar mercados/odds Betano desse evento
+/odds_status — Ver quota usada/restante da fonte de odds
 /add_aposta "Jogo" "Mercado" ODD VALOR — Registar uma aposta já feita
 /resultados — Histórico e contas
 /score ID ganhou|perdeu|anulada — Registar resultado
@@ -38,8 +39,8 @@ As apostas não são colocadas na Betano pelo bot.'''
 
 
 class BotPremiumReal:
-    ODDS_AUTO_INTERVALO_SEG = 30 * 60
-    ODDS_AUTO_JANELA_SEG = 6 * 60 * 60
+    ODDS_AUTO_INTERVALO_SEG = 2 * 60 * 60
+    ODDS_AUTO_JANELA_SEG = 4 * 60 * 60
     JOGOS_RETRY_VAZIO_SEG = 1.0
 
     def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None, analisador=None, previsoes=None):
@@ -244,7 +245,7 @@ class BotPremiumReal:
         return capturadas
 
     def _capturar_odds_se_devida(self):
-        """Executa no máximo uma ronda a cada 30 minutos."""
+        """Executa no máximo uma ronda a cada 2 horas para poupar quota."""
         agora = time.monotonic()
         if agora < self._proxima_captura_odds:
             return 0
