@@ -85,5 +85,70 @@ class PerformanceSegmentadoTests(unittest.TestCase):
         self.assertEqual(reg.dados["previsoes"], antes)
 
 
+    def test_relatorio_isola_v12_com_todos_os_segmentos(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoesDiario(Path(tmp) / "previsoes.json")
+            reg.dados = {
+                "versao": 1,
+                "previsoes": [
+                    {
+                        "data_jogo": "2026-09-24",
+                        "liga": "UEFA Nations League",
+                        "mercado": "Vitória Casa",
+                        "modelo_versao": "V1.2",
+                        "ranking_modelo": 1,
+                        "confianca_modelo": "MÉDIA-ALTA",
+                        "probabilidade": 0.678,
+                        "qualidade": 96,
+                        "resultado_binario": 1,
+                        "estado": "ganhou",
+                    },
+                    {
+                        "data_jogo": "2026-09-24",
+                        "liga": "UEFA Nations League",
+                        "mercado": "Under 2.5 Golos",
+                        "modelo_versao": "V1.2",
+                        "ranking_modelo": 3,
+                        "confianca_modelo": "BAIXA",
+                        "probabilidade": 0.580,
+                        "qualidade": 96,
+                        "resultado_binario": 0,
+                        "estado": "perdeu",
+                    },
+                    {
+                        "data_jogo": "2026-09-20",
+                        "liga": "English Premier League",
+                        "mercado": "Ambas Marcam",
+                        "modelo_versao": "V1.1",
+                        "ranking_modelo": 5,
+                        "probabilidade": 0.66,
+                        "qualidade": 80,
+                        "resultado_binario": 1,
+                        "estado": "ganhou",
+                    },
+                ],
+            }
+
+            texto = reg.relatorio()
+
+        self.assertIn("🧬 V1.2 APENAS", texto)
+        self.assertIn("• Global: 1/2 (50.0%)", texto)
+        self.assertIn("• Mercado:", texto)
+        self.assertIn("↳ Vitória Casa: 1/1 (100.0%)", texto)
+        self.assertIn("↳ Under 2.5 Golos: 0/1 (0.0%)", texto)
+        self.assertIn("• Probabilidade:", texto)
+        self.assertIn("↳ 55–59%: 0/1 (0.0%)", texto)
+        self.assertIn("↳ 65–69%: 1/1 (100.0%)", texto)
+        self.assertIn("• Ranking:", texto)
+        self.assertIn("↳ #1–5: 1/2 (50.0%)", texto)
+        self.assertIn("• Confiança:", texto)
+        self.assertIn("↳ MÉDIA-ALTA: 1/1 (100.0%)", texto)
+        self.assertIn("↳ BAIXA: 0/1 (0.0%)", texto)
+        self.assertIn("• Qualidade:", texto)
+        self.assertIn("↳ Dados 85–100: 1/2 (50.0%)", texto)
+        self.assertNotIn("Ambas Marcam: 1/1", texto.split("🧬 V1.2 APENAS", 1)[1].split("⭐ DESEMPENHO POR CONFIANÇA", 1)[0])
+
+
+
 if __name__ == "__main__":
     unittest.main()
