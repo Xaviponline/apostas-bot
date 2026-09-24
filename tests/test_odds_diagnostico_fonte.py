@@ -84,6 +84,7 @@ class OddsDiagnosticoFonteTests(unittest.TestCase):
             session=SessionAccount(),
         )
         fonte.PAPI_ACCOUNT_INTERVALO = 0
+        fonte.ultimo_diagnostico_eventos = "odds_quota_esgotada"
 
         status = fonte.status_conta()
 
@@ -91,6 +92,7 @@ class OddsDiagnosticoFonteTests(unittest.TestCase):
         self.assertEqual(status["request_limit"], 250)
         self.assertEqual(status["remaining"], 1)
         self.assertNotIn("api_key", status)
+        self.assertEqual(fonte.ultimo_diagnostico_eventos, "")
 
     def test_odds_betano_guarda_http_sem_expor_payload(self):
         fonte = OddsBetano(
