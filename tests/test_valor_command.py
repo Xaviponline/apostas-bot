@@ -39,6 +39,23 @@ class OddsFake:
         }
 
 
+class OddsStatusFake:
+    configurada = True
+    nome_fonte = "OddsPapi / Betano PT"
+
+    def status_conta(self):
+        return {
+            "request_count": 250,
+            "request_limit": 250,
+            "remaining": 0,
+            "is_active": True,
+            "valid_from": "2026-09-01T00:00:00Z",
+            "valid_until": "2026-10-01T00:00:00Z",
+            "auto_renew": True,
+            "last_request": "2026-09-24T14:00:00Z",
+        }
+
+
 class PrevisoesFake:
     def __init__(self):
         agora = datetime.now(TZ_PORTUGAL)
@@ -76,6 +93,19 @@ class ValorCommandTests(unittest.TestCase):
         self.assertIn("atual 2,25", texto)
         self.assertIn("Diferença elevada", texto)
         self.assertEqual(bot.previsoes.dados, antes)
+
+
+    def test_odds_status_mostra_quota_sem_tocar_previsoes(self):
+        bot = BotPremiumDiarioCompeticoes.__new__(BotPremiumDiarioCompeticoes)
+        bot.odds = OddsStatusFake()
+
+        texto = bot._executar_odds_status()
+
+        self.assertIn("ODDS STATUS", texto)
+        self.assertIn("250/250", texto)
+        self.assertIn("QUOTA ESGOTADA", texto)
+        self.assertIn("Restantes: 0", texto)
+        self.assertIn("não desconta pedidos", texto)
 
     def test_valor_ignora_previsao_que_ja_comecou(self):
         bot = BotPremiumDiarioCompeticoes.__new__(BotPremiumDiarioCompeticoes)
