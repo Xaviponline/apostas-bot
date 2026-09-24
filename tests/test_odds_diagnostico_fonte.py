@@ -24,6 +24,22 @@ class SessionQuotaFixtures:
         return response
 
 
+class SessionAccount:
+    def get(self, url, params=None, **kwargs):
+        response = requests.Response()
+        response.status_code = 200
+        response.url = url
+        response._content = (
+            b'{"current_subscription_id":"sub1","subscriptions":['
+            b'{"subscription_id":"sub1","is_active":true,"request_limit":250,'
+            b'"request_count":249,"valid_from":"2026-09-01T00:00:00Z",'
+            b'"valid_until":"2026-10-01T00:00:00Z","auto_renew":true,'
+            b'"last_request":"2026-09-24T14:00:00Z"}]}'
+        )
+        response.headers["Content-Type"] = "application/json"
+        return response
+
+
 class FonteComFalha:
     configurada = True
     nome_fonte = "Fonte teste"
@@ -59,6 +75,22 @@ class OddsDiagnosticoFonteTests(unittest.TestCase):
         fonte.PAPI_FIXTURES_INTERVALO = 0
         self.assertEqual(fonte.eventos_hoje(), [])
         self.assertEqual(fonte.ultimo_diagnostico_eventos, "odds_quota_esgotada")
+
+
+    def test_status_conta_resume_quota_sem_expor_chave(self):
+        fonte = OddsBetano(
+            papi_key="segredo",
+            provider="oddspapi",
+            session=SessionAccount(),
+        )
+        fonte.PAPI_ACCOUNT_INTERVALO = 0
+
+        status = fonte.status_conta()
+
+        self.assertEqual(status["request_count"], 249)
+        self.assertEqual(status["request_limit"], 250)
+        self.assertEqual(status["remaining"], 1)
+        self.assertNotIn("api_key", status)
 
     def test_odds_betano_guarda_http_sem_expor_payload(self):
         fonte = OddsBetano(
