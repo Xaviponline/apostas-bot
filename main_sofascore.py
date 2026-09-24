@@ -252,6 +252,18 @@ class BotPremiumReal:
         self._proxima_captura_odds = agora + self.ODDS_AUTO_INTERVALO_SEG
         if not self.odds.configurada:
             return 0
+
+        status_fn = getattr(self.odds, "status_conta", None)
+        if callable(status_fn):
+            try:
+                status = status_fn()
+                if isinstance(status, dict) and status.get("remaining") == 0:
+                    logging.info("ODDS_AUTO | suspensa: quota OddsPapi esgotada")
+                    return 0
+            except (requests.RequestException, RuntimeError, ValueError, TypeError):
+                # O diagnóstico de quota nunca deve impedir o resto do bot.
+                pass
+
         if str(getattr(self.odds, "ultimo_diagnostico_eventos", "") or "") == "odds_quota_esgotada":
             logging.info("ODDS_AUTO | suspensa: quota OddsPapi esgotada")
             return 0
