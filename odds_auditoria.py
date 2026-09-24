@@ -342,6 +342,11 @@ class AuditoriaOdds:
             return saida
 
         eventos = self.fonte.eventos_hoje()
+        diagnostico_descoberta = ""
+        if not eventos:
+            diagnostico_descoberta = str(
+                getattr(self.fonte, "ultimo_diagnostico_eventos", "") or ""
+            ).strip()
         indice = {}
         for evento in eventos or []:
             if not isinstance(evento, dict):
@@ -361,7 +366,10 @@ class AuditoriaOdds:
                 indice_exato=indice,
             )
             if not candidatos:
-                self._registar_diagnostico(selecao, "evento_nao_encontrado")
+                self._registar_diagnostico(
+                    selecao,
+                    diagnostico_descoberta or "evento_nao_encontrado",
+                )
                 continue
             if len(candidatos) != 1:
                 candidatos = self._desempatar_evento_por_hora(
