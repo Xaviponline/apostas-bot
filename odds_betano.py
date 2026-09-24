@@ -142,8 +142,6 @@ class OddsBetano:
         return 0.0
 
     def _esperar_cooldown_papi(self, path):
-        if self._intervalo_papi(path) <= 0:
-            return
         agora = monotonic()
         pronto = float(self._papi_proximo_pedido.get(path) or 0.0)
         if pronto > agora:
