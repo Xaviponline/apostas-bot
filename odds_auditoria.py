@@ -347,6 +347,7 @@ class AuditoriaOdds:
             diagnostico_descoberta = str(
                 getattr(self.fonte, "ultimo_diagnostico_eventos", "") or ""
             ).strip()
+
         indice = {}
         for evento in eventos or []:
             if not isinstance(evento, dict):
@@ -356,7 +357,8 @@ class AuditoriaOdds:
                 continue
             indice.setdefault(chave, []).append(evento)
 
-        cache_odds = {}
+        resolvidas = []
+        eventos_resolvidos = {}
         for selecao in saida:
             jogo = selecao.get("jogo") or {}
             candidatos = self._candidatos_evento(
@@ -384,9 +386,29 @@ class AuditoriaOdds:
             if event_id is None:
                 self._registar_diagnostico(selecao, "evento_sem_id")
                 continue
-            if event_id not in cache_odds:
-                cache_odds[event_id] = self.fonte.odds_evento(event_id)
-            dados = cache_odds[event_id]
+            chave_evento = str(event_id)
+            eventos_resolvidos[chave_evento] = evento
+            resolvidas.append((selecao, jogo, event_id, chave_evento))
+
+        cache_odds = {}
+        lote = getattr(self.fonte, "odds_eventos_em_lote", None)
+        if callable(lote) and eventos_resolvidos:
+            try:
+                resposta_lote = lote(list(eventos_resolvidos.values()))
+                if isinstance(resposta_lote, dict):
+                    cache_odds.update(
+                        {str(k): v for k, v in resposta_lote.items()}
+                    )
+            except (RuntimeError, ValueError, TypeError):
+                # Fonte antiga/fallback: mantém a consulta individual segura.
+                pass
+
+        for selecao, jogo, event_id, chave_evento in resolvidas:
+            if chave_evento in cache_odds:
+                dados = cache_odds[chave_evento]
+            else:
+                dados = self.fonte.odds_evento(event_id)
+                cache_odds[chave_evento] = dados
 
             if dados is None:
                 motivo = self._motivo_fonte(event_id) or "odds_evento_indisponiveis"
@@ -416,3 +438,4 @@ class AuditoriaOdds:
             selecao["odds_event_id"] = str(event_id)
             selecao["odds_atualizada_em"] = atualizada_em
         return saida
+
