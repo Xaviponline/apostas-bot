@@ -37,6 +37,17 @@ class SessaoPapiSemBetano:
                     "hasOdds": False,
                 }
             ])
+        if url.endswith("/odds-by-tournaments"):
+            return RespostaFake([
+                {
+                    "fixtureId": "id-cup-1",
+                    "participant1Name": "Fleetwood Town",
+                    "participant2Name": "Sheffield United",
+                    "tournamentName": "EFL Cup",
+                    "tournamentId": 321,
+                    "bookmakerOdds": {},
+                }
+            ])
         if url.endswith("/odds"):
             return RespostaFake({
                 "fixtureId": "id-cup-1",
