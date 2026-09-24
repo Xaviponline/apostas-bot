@@ -4,6 +4,7 @@ Fonte preferida: OddsPapi (Betano PT), por suportar plano gratuito.
 Fallback legado: Odds-API.io.
 As chaves são lidas apenas de variáveis de ambiente e nunca devem ser guardadas no GitHub.
 """
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from time import monotonic, sleep
@@ -30,6 +31,7 @@ class OddsBetano:
         self.papi_bookmaker = os.getenv("ODDS_PAPI_BOOKMAKER", "betano.pt").strip() or "betano.pt"
         self._catalogo_mercados = None
         self.ultimo_erro_evento = {}
+        self.ultimo_diagnostico_eventos = ""
         self._papi_proximo_pedido = {}
 
         if provider:
@@ -202,25 +204,54 @@ class OddsBetano:
         except (TypeError, ValueError):
             return None
 
+    @staticmethod
+    def _fixture_ainda_futuro(fixture):
+        try:
+            valor = str((fixture or {}).get("startTime") or "").strip()
+            if not valor:
+                return False
+            dt = datetime.fromisoformat(valor.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp() > datetime.now(timezone.utc).timestamp()
+        except (TypeError, ValueError):
+            return False
+
     def _eventos_papi(self):
         inicio, fim = self._janela_hoje_utc()
         # A descoberta dos jogos não deve depender de a Betano ter o mercado
         # aberto exatamente neste instante. Primeiro listamos todos os fixtures
         # pré-jogo e só depois consultamos /odds para a casa configurada.
-        dados = self._get_papi(
-            "/fixtures",
-            {
-                "sportId": 10,
-                "from": inicio,
-                "to": fim,
-                "statusId": 0,
-                "language": "en",
-            },
-        )
+        params = {
+            "sportId": 10,
+            "from": inicio,
+            "to": fim,
+            "statusId": 0,
+            "language": "en",
+        }
+        dados = self._get_papi("/fixtures", params)
         if not isinstance(dados, list):
             raise ValueError("Resposta de fixtures OddsPapi inválida.")
+
+        total_status0 = len(dados)
+        usou_fallback = False
+        if not dados:
+            # O estado dos fixtures mudou de semântica entre versões/documentação
+            # da fonte. Sem resultados com statusId=0, repetimos sem esse filtro
+            # e fazemos a proteção pré-jogo pelo startTime no nosso lado.
+            params_sem_status = dict(params)
+            params_sem_status.pop("statusId", None)
+            dados = self._get_papi("/fixtures", params_sem_status)
+            if not isinstance(dados, list):
+                raise ValueError("Resposta de fixtures OddsPapi inválida.")
+            usou_fallback = True
+
+        candidatos = dados
+        if usou_fallback:
+            candidatos = [e for e in dados if self._fixture_ainda_futuro(e)]
+
         eventos = []
-        for e in dados:
+        for e in candidatos:
             try:
                 eventos.append(
                     {
@@ -238,6 +269,12 @@ class OddsBetano:
                 )
             except (KeyError, TypeError, ValueError):
                 continue
+
+        self.ultimo_diagnostico_eventos = (
+            f"status0={total_status0}; fallback={int(usou_fallback)}; "
+            f"sem_status={len(dados) if usou_fallback else '-'}; futuros={len(eventos)}"
+        )
+        logging.info("ODDS_DISCOVERY | %s", self.ultimo_diagnostico_eventos)
         return eventos
 
     def _eventos_legacy(self):
@@ -279,8 +316,11 @@ class OddsBetano:
             eventos = self._eventos_papi() if self.provider == "oddspapi" else self._eventos_legacy()
             self.estado = "operacional"
             return eventos
-        except (requests.RequestException, ValueError, TypeError):
+        except (requests.RequestException, ValueError, TypeError) as exc:
             self.estado = "indisponível"
+            if self.provider == "oddspapi":
+                self.ultimo_diagnostico_eventos = self._motivo_excecao(exc)
+                logging.info("ODDS_DISCOVERY | %s", self.ultimo_diagnostico_eventos)
             return []
 
     def _catalogo_papi(self):
