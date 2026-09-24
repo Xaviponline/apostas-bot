@@ -29,6 +29,15 @@ class FonteComFalha:
         return self._erro.get(str(event_id), "")
 
 
+class FonteDescobertaFalha:
+    configurada = True
+    nome_fonte = "Fonte teste"
+    ultimo_diagnostico_eventos = "odds_http_429"
+
+    def eventos_hoje(self):
+        return []
+
+
 class OddsDiagnosticoFonteTests(unittest.TestCase):
     def test_odds_betano_guarda_http_sem_expor_payload(self):
         fonte = OddsBetano(
@@ -38,6 +47,19 @@ class OddsDiagnosticoFonteTests(unittest.TestCase):
         )
         self.assertIsNone(fonte.odds_evento("abc"))
         self.assertEqual(fonte.diagnostico_evento("abc"), "odds_http_429")
+
+
+    def test_auditoria_propaga_falha_da_descoberta(self):
+        selecoes = [
+            {
+                "jogo": {"id": 2, "casa": "Portugal", "fora": "Wales"},
+                "mercado": "Vitória Casa",
+                "probabilidade": 0.66,
+            }
+        ]
+        saida = AuditoriaOdds(FonteDescobertaFalha()).enriquecer(selecoes)
+        self.assertEqual(saida[0]["_odds_diag"], "odds_http_429")
+        self.assertNotIn("odd_real", saida[0])
 
     def test_auditoria_propaga_diagnostico_da_fonte(self):
         selecoes = [
