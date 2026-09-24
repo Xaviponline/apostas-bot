@@ -29,7 +29,7 @@ class OddsBetano:
     PAPI_FIXTURES_INTERVALO = 1.05
     PAPI_BATCH_INTERVALO = 1.05
     PAPI_ACCOUNT_INTERVALO = 1.05
-    PAPI_EVENTOS_CACHE_SEG = 30 * 60
+    PAPI_EVENTOS_CACHE_SEG = 3 * 60 * 60
     PAPI_MAX_TENTATIVAS_429 = 3
 
     def __init__(self, api_key=None, session=None, papi_key=None, provider=None):
