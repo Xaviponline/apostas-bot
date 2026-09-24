@@ -48,6 +48,47 @@ class SessaoPapiSemBetano:
         raise AssertionError(url)
 
 
+class SessaoPapiFallbackEstado:
+    def __init__(self):
+        self.chamadas = []
+
+    def get(self, url, params=None, **kwargs):
+        params = dict(params or {})
+        self.chamadas.append((url, params))
+        if not url.endswith("/fixtures"):
+            raise AssertionError(url)
+        if "statusId" in params:
+            return RespostaFake([])
+        return RespostaFake([
+            {
+                "fixtureId": "id-futuro-1",
+                "participant1Id": 101,
+                "participant2Id": 202,
+                "participant1Name": "Portugal",
+                "participant2Name": "Wales",
+                "startTime": "2099-09-24T18:45:00.000Z",
+                "tournamentName": "UEFA Nations League",
+                "tournamentId": 999,
+                "statusName": "Scheduled",
+                "statusId": 1,
+                "hasOdds": True,
+            },
+            {
+                "fixtureId": "id-passado-1",
+                "participant1Id": 303,
+                "participant2Id": 404,
+                "participant1Name": "Old Home",
+                "participant2Name": "Old Away",
+                "startTime": "2000-01-01T18:45:00.000Z",
+                "tournamentName": "Old League",
+                "tournamentId": 998,
+                "statusName": "Ended",
+                "statusId": 3,
+                "hasOdds": True,
+            },
+        ])
+
+
 class FontePayloadErrado:
     configurada = True
     nome_fonte = "Teste"
@@ -83,6 +124,18 @@ class OddsDescobertaTests(unittest.TestCase):
         self.assertNotIn("hasOdds", params)
         self.assertNotIn("bookmakers", params)
         self.assertFalse(eventos[0]["has_odds"])
+
+
+    def test_fallback_sem_status_quando_status_zero_vem_vazio(self):
+        sessao = SessaoPapiFallbackEstado()
+        fonte = OddsBetano(papi_key="teste", provider="oddspapi", session=sessao)
+        eventos = fonte.eventos_hoje()
+        self.assertEqual([e["id"] for e in eventos], ["id-futuro-1"])
+        self.assertEqual(len(sessao.chamadas), 2)
+        self.assertEqual(sessao.chamadas[0][1].get("statusId"), 0)
+        self.assertNotIn("statusId", sessao.chamadas[1][1])
+        self.assertIn("fallback=1", fonte.ultimo_diagnostico_eventos)
+        self.assertIn("futuros=1", fonte.ultimo_diagnostico_eventos)
 
     def test_jogo_existe_mas_betano_sem_odds_tem_diagnostico_proprio(self):
         fonte = OddsBetano(
