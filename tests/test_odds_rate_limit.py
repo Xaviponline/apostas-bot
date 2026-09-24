@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import requests
 
-from odds_betano import OddsBetano
+from odds_betano import OddsBetano, OddsPapiQuotaEsgotada
 
 
 class FakeResponse:
@@ -106,7 +106,7 @@ class OddsRateLimitTests(unittest.TestCase):
         fonte.PAPI_ODDS_INTERVALO = 0
 
         with patch("odds_betano.sleep"):
-            with self.assertRaises(requests.HTTPError):
+            with self.assertRaises(OddsPapiQuotaEsgotada):
                 fonte._get_papi("/odds", {"fixtureId": "evt1"})
 
         self.assertEqual(session.chamadas, 1)
