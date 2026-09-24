@@ -49,6 +49,65 @@ class FonteFake:
         return None
 
 
+class FonteLote:
+    configurada = True
+    nome_fonte = "Fonte Lote"
+
+    def __init__(self):
+        self.chamadas_lote = 0
+        self.chamadas_individuais = 0
+
+    def eventos_hoje(self):
+        return [
+            {
+                "id": "evt1",
+                "casa": "Portugal",
+                "fora": "Wales",
+                "tournament_id": 77,
+            },
+            {
+                "id": "evt2",
+                "casa": "Netherlands",
+                "fora": "Germany",
+                "tournament_id": 77,
+            },
+        ]
+
+    def odds_eventos_em_lote(self, eventos):
+        self.chamadas_lote += 1
+        self.eventos_recebidos = [e["id"] for e in eventos]
+        return {
+            "evt1": {
+                "id": "evt1",
+                "fonte": self.nome_fonte,
+                "mercados": [
+                    {
+                        "name": "Full Time Result",
+                        "period": "fulltime",
+                        "odds": [{"seleção": "1", "odd": 1.70}],
+                    }
+                ],
+            },
+            "evt2": {
+                "id": "evt2",
+                "fonte": self.nome_fonte,
+                "mercados": [
+                    {
+                        "name": "Full Time Result",
+                        "period": "fulltime",
+                        "odds": [{"seleção": "1", "odd": 1.80}],
+                    }
+                ],
+            },
+        }
+
+    def odds_evento(self, event_id):
+        self.chamadas_individuais += 1
+        raise AssertionError("Não devia consultar odds individualmente")
+
+
+
+
 class FonteDesligada:
     configurada = False
 
@@ -75,6 +134,29 @@ class OddsAuditoriaTests(unittest.TestCase):
         self.assertAlmostEqual(saida[0]["ev_real"], (0.634 * 1.80) - 1, places=6)
         self.assertEqual(saida[1]["odd_real"], 1.72)
         self.assertEqual(saida[1]["odds_fonte"], "Fonte Teste")
+
+
+    def test_consulta_em_lote_evita_um_pedido_por_jogo(self):
+        fonte = FonteLote()
+        selecoes = [
+            {
+                "jogo": {"id": 1, "casa": "Portugal", "fora": "Wales"},
+                "mercado": "Vitória Casa",
+                "probabilidade": 0.66,
+            },
+            {
+                "jogo": {"id": 2, "casa": "Netherlands", "fora": "Germany"},
+                "mercado": "Vitória Casa",
+                "probabilidade": 0.67,
+            },
+        ]
+
+        saida = AuditoriaOdds(fonte).enriquecer(selecoes)
+
+        self.assertEqual(fonte.chamadas_lote, 1)
+        self.assertEqual(fonte.chamadas_individuais, 0)
+        self.assertEqual(saida[0]["odd_real"], 1.70)
+        self.assertEqual(saida[1]["odd_real"], 1.80)
 
     def test_normaliza_siglas_de_clube_sem_fuzzy_matching(self):
         self.assertEqual(
