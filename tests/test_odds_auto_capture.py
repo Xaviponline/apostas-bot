@@ -47,6 +47,14 @@ class OddsFake:
         }
 
 
+class OddsQuotaFake(OddsFake):
+    ultimo_diagnostico_eventos = "odds_quota_esgotada"
+
+    def eventos_hoje(self):
+        raise AssertionError("Com quota esgotada não deve consultar fixtures")
+
+
+
 class OddsAutoCaptureTests(unittest.TestCase):
     def _snapshot(self, reg, inicio_seg=3600):
         ts = time.time() + inicio_seg
@@ -99,6 +107,25 @@ class OddsAutoCaptureTests(unittest.TestCase):
             # Uma segunda ronda não substitui nem volta a contar a odd congelada.
             self.assertEqual(bot._capturar_odds_pendentes(), 0)
             self.assertEqual(snapshot["odd_real"], 1.80)
+
+
+    def test_suspende_captura_automatica_quando_quota_esgotada(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            self._snapshot(reg)
+            bot = BotPremiumReal(
+                token="teste",
+                gestor=GestorFake(),
+                owner_id=1,
+                chat_id=1,
+                buscador=object(),
+                odds=OddsQuotaFake(),
+                analisador=object(),
+                previsoes=reg,
+            )
+
+            bot._proxima_captura_odds = 0
+            self.assertEqual(bot._capturar_odds_se_devida(), 0)
 
     def test_ignora_jogo_fora_da_janela_de_seis_horas(self):
         with tempfile.TemporaryDirectory() as tmp:
