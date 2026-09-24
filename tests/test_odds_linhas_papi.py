@@ -48,6 +48,49 @@ class PapiLinhasSession:
                     },
                 ]
             )
+        if url.endswith("/odds-by-tournaments"):
+            return FakeResponse(
+                [
+                    {
+                        "fixtureId": "id100",
+                        "tournamentId": 321,
+                        "updatedAt": "2026-09-16T10:03:00Z",
+                        "bookmakerOdds": {
+                            "betano.pt": {
+                                "markets": {
+                                    "206": {
+                                        "marketActive": True,
+                                        "outcomes": {
+                                            "206": {
+                                                "players": {
+                                                    "0": {
+                                                        "active": True,
+                                                        "price": 1.80,
+                                                        "bookmakerOutcomeId": "2.5/over",
+                                                        "changedAt": "2026-09-16T10:03:00Z",
+                                                        "mainLine": True,
+                                                    }
+                                                }
+                                            },
+                                            "207": {
+                                                "players": {
+                                                    "0": {
+                                                        "active": True,
+                                                        "price": 2.00,
+                                                        "bookmakerOutcomeId": "2.5/under",
+                                                        "changedAt": "2026-09-16T10:03:00Z",
+                                                        "mainLine": True,
+                                                    }
+                                                }
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        },
+                    }
+                ]
+            )
         if url.endswith("/odds"):
             return FakeResponse(
                 {
@@ -130,6 +173,22 @@ class OddsLinhasPapiTests(unittest.TestCase):
             papi_key="teste", provider="oddspapi", session=PapiLinhasSession()
         )
         self.dados = self.fonte.odds_evento("id100")
+
+
+    def test_batch_por_torneio_devolve_fixture_normalizado(self):
+        fonte = OddsBetano(
+            papi_key="teste", provider="oddspapi", session=PapiLinhasSession()
+        )
+        dados = fonte.odds_eventos_em_lote(
+            [{"id": "id100", "tournament_id": 321}]
+        )
+
+        self.assertIn("id100", dados)
+        self.assertEqual(dados["id100"]["id"], "id100")
+        self.assertEqual(
+            AuditoriaOdds._extrair_odd(dados["id100"], "Under 2.5 Golos"),
+            (2.00, "2026-09-16T10:03:00Z"),
+        )
 
     def test_parser_preserva_linha_periodo_tipo_principal_e_timestamp(self):
         mercado = next(m for m in self.dados["mercados"] if m["handicap"] == 3.5)
