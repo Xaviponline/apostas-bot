@@ -48,7 +48,11 @@ class OddsFake:
 
 
 class OddsQuotaFake(OddsFake):
-    ultimo_diagnostico_eventos = "odds_quota_esgotada"
+    ultimo_diagnostico_eventos = ""
+
+    def status_conta(self):
+        self.ultimo_diagnostico_eventos = "odds_quota_esgotada"
+        return {"remaining": 0, "request_count": 250, "request_limit": 250}
 
     def eventos_hoje(self):
         raise AssertionError("Com quota esgotada não deve consultar fixtures")
