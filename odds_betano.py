@@ -335,7 +335,7 @@ class OddsBetano:
             eventos = self._eventos_papi() if self.provider == "oddspapi" else self._eventos_legacy()
             self.estado = "operacional"
             return eventos
-        except (requests.RequestException, ValueError, TypeError) as exc:
+        except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
             self.estado = "indisponível"
             if self.provider == "oddspapi":
                 self.ultimo_diagnostico_eventos = self._motivo_excecao(exc)
