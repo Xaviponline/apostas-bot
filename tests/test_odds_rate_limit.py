@@ -60,6 +60,34 @@ class OddsRateLimitTests(unittest.TestCase):
         self.assertEqual(session.chamadas, 2)
         self.assertTrue(dormir.called)
 
+
+    def test_429_temporario_em_fixtures_tambem_repete(self):
+        session = RateLimitSession(
+            [
+                FakeResponse(
+                    {
+                        "error": {
+                            "code": "RATE_LIMITED",
+                            "retryMs": 5,
+                        }
+                    },
+                    status_code=429,
+                ),
+                FakeResponse([], status_code=200),
+            ]
+        )
+        fonte = OddsBetano(
+            papi_key="teste", provider="oddspapi", session=session
+        )
+        fonte.PAPI_FIXTURES_INTERVALO = 0
+
+        with patch("odds_betano.sleep") as dormir:
+            dados = fonte._get_papi("/fixtures", {"sportId": 10})
+
+        self.assertEqual(dados, [])
+        self.assertEqual(session.chamadas, 2)
+        self.assertTrue(dormir.called)
+
     def test_cota_esgotada_nao_faz_retry(self):
         session = RateLimitSession(
             [
