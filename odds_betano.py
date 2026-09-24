@@ -12,6 +12,14 @@ from zoneinfo import ZoneInfo
 import requests
 
 
+class OddsPapiQuotaEsgotada(RuntimeError):
+    pass
+
+
+class OddsPapiRateLimit(RuntimeError):
+    pass
+
+
 class OddsBetano:
     PAPI_BASE_URL = "https://api.oddspapi.io/v4"
     LEGACY_BASE_URL = "https://api.odds-api.io/v3"
@@ -69,6 +77,10 @@ class OddsBetano:
 
     @staticmethod
     def _motivo_excecao(exc):
+        if isinstance(exc, OddsPapiQuotaEsgotada):
+            return "odds_quota_esgotada"
+        if isinstance(exc, OddsPapiRateLimit):
+            return "odds_rate_limit_429"
         if isinstance(exc, requests.Timeout):
             return "odds_timeout"
         if isinstance(exc, requests.ConnectionError):
@@ -180,10 +192,10 @@ class OddsBetano:
             # REQUEST_LIMIT_EXCEEDED é cota do plano, não cooldown. Não vale
             # esperar e repetir porque o resultado continuará 429.
             if self._codigo_429(r) == "REQUEST_LIMIT_EXCEEDED":
-                r.raise_for_status()
+                raise OddsPapiQuotaEsgotada()
 
             if tentativa + 1 >= tentativas:
-                r.raise_for_status()
+                raise OddsPapiRateLimit()
 
             espera = self._retry_429_segundos(r, tentativa)
             self._marcar_cooldown_papi(path, espera)
