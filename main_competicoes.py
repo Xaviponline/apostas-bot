@@ -1,5 +1,7 @@
 """Arranque de produção com cobertura V1 e histórico híbrido de competições."""
 import logging
+
+import requests
 from collections import Counter
 from datetime import datetime
 
@@ -126,6 +128,73 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         )
         return "\n".join(linhas).rstrip()
 
+    @staticmethod
+    def _formatar_instante_quota(valor):
+        if not valor:
+            return "não indicado pela API"
+        try:
+            dt = datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(TZ_PORTUGAL)
+            return dt.strftime("%d/%m/%Y %H:%M")
+        except (TypeError, ValueError):
+            return str(valor)
+
+    def _executar_odds_status(self):
+        """Mostra uso da quota sem consumir a quota mensal do OddsPapi."""
+        if not self.odds.configurada:
+            return (
+                "📡 ODDS STATUS\n\n"
+                "Fonte de odds não configurada."
+            )
+        status_fn = getattr(self.odds, "status_conta", None)
+        if not callable(status_fn):
+            return (
+                "📡 ODDS STATUS\n\n"
+                f"Fonte: {self.odds.nome_fonte}\n"
+                "Esta fonte não disponibiliza diagnóstico de quota."
+            )
+
+        dados = status_fn()
+        if not isinstance(dados, dict):
+            return (
+                "📡 ODDS STATUS\n\n"
+                "Não foi possível obter o estado da quota."
+            )
+
+        usados = int(dados.get("request_count") or 0)
+        limite = int(dados.get("request_limit") or 0)
+        restante = dados.get("remaining")
+        restante = int(restante) if isinstance(restante, (int, float)) else None
+        percentagem = ((usados / limite) * 100.0) if limite > 0 else 0.0
+
+        if limite > 0 and restante == 0:
+            estado = "🔴 QUOTA ESGOTADA"
+        elif limite > 0 and percentagem >= 80:
+            estado = "🟠 QUOTA BAIXA"
+        else:
+            estado = "🟢 QUOTA DISPONÍVEL"
+
+        linhas = [
+            "📡 ODDS STATUS",
+            f"Fonte: {self.odds.nome_fonte}",
+            f"Estado: {estado}",
+            f"Pedidos usados: {usados}/{limite}" if limite > 0 else f"Pedidos usados: {usados}",
+        ]
+        if restante is not None:
+            linhas.append(f"Restantes: {restante}")
+        if limite > 0:
+            linhas.append(f"Utilização: {percentagem:.1f}%".replace(".", ","))
+        linhas.extend(
+            [
+                f"Último pedido: {self._formatar_instante_quota(dados.get('last_request'))}",
+                f"Fim/renovação indicada: {self._formatar_instante_quota(dados.get('valid_until'))}",
+                "",
+                "ℹ️ Consultar este estado não desconta pedidos da quota mensal.",
+            ]
+        )
+        return "\n".join(linhas)
+
     def processar_comando(self, chat_id, texto, user_id=None, update_id=None):
         comando = texto.strip().partition(" ")[0]
         if "@" in comando:
@@ -134,7 +203,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 return
             comando = base
 
-        if comando == "/valor":
+        if comando in {"/valor", "/odds_status"}:
             if (
                 not self.owner_id
                 or not self.chat_id
@@ -143,12 +212,26 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             ):
                 return
             try:
-                resposta = self._executar_valor()
-            except (RuntimeError, ValueError, TypeError, KeyError, ArithmeticError):
                 resposta = (
-                    "Não foi possível consultar as odds atuais. "
-                    "As previsões e as odds congeladas não foram alteradas."
+                    self._executar_valor()
+                    if comando == "/valor"
+                    else self._executar_odds_status()
                 )
+            except (
+                requests.RequestException,
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                ArithmeticError,
+            ):
+                if comando == "/valor":
+                    resposta = (
+                        "Não foi possível consultar as odds atuais. "
+                        "As previsões e as odds congeladas não foram alteradas."
+                    )
+                else:
+                    resposta = "Não foi possível consultar o estado da quota de odds."
             self.enviar_mensagem(chat_id, resposta)
             return
 
