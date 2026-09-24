@@ -579,10 +579,16 @@ class OddsBetano:
         except (TypeError, ValueError):
             usados = limite = 0
 
+        restante = max(limite - usados, 0) if limite > 0 else None
+        if restante == 0 and limite > 0:
+            self.ultimo_diagnostico_eventos = "odds_quota_esgotada"
+        elif restante is not None and restante > 0:
+            self.ultimo_diagnostico_eventos = ""
+
         return {
             "request_count": usados,
             "request_limit": limite,
-            "remaining": max(limite - usados, 0) if limite > 0 else None,
+            "remaining": restante,
             "is_active": bool(atual.get("is_active", False)),
             "valid_from": atual.get("valid_from"),
             "valid_until": atual.get("valid_until"),
