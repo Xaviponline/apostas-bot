@@ -24,6 +24,8 @@ TZ_PORTUGAL = ZoneInfo("Europe/Lisbon")
 class RegistoPrevisoesDiario(RegistoPrevisoes):
     """Liquidação robusta e auditoria segmentada das previsões diárias."""
 
+    ALVO_V12_LIQUIDADAS = 40
+
     RESULTADO_LIGAS_EXTRA = {
         "english fa cup": "eng.fa",
         "english carabao cup": "eng.league_cup",
@@ -229,10 +231,72 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         versao = str(previsao.get("modelo_versao") or "").strip()
         return versao or "V1.0 (histórico)"
 
+    def resumo_v12(self):
+        """Estado operacional da V1.2 sem alterar snapshots nem resultados."""
+        previsoes = [
+            p
+            for p in self.dados.get("previsoes", [])
+            if self._versao_snapshot(p) == "V1.2"
+        ]
+        liquidadas = [
+            p for p in previsoes if p.get("resultado_binario") in (0, 1)
+        ]
+        pendentes = [
+            p
+            for p in previsoes
+            if p.get("estado") == "pendente"
+            and p.get("resultado_binario") not in (0, 1)
+        ]
+        alvo = int(self.ALVO_V12_LIQUIDADAS)
+        total_liquidadas = len(liquidadas)
+        total_pendentes = len(pendentes)
+        return {
+            "alvo": alvo,
+            "registadas": len(previsoes),
+            "liquidadas": total_liquidadas,
+            "pendentes": total_pendentes,
+            "faltam": max(alvo - total_liquidadas, 0),
+            "potencial": total_liquidadas + total_pendentes,
+            "progresso": min(total_liquidadas / alvo, 1.0) if alvo else 1.0,
+            "metricas": self._metricas_grupo(liquidadas),
+            "liquidadas_lista": liquidadas,
+        }
+
     @staticmethod
     def _competicao_snapshot(previsao):
         liga = str(previsao.get("liga") or "Competição").strip() or "Competição"
         return nome_liga_pt(liga)
+
+    def _relatorio_ciclo_v12(self):
+        resumo = self.resumo_v12()
+        if not resumo["registadas"]:
+            return ""
+
+        alvo = resumo["alvo"]
+        liquidadas = resumo["liquidadas"]
+        pendentes = resumo["pendentes"]
+        linhas = [
+            "🧭 CICLO DE VALIDAÇÃO V1.2",
+            "• Estado do modelo: 🔒 CONGELADO",
+            f"• Liquidadas: {liquidadas}/{alvo} | Pendentes: {pendentes} | "
+            f"Registadas: {resumo['registadas']}",
+            f"• Progresso para decisão V1.3: {resumo['progresso']*100:.1f}%",
+        ]
+        if liquidadas >= alvo:
+            linhas.append(
+                "✅ AMOSTRA-ALVO ATINGIDA — próxima etapa: auditoria da V1.2 "
+                "antes de qualquer alteração de modelo."
+            )
+        elif resumo["potencial"] >= alvo:
+            linhas.append(
+                f"⏳ As pendentes atuais podem levar a {resumo['potencial']}/{alvo}; "
+                f"faltam {resumo['faltam']} liquidadas neste momento."
+            )
+        else:
+            linhas.append(
+                f"📌 Faltam {resumo['faltam']} previsões V1.2 liquidadas para a meta."
+            )
+        return "\n".join(linhas)
 
     def _relatorio_segmentado(self):
         """Mostra apenas estatísticas; não altera previsões nem o modelo V1."""
@@ -473,18 +537,26 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
 
     def relatorio(self):
         base = super().relatorio()
-        segmentado = self._relatorio_segmentado()
-        if not segmentado:
+        blocos = [
+            bloco
+            for bloco in (
+                self._relatorio_segmentado(),
+                self._relatorio_ciclo_v12(),
+            )
+            if bloco
+        ]
+        if not blocos:
             return base
 
+        extra = "\n\n".join(blocos)
         marcadores = (
             "\n\n💶 AUDITORIA DE ODDS REAIS",
             "\n\nROI ainda não é apresentado",
         )
         for marcador in marcadores:
             if marcador in base:
-                return base.replace(marcador, f"\n\n{segmentado}{marcador}", 1)
-        return f"{base}\n\n{segmentado}"
+                return base.replace(marcador, f"\n\n{extra}{marcador}", 1)
+        return f"{base}\n\n{extra}"
 
 
 class BotPremiumDiario(BotPremiumReal):
@@ -495,6 +567,122 @@ class BotPremiumDiario(BotPremiumReal):
         return datetime.fromtimestamp(timestamp, tz=timezone.utc).astimezone(
             TZ_PORTUGAL
         ).strftime("%H:%M")
+
+    @staticmethod
+    def _barra_progresso(fracao, blocos=10):
+        valor = max(0.0, min(float(fracao or 0.0), 1.0))
+        cheios = min(int(round(valor * blocos)), blocos)
+        return "█" * cheios + "░" * (blocos - cheios)
+
+    def _executar_v12_status(self):
+        """Centro de controlo read-only da versão atualmente em validação."""
+        resumo = self.previsoes.resumo_v12()
+        alvo = resumo["alvo"]
+        liquidadas = resumo["liquidadas"]
+        pendentes = resumo["pendentes"]
+        linhas = [
+            "🧬 V1.2 — CENTRO DE CONTROLO",
+            "🔒 Estado: MODELO CONGELADO",
+            f"🎯 Meta de validação: {alvo} liquidadas",
+            "",
+            f"📦 Registadas: {resumo['registadas']}",
+            f"✅ Liquidadas: {liquidadas}/{alvo}",
+            f"⏳ Pendentes: {pendentes}",
+            f"📈 {self._barra_progresso(resumo['progresso'])} "
+            f"{resumo['progresso']*100:.1f}%",
+        ]
+
+        metricas = resumo.get("metricas")
+        if metricas:
+            linhas.extend(
+                [
+                    "",
+                    "📐 CALIBRAÇÃO ATUAL",
+                    f"• Acerto: {metricas['ganhos']}/{metricas['total']} "
+                    f"({metricas['hit_rate']*100:.1f}%)",
+                    f"• Brier: {metricas['brier']:.4f}",
+                    f"• {self.previsoes._calibracao_texto(metricas)}",
+                ]
+            )
+
+        # Mostra apenas sinais de sobreconfiança com pelo menos cinco casos.
+        # É diagnóstico: não muda filtros, thresholds, ranking ou snapshots.
+        candidatos = []
+        liquidadas_v12 = resumo.get("liquidadas_lista") or []
+        definicoes = (
+            ("Mercado", lambda p: str(p.get("mercado") or "Mercado desconhecido")),
+            ("Ranking", self.previsoes._faixa_ranking),
+            ("Confiança", self.previsoes._confianca_snapshot),
+            ("Dados", self.previsoes._faixa_qualidade),
+        )
+        for tipo, chave_fn in definicoes:
+            grupos = {}
+            for previsao in liquidadas_v12:
+                chave = chave_fn(previsao)
+                grupos.setdefault(chave, []).append(previsao)
+            for chave, grupo in grupos.items():
+                m = self.previsoes._metricas_grupo(grupo)
+                if (
+                    m
+                    and m["total"] >= 5
+                    and float(m["gap_calibracao"]) <= -0.10
+                ):
+                    candidatos.append((float(m["gap_calibracao"]), tipo, chave, m))
+
+        if candidatos:
+            candidatos.sort(key=lambda item: (item[0], -item[3]["total"]))
+            linhas.extend(["", "⚠️ SINAIS A ACOMPANHAR — amostra ainda curta"])
+            for _, tipo, chave, m in candidatos[:3]:
+                linhas.append(
+                    f"• {tipo} {chave}: n={m['total']} | "
+                    f"{self.previsoes._calibracao_texto(m)}"
+                )
+
+        linhas.extend(["", "🧭 PRÓXIMO PASSO"])
+        if liquidadas >= alvo:
+            linhas.append(
+                "✅ Amostra-alvo atingida. Fazer auditoria completa antes de "
+                "decidir qualquer V1.3."
+            )
+        elif resumo["potencial"] >= alvo:
+            linhas.append(
+                f"⏳ Se as {pendentes} pendentes liquidarem, ficamos em "
+                f"{resumo['potencial']}/{alvo}. A V1.2 continua congelada."
+            )
+        else:
+            linhas.append(
+                f"📌 Recolher mais {resumo['faltam']} liquidadas V1.2. "
+                "Sem alterações ao modelo até lá."
+            )
+        linhas.append("🛡️ Este comando é apenas leitura; não altera o histórico.")
+        return "\n".join(linhas)
+
+    def processar_comando(self, chat_id, texto, user_id=None, update_id=None):
+        comando = texto.strip().partition(" ")[0]
+        if "@" in comando:
+            base, alvo = comando.split("@", 1)
+            if self.username is None or alvo.lower() != self.username.lower():
+                return
+            comando = base
+
+        if comando != "/v12_status":
+            return super().processar_comando(chat_id, texto, user_id, update_id)
+
+        if (
+            not self.owner_id
+            or not self.chat_id
+            or chat_id != self.chat_id
+            or user_id != self.owner_id
+        ):
+            return
+        try:
+            resposta = self._executar_v12_status()
+        except (ValueError, KeyError, TypeError, ArithmeticError):
+            resposta = (
+                "Não foi possível gerar o estado V1.2. "
+                "O histórico e o modelo não foram alterados."
+            )
+        self.enviar_mensagem(chat_id, resposta)
 
     @staticmethod
     def _contar_competicoes(jogos):
