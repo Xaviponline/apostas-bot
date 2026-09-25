@@ -250,6 +250,34 @@ Quando V1.2 chegar a ~40 liquidadas, rever:
 
 Qualquer V1.3 deve ser uma alteração controlada, versionada, testada e sem reescrever histórico.
 
+## Laboratório do modelo / telemetria
+
+A V1.2 continua congelada. Para preparar uma V1.3 baseada em evidência, novas
+previsões passam a guardar um bloco `diagnostico_modelo` no snapshot.
+
+Telemetria congelada em novas previsões:
+- lambda casa/fora
+- PPG casa/fora
+- amostra geral e amostra casa/fora
+- tamanho da base da competição
+- médias de golos da competição
+- médias shrink usadas na construção dos lambdas
+- threshold do mercado escolhido e margem acima do threshold
+- probabilidades brutas dos restantes mercados calculados no mesmo jogo
+- código da competição
+- versão da telemetria
+
+Regras:
+- estes campos já eram calculados pelo V1.2; guardá-los não altera seleção,
+  probabilidade, ranking ou confiança
+- snapshots antigos não são enriquecidos retroativamente
+- reexecutar `/analisa` não reescreve telemetria já congelada
+- `/modelo_lab` é owner-only e read-only
+- o laboratório verifica fórmula V1.2, odd justa/mínima, confiança, ranking,
+  timing pré-jogo, duplicados e consistência da telemetria
+- qualquer alteração futura do motor só pode acontecer depois da auditoria da
+  amostra-alvo V1.2 e deve ser versionada como V1.3
+
 ## Camada comercial Premium
 
 Arquitetura preparada para clientes sem expor comandos internos do modelo.
