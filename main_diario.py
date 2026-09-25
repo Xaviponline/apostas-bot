@@ -257,6 +257,9 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             "pendentes": total_pendentes,
             "faltam": max(alvo - total_liquidadas, 0),
             "potencial": total_liquidadas + total_pendentes,
+            "faltam_apos_pendentes": max(
+                alvo - (total_liquidadas + total_pendentes), 0
+            ),
             "progresso": min(total_liquidadas / alvo, 1.0) if alvo else 1.0,
             "metricas": self._metricas_grupo(liquidadas),
             "liquidadas_lista": liquidadas,
@@ -293,9 +296,16 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 f"faltam {resumo['faltam']} liquidadas neste momento."
             )
         else:
-            linhas.append(
-                f"📌 Faltam {resumo['faltam']} previsões V1.2 liquidadas para a meta."
-            )
+            if pendentes:
+                linhas.append(
+                    f"📌 Se as pendentes atuais liquidarem: "
+                    f"{resumo['potencial']}/{alvo}; depois faltará "
+                    f"{resumo['faltam_apos_pendentes']} nova liquidada."
+                )
+            else:
+                linhas.append(
+                    f"📌 Faltam {resumo['faltam']} previsões V1.2 liquidadas para a meta."
+                )
         return "\n".join(linhas)
 
     def _relatorio_segmentado(self):
@@ -650,10 +660,17 @@ class BotPremiumDiario(BotPremiumReal):
                 f"{resumo['potencial']}/{alvo}. A V1.2 continua congelada."
             )
         else:
-            linhas.append(
-                f"📌 Recolher mais {resumo['faltam']} liquidadas V1.2. "
-                "Sem alterações ao modelo até lá."
-            )
+            if pendentes:
+                linhas.append(
+                    f"📌 Se as {pendentes} pendentes liquidarem: "
+                    f"{resumo['potencial']}/{alvo}. Depois faltará "
+                    f"{resumo['faltam_apos_pendentes']} nova liquidada."
+                )
+            else:
+                linhas.append(
+                    f"📌 Recolher mais {resumo['faltam']} liquidadas V1.2."
+                )
+            linhas.append("🔒 Sem alterações ao modelo até à meta de validação.")
         linhas.append("🛡️ Este comando é apenas leitura; não altera o histórico.")
         return "\n".join(linhas)
 
