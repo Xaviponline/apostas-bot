@@ -22,6 +22,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /analisa — Relatório premium compacto dos jogos de hoje
 /analisa_full — Relatório técnico completo do mesmo modelo
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
+/v12_status — Centro de controlo da validação V1.2 (apenas leitura)
 /odds — Listar eventos com odds Betano, se uma fonte de odds estiver configurada
 /odds ID — Consultar mercados/odds Betano desse evento
 /odds_status — Ver quota usada/restante da fonte de odds
