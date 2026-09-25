@@ -5,6 +5,7 @@ import requests
 from collections import Counter
 from datetime import datetime
 
+from acessos_premium import GestorAcessosPremium
 from estatisticas_forma_web import EstatisticasFormaWeb
 from main_diario import RegistoPrevisoesDiario, TZ_PORTUGAL
 from main_enriquecido import (
@@ -16,6 +17,139 @@ from odds_auditoria import AuditoriaOdds
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
+    def __init__(self, *args, acessos=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.acessos = acessos or GestorAcessosPremium()
+
+    def _e_owner_admin(self, chat_id, user_id):
+        return bool(
+            self.owner_id
+            and self.chat_id
+            and user_id == self.owner_id
+            and chat_id == self.chat_id
+        )
+
+    def _cliente_ativo(self, chat_id, user_id):
+        if user_id == self.owner_id and self.owner_id:
+            return True
+        if user_id is None or chat_id != user_id:
+            return False
+        return bool(self.acessos.estado(user_id).get("ativo"))
+
+    @staticmethod
+    def _formatar_validade_premium(validade):
+        if validade is None:
+            return "sem validade ativa"
+        try:
+            return validade.astimezone(TZ_PORTUGAL).strftime("%d/%m/%Y %H:%M")
+        except (AttributeError, ValueError):
+            return str(validade)
+
+    def _executar_plano(self, user_id):
+        estado = self.acessos.estado(user_id)
+        if not estado.get("ativo"):
+            return (
+                "👤 ACESSO PREMIUM\n\n"
+                "🔴 Estado: inativo ou expirado\n"
+                f"🆔 ID: {user_id}\n\n"
+                "Para ativar o acesso, envia este ID ao responsável do serviço."
+            )
+
+        validade = self._formatar_validade_premium(estado.get("validade_ate"))
+        dias = float(estado.get("segundos_restantes") or 0) / 86400.0
+        return (
+            "👤 ACESSO PREMIUM\n\n"
+            "🟢 Estado: ATIVO\n"
+            f"🆔 ID: {user_id}\n"
+            f"📅 Válido até: {validade}\n"
+            f"⏳ Tempo restante: {dias:.1f} dias\n\n"
+            "Comandos: /picks • /plano"
+        ).replace(".", ",")
+
+    def _executar_picks_cliente(self):
+        agora = datetime.now(TZ_PORTUGAL)
+        data_iso = agora.strftime("%Y-%m-%d")
+        agora_ts = agora.timestamp()
+        previsoes = []
+        for p in self.previsoes.dados.get("previsoes", []):
+            if p.get("data_jogo") != data_iso or p.get("estado") != "pendente":
+                continue
+            ts = p.get("timestamp_jogo")
+            if not isinstance(ts, (int, float)) or float(ts) <= agora_ts:
+                continue
+            try:
+                prob = float(p["probabilidade"])
+                odd_minima = float(p["odd_minima"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            previsoes.append((float(ts), int(p.get("ranking_modelo") or 999), p, prob, odd_minima))
+
+        previsoes.sort(key=lambda item: (item[0], item[1]))
+        if not previsoes:
+            return (
+                f"🎯 PREMIUM PICKS — {agora.strftime('%d/%m/%Y')}\n\n"
+                "Ainda não existem picks Premium congeladas e por começar para hoje.\n"
+                "Quando forem publicadas, aparecerão aqui sem alterar o modelo."
+            )
+
+        estrelas = {
+            "ALTA": "⭐⭐⭐⭐⭐",
+            "MÉDIA-ALTA": "⭐⭐⭐⭐",
+            "MÉDIA": "⭐⭐⭐",
+            "BAIXA": "⭐⭐",
+        }
+        linhas = [
+            f"🎯 PREMIUM PICKS — {agora.strftime('%d/%m/%Y')}",
+            f"📊 {len(previsoes)} seleções ainda por começar",
+            "🔒 Previsões já congeladas pelo modelo",
+            "",
+        ]
+        hora_anterior = None
+        for _, ranking, p, prob, odd_minima in previsoes:
+            hora = self._hora_portugal(p.get("timestamp_jogo"))
+            if hora != hora_anterior:
+                if hora_anterior is not None:
+                    linhas.append("")
+                linhas.append(f"⏰ {hora}")
+                hora_anterior = hora
+            confianca = str(p.get("confianca_modelo") or "").strip()
+            estrela = estrelas.get(confianca, "⭐")
+            linhas.extend(
+                [
+                    f"• ⚽ {p.get('casa') or '?'} vs {p.get('fora') or '?'}",
+                    f"  💰 {p.get('mercado') or 'Mercado'}",
+                    f"  📈 {prob*100:.1f}% | Odd mínima ≥ {odd_minima:.2f}".replace(".", ","),
+                    f"  {estrela} {confianca or 'MODELO'} | Ranking #{ranking if ranking < 999 else '—'}",
+                ]
+            )
+
+        linhas.extend(
+            [
+                "",
+                "ℹ️ A odd mínima é o preço mínimo de referência do modelo.",
+                "⚠️ Probabilidades são estimativas estatísticas, não garantias de resultado.",
+            ]
+        )
+        return "\n".join(linhas)
+
+    def _executar_clientes_admin(self):
+        estados = self.acessos.listar()
+        ativos = [e for e in estados if e.get("ativo")]
+        inativos = [e for e in estados if not e.get("ativo")]
+        linhas = [
+            "👥 CLIENTES PREMIUM",
+            f"🟢 Ativos: {len(ativos)} | ⚪ Inativos/expirados: {len(inativos)}",
+        ]
+        if not estados:
+            linhas.extend(["", "Ainda não existem clientes registados."])
+            return "\n".join(linhas)
+
+        for estado in ativos + inativos:
+            icone = "🟢" if estado.get("ativo") else "⚪"
+            validade = self._formatar_validade_premium(estado.get("validade_ate"))
+            linhas.append(f"• {icone} {estado.get('user_id')} — até {validade}")
+        return "\n".join(linhas)
+
     def _executar_valor(self):
         """Compara previsões congeladas futuras com odds atuais sem persistir nada."""
         if not self.odds.configurada:
@@ -196,20 +330,94 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         return "\n".join(linhas)
 
     def processar_comando(self, chat_id, texto, user_id=None, update_id=None):
-        comando = texto.strip().partition(" ")[0]
+        comando_original, _, argumentos = texto.strip().partition(" ")
+        comando = comando_original
         if "@" in comando:
             base, alvo = comando.split("@", 1)
             if self.username is None or alvo.lower() != self.username.lower():
                 return
             comando = base
 
+        owner_admin = self._e_owner_admin(chat_id, user_id)
+
+        if comando in {"/start", "/ajuda"} and not owner_admin:
+            estado = self.acessos.estado(user_id)
+            if estado.get("ativo") and chat_id == user_id:
+                resposta = (
+                    "🎯 PREMIUM PICKS\n\n"
+                    "🟢 Acesso ativo.\n"
+                    "/picks — Ver picks congeladas ainda por começar\n"
+                    "/plano — Ver validade do acesso\n"
+                    "/id — Ver o teu ID"
+                )
+            else:
+                resposta = (
+                    "🎯 PREMIUM PICKS\n\n"
+                    "🔴 Acesso Premium não ativo.\n"
+                    f"🆔 O teu ID é: {user_id}\n\n"
+                    "Envia este ID ao responsável do serviço para ativação."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando in {"/picks", "/plano"}:
+            if not self._cliente_ativo(chat_id, user_id):
+                self.enviar_mensagem(
+                    chat_id,
+                    "🔒 Acesso Premium inativo. Usa /start para veres o teu ID.",
+                )
+                return
+            try:
+                resposta = (
+                    self._executar_picks_cliente()
+                    if comando == "/picks"
+                    else self._executar_plano(user_id)
+                )
+            except (ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "Não foi possível gerar esta área Premium neste momento. "
+                    "O histórico e o modelo não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando in {"/cliente_add", "/cliente_del", "/clientes"}:
+            if not owner_admin:
+                return
+            try:
+                if comando == "/clientes":
+                    resposta = self._executar_clientes_admin()
+                elif comando == "/cliente_add":
+                    partes = argumentos.split()
+                    if len(partes) != 2:
+                        raise ValueError("Usa /cliente_add USER_ID DIAS")
+                    registo = self.acessos.adicionar(int(partes[0]), int(partes[1]))
+                    validade = self.acessos.estado(registo["user_id"]).get("validade_ate")
+                    resposta = (
+                        "✅ CLIENTE PREMIUM ATIVADO\n"
+                        f"🆔 {registo['user_id']}\n"
+                        f"📅 Válido até: {self._formatar_validade_premium(validade)}"
+                    )
+                else:
+                    partes = argumentos.split()
+                    if len(partes) != 1:
+                        raise ValueError("Usa /cliente_del USER_ID")
+                    removido = self.acessos.remover(int(partes[0]))
+                    resposta = (
+                        f"✅ Acesso {partes[0]} desativado."
+                        if removido
+                        else f"ℹ️ Cliente {partes[0]} não estava registado."
+                    )
+            except (ValueError, TypeError, OSError):
+                resposta = (
+                    "Formato inválido. Usa /cliente_add USER_ID DIAS, "
+                    "/cliente_del USER_ID ou /clientes."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
         if comando in {"/valor", "/odds_status"}:
-            if (
-                not self.owner_id
-                or not self.chat_id
-                or chat_id != self.chat_id
-                or user_id != self.owner_id
-            ):
+            if not owner_admin:
                 return
             try:
                 resposta = (
