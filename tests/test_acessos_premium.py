@@ -150,5 +150,36 @@ class PremiumPicksTests(unittest.TestCase):
         self.assertIn("/plano", AJUDA)
 
 
+    def test_owner_em_privado_e_reconhecido_sem_subscricao(self):
+        bot = self._bot()
+
+        class AcessosFake:
+            def estado(self, user_id):
+                return {"ativo": False}
+
+        mensagens = []
+        bot.acessos = AcessosFake()
+        bot.enviar_mensagem = lambda chat_id, texto: mensagens.append((chat_id, texto))
+
+        bot.processar_comando(999, "/start", user_id=999)
+
+        self.assertEqual(len(mensagens), 1)
+        self.assertIn("OWNER / ADMIN", mensagens[0][1])
+        self.assertNotIn("não ativo", mensagens[0][1])
+
+    def test_plano_owner_e_permanente(self):
+        bot = self._bot()
+
+        class AcessosFake:
+            def estado(self, user_id):
+                raise AssertionError("owner não deve depender de subscrição comercial")
+
+        bot.acessos = AcessosFake()
+        texto = bot._executar_plano(999)
+
+        self.assertIn("OWNER / ADMIN", texto)
+        self.assertIn("permanente", texto)
+
+
 if __name__ == "__main__":
     unittest.main()

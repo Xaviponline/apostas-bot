@@ -46,6 +46,15 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             return str(validade)
 
     def _executar_plano(self, user_id):
+        if self.owner_id and user_id == self.owner_id:
+            return (
+                "👤 ACESSO PREMIUM\n\n"
+                "🟣 Estado: OWNER / ADMIN\n"
+                f"🆔 ID: {user_id}\n"
+                "📅 Validade: permanente\n\n"
+                "Comandos: /picks • /plano"
+            )
+
         estado = self.acessos.estado(user_id)
         if not estado.get("ativo"):
             return (
@@ -346,6 +355,16 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     chat_id,
                     "🔒 Por privacidade, abre uma conversa privada com o bot e usa /start.",
                 )
+                return
+            if self.owner_id and user_id == self.owner_id:
+                resposta = (
+                    "🎯 PREMIUM PICKS\n\n"
+                    "🟣 Acesso OWNER / ADMIN.\n"
+                    "/picks — Ver picks congeladas ainda por começar\n"
+                    "/plano — Ver estado do acesso\n"
+                    "/id — Ver o teu ID"
+                )
+                self.enviar_mensagem(chat_id, resposta)
                 return
             estado = self.acessos.estado(user_id)
             if estado.get("ativo"):
