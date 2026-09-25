@@ -250,6 +250,31 @@ Quando V1.2 chegar a ~40 liquidadas, rever:
 
 Qualquer V1.3 deve ser uma alteração controlada, versionada, testada e sem reescrever histórico.
 
+## Camada comercial Premium
+
+Arquitetura preparada para clientes sem expor comandos internos do modelo.
+
+Persistência:
+- `/data/acessos_premium.json`
+- acessos com validade por dias e renovação acumulativa
+- escrita atómica no volume persistente
+
+Cliente Premium em conversa privada:
+- `/picks` — mostra apenas picks já congeladas e ainda por começar
+- `/plano` — mostra validade do acesso
+- `/start` / `/ajuda` — onboarding e estado de acesso
+
+Admin:
+- `/clientes` — lista acessos
+- `/cliente_add USER_ID DIAS` — ativa/renova
+- `/cliente_del USER_ID` — desativa
+
+Regras:
+- clientes não podem executar `/analisa`, `/performance`, `/cobertura`, `/v12_status`, `/odds` ou comandos de gestão
+- `/picks` é read-only e nunca cria/recalcula previsões
+- clientes Premium são autorizados por `user_id` e apenas em chat privado
+- o owner mantém os comandos internos no chat administrativo configurado
+
 ## Segurança operacional
 
 Nunca guardar no repositório:

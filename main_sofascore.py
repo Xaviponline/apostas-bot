@@ -23,6 +23,11 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /analisa_full — Relatório técnico completo do mesmo modelo
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /v12_status — Centro de controlo da validação V1.2 (apenas leitura)
+/picks — Ver a área de picks Premium já congeladas
+/plano — Ver o estado/validade do acesso Premium
+/clientes — Listar clientes Premium (admin)
+/cliente_add USER_ID DIAS — Ativar ou renovar cliente (admin)
+/cliente_del USER_ID — Desativar cliente (admin)
 /odds — Listar eventos com odds Betano, se uma fonte de odds estiver configurada
 /odds ID — Consultar mercados/odds Betano desse evento
 /odds_status — Ver quota usada/restante da fonte de odds
