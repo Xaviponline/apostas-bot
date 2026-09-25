@@ -7,6 +7,7 @@ from pathlib import Path
 from acessos_premium import GestorAcessosPremium
 from main_competicoes import BotPremiumDiarioCompeticoes
 from main_diario import TZ_PORTUGAL
+from main_sofascore import AJUDA
 
 
 class AcessosPremiumTests(unittest.TestCase):
@@ -122,6 +123,31 @@ class PremiumPicksTests(unittest.TestCase):
         self.assertTrue(bot._e_owner_admin(-100, 999))
         self.assertFalse(bot._e_owner_admin(-101, 999))
         self.assertFalse(bot._e_owner_admin(-100, 998))
+
+
+    def test_start_em_grupo_nao_expoe_id(self):
+        bot = self._bot()
+
+        class AcessosFake:
+            def estado(self, user_id):
+                return {"ativo": False}
+
+        mensagens = []
+        bot.acessos = AcessosFake()
+        bot.enviar_mensagem = lambda chat_id, texto: mensagens.append((chat_id, texto))
+
+        bot.processar_comando(-100777, "/start", user_id=123)
+
+        self.assertEqual(len(mensagens), 1)
+        self.assertIn("conversa privada", mensagens[0][1])
+        self.assertNotIn("123", mensagens[0][1])
+
+    def test_ajuda_admin_documenta_comandos_comerciais(self):
+        self.assertIn("/clientes", AJUDA)
+        self.assertIn("/cliente_add USER_ID DIAS", AJUDA)
+        self.assertIn("/cliente_del USER_ID", AJUDA)
+        self.assertIn("/picks", AJUDA)
+        self.assertIn("/plano", AJUDA)
 
 
 if __name__ == "__main__":
