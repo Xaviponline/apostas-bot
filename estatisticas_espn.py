@@ -418,7 +418,17 @@ class EstatisticasESPN:
             "qualidade": qualidade,
             "amostra_casa": len(casa_all),
             "amostra_fora": len(fora_all),
+            "amostra_casa_local": len(casa_home),
+            "amostra_fora_local": len(fora_away),
             "amostra_liga": len(partidas),
             "ppg_casa": self._ppg(casa_all[:6]),
             "ppg_fora": self._ppg(fora_all[:6]),
+            # Telemetria de diagnóstico: estes valores já são calculados pelo
+            # V1.2. Expô-los no snapshot não altera a fórmula nem a seleção.
+            "media_liga_casa": liga_home,
+            "media_liga_fora": liga_away,
+            "media_modelo_casa_gf": casa_gf,
+            "media_modelo_casa_ga": casa_ga,
+            "media_modelo_fora_gf": fora_gf,
+            "media_modelo_fora_ga": fora_ga,
         }
