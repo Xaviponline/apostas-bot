@@ -341,8 +341,14 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         owner_admin = self._e_owner_admin(chat_id, user_id)
 
         if comando in {"/start", "/ajuda"} and not owner_admin:
+            if chat_id != user_id:
+                self.enviar_mensagem(
+                    chat_id,
+                    "🔒 Por privacidade, abre uma conversa privada com o bot e usa /start.",
+                )
+                return
             estado = self.acessos.estado(user_id)
-            if estado.get("ativo") and chat_id == user_id:
+            if estado.get("ativo"):
                 resposta = (
                     "🎯 PREMIUM PICKS\n\n"
                     "🟢 Acesso ativo.\n"
