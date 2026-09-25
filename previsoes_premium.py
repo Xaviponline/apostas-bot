@@ -18,6 +18,7 @@ import requests
 class RegistoPrevisoes:
     VERSAO = 1
     MODELO_VERSAO = "V1.2"
+    DIAGNOSTICO_SNAPSHOT_VERSAO = 1
     ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
     def __init__(self, path=None, session=None):
@@ -84,6 +85,76 @@ class RegistoPrevisoes:
     def _jogo_ainda_nao_comecou(registo, agora_ts):
         ts = registo.get("timestamp_jogo")
         return isinstance(ts, (int, float)) and float(ts) > float(agora_ts)
+
+    @staticmethod
+    def _float_diagnostico(valor, casas=6):
+        try:
+            numero = float(valor)
+        except (TypeError, ValueError):
+            return None
+        if numero != numero or numero in (float("inf"), float("-inf")):
+            return None
+        return round(numero, casas)
+
+    @classmethod
+    def _snapshot_diagnostico(cls, selecao):
+        """Congela inputs já calculados pelo modelo para auditoria futura.
+
+        Esta estrutura é criada apenas em novas previsões. Snapshots existentes
+        nunca são enriquecidos retroativamente.
+        """
+        diagnostico = {"versao": cls.DIAGNOSTICO_SNAPSHOT_VERSAO}
+
+        liga_codigo = str(selecao.get("liga_codigo") or "").strip()
+        if liga_codigo:
+            diagnostico["liga_codigo"] = liga_codigo
+
+        campos_float = (
+            "limite_mercado",
+            "margem_limite",
+            "lambda_casa",
+            "lambda_fora",
+            "ppg_casa",
+            "ppg_fora",
+            "media_liga_casa",
+            "media_liga_fora",
+            "media_modelo_casa_gf",
+            "media_modelo_casa_ga",
+            "media_modelo_fora_gf",
+            "media_modelo_fora_ga",
+        )
+        for campo in campos_float:
+            valor = cls._float_diagnostico(selecao.get(campo))
+            if valor is not None:
+                diagnostico[campo] = valor
+
+        for campo in (
+            "amostra_casa",
+            "amostra_fora",
+            "amostra_casa_local",
+            "amostra_fora_local",
+            "amostra_liga",
+        ):
+            try:
+                valor = int(selecao.get(campo))
+            except (TypeError, ValueError):
+                continue
+            if valor >= 0:
+                diagnostico[campo] = valor
+
+        probabilidades = {}
+        bruto = selecao.get("probabilidades")
+        if isinstance(bruto, dict):
+            for mercado, valor in bruto.items():
+                numero = cls._float_diagnostico(valor)
+                if numero is None or not (0.0 < numero < 1.0):
+                    continue
+                probabilidades[str(mercado)] = numero
+        if probabilidades:
+            diagnostico["probabilidades_brutas_mercados"] = probabilidades
+
+        # Só grava o bloco quando há telemetria além do número de versão.
+        return diagnostico if len(diagnostico) > 1 else None
 
     def _anexar_odd_se_segura(self, registo, selecao, agora_iso, agora_ts):
         """Anexa apenas a primeira odd real, sem alterar qualquer campo do modelo."""
@@ -186,6 +257,10 @@ class RegistoPrevisoes:
                 "golos_fora": None,
                 "liquidada_em": None,
             }
+
+            diagnostico_modelo = self._snapshot_diagnostico(s)
+            if diagnostico_modelo is not None:
+                registo["diagnostico_modelo"] = diagnostico_modelo
 
             odd_real = self._odd_real_valida(s.get("odd_real"))
             if odd_real is not None:

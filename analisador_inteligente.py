@@ -182,6 +182,10 @@ class AnalisadorInteligente:
                     "odd_minima": odd_minima,
                     "score": score,
                     "confianca": self._confianca(qualidade, prob),
+                    # Diagnóstico apenas: congela o limiar que esta seleção
+                    # ultrapassou e a margem sobre esse limiar.
+                    "limite_mercado": minimo,
+                    "margem_limite": prob - minimo,
                 }
             )
 

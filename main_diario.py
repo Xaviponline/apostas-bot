@@ -270,6 +270,229 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         liga = str(previsao.get("liga") or "Competição").strip() or "Competição"
         return nome_liga_pt(liga)
 
+    @staticmethod
+    def _float_seguro(valor):
+        try:
+            numero = float(valor)
+        except (TypeError, ValueError):
+            return None
+        if numero != numero or numero in (float("inf"), float("-inf")):
+            return None
+        return numero
+
+    def _auditar_integridade_v12(self):
+        """Verifica invariantes técnicos da V1.2 sem alterar qualquer snapshot."""
+        previsoes = [
+            p
+            for p in self.dados.get("previsoes", [])
+            if self._versao_snapshot(p) == "V1.2"
+        ]
+        chaves = []
+        campos_criticos = (
+            "event_id",
+            "data_jogo",
+            "timestamp_jogo",
+            "mercado",
+            "ranking_modelo",
+            "confianca_modelo",
+            "probabilidade",
+            "probabilidade_bruta",
+            "qualidade",
+            "odd_justa",
+            "odd_minima",
+            "criada_em",
+            "estado",
+        )
+        faltas = formula = odds = confianca = timing = ranking = 0
+        telemetria_anomala = 0
+
+        for p in previsoes:
+            chave = p.get("chave")
+            if not chave:
+                chave = self._chave(p.get("event_id"), p.get("mercado"))
+            chaves.append(str(chave))
+
+            if any(p.get(campo) is None for campo in campos_criticos):
+                faltas += 1
+
+            prob = self._float_seguro(p.get("probabilidade"))
+            bruta = self._float_seguro(p.get("probabilidade_bruta"))
+            qualidade = p.get("qualidade")
+            justa = self._float_seguro(p.get("odd_justa"))
+            minima = self._float_seguro(p.get("odd_minima"))
+
+            if prob is None or bruta is None or not (0.0 < prob < 1.0) or not (0.0 < bruta < 1.0):
+                formula += 1
+            else:
+                esperada = 0.50 + ((bruta - 0.50) * 0.80)
+                esperada = max(0.01, min(0.99, esperada))
+                if abs(prob - esperada) > 0.00001:
+                    formula += 1
+
+                if (
+                    justa is None
+                    or minima is None
+                    or abs(justa - (1.0 / prob)) > 0.015
+                    or abs(minima - (1.05 / prob)) > 0.015
+                ):
+                    odds += 1
+
+                try:
+                    qualidade_int = int(qualidade)
+                except (TypeError, ValueError):
+                    qualidade_int = None
+                if qualidade_int is not None:
+                    esperada_conf = AnalisadorInteligente._confianca(
+                        qualidade_int, prob
+                    )
+                    if str(p.get("confianca_modelo") or "") != esperada_conf:
+                        confianca += 1
+
+            try:
+                rank = int(p.get("ranking_modelo"))
+            except (TypeError, ValueError):
+                rank = 0
+            if rank < 1 or rank > AnalisadorInteligente.MAX_SELECOES:
+                ranking += 1
+
+            ts_jogo = self._float_seguro(p.get("timestamp_jogo"))
+            criada_em = p.get("criada_em")
+            try:
+                criada = datetime.fromisoformat(
+                    str(criada_em).replace("Z", "+00:00")
+                )
+                if criada.tzinfo is None:
+                    criada = criada.replace(tzinfo=timezone.utc)
+                criada_ts = criada.timestamp()
+            except (TypeError, ValueError):
+                criada_ts = None
+            if (
+                ts_jogo is None
+                or criada_ts is None
+                or criada_ts >= ts_jogo
+            ):
+                timing += 1
+
+            diag = p.get("diagnostico_modelo")
+            if isinstance(diag, dict):
+                lc = self._float_seguro(diag.get("lambda_casa"))
+                lf = self._float_seguro(diag.get("lambda_fora"))
+                try:
+                    ac = int(diag.get("amostra_casa"))
+                    af = int(diag.get("amostra_fora"))
+                    al = int(diag.get("amostra_liga"))
+                except (TypeError, ValueError):
+                    ac = af = al = -1
+                if (
+                    lc is None
+                    or lf is None
+                    or not (0.20 <= lc <= 3.80)
+                    or not (0.20 <= lf <= 3.80)
+                    or ac < 4
+                    or af < 4
+                    or al < 10
+                ):
+                    telemetria_anomala += 1
+
+        duplicadas = max(len(chaves) - len(set(chaves)), 0)
+        com_telemetria = sum(
+            1 for p in previsoes if isinstance(p.get("diagnostico_modelo"), dict)
+        )
+        return {
+            "total": len(previsoes),
+            "duplicadas": duplicadas,
+            "campos_criticos": faltas,
+            "formula": formula,
+            "odds": odds,
+            "confianca": confianca,
+            "ranking": ranking,
+            "timing": timing,
+            "telemetria": com_telemetria,
+            "telemetria_anomala": telemetria_anomala,
+        }
+
+    def relatorio_modelo_lab(self):
+        """Laboratório read-only: mede qualidade do sistema antes da V1.3."""
+        resumo = self.resumo_v12()
+        integridade = self._auditar_integridade_v12()
+        metricas = resumo.get("metricas")
+        erros = sum(
+            integridade[chave]
+            for chave in (
+                "duplicadas",
+                "campos_criticos",
+                "formula",
+                "odds",
+                "confianca",
+                "ranking",
+                "timing",
+                "telemetria_anomala",
+            )
+        )
+
+        linhas = [
+            "🧪 MODELO LAB — V1.2",
+            "🔒 Motor de seleção: CONGELADO",
+            "",
+            "📦 AMOSTRA",
+            f"• Registadas: {resumo['registadas']}",
+            f"• Liquidadas: {resumo['liquidadas']}/{resumo['alvo']}",
+            f"• Pendentes: {resumo['pendentes']}",
+        ]
+        if metricas:
+            linhas.extend(
+                [
+                    f"• Acerto: {metricas['ganhos']}/{metricas['total']} "
+                    f"({metricas['hit_rate']*100:.1f}%)",
+                    f"• Brier: {metricas['brier']:.4f}",
+                    f"• {self._calibracao_texto(metricas)}",
+                ]
+            )
+
+        linhas.extend(
+            [
+                "",
+                "🛡️ INTEGRIDADE TÉCNICA DOS SNAPSHOTS",
+                f"• Chaves duplicadas: {integridade['duplicadas']}",
+                f"• Campos críticos em falta: {integridade['campos_criticos']}",
+                f"• Divergências fórmula V1.2: {integridade['formula']}",
+                f"• Divergências odd justa/mínima: {integridade['odds']}",
+                f"• Divergências de confiança: {integridade['confianca']}",
+                f"• Ranking inválido: {integridade['ranking']}",
+                f"• Snapshot criado após início: {integridade['timing']}",
+            ]
+        )
+        if erros == 0:
+            linhas.append("✅ Nenhuma anomalia técnica detetada.")
+
+        linhas.extend(
+            [
+                "",
+                "🔬 TELEMETRIA PARA A FUTURA V1.3",
+                f"• Snapshots com diagnóstico detalhado: "
+                f"{integridade['telemetria']}/{integridade['total']}",
+                f"• Telemetria anómala: {integridade['telemetria_anomala']}",
+                "• Novas previsões congelam: lambdas, PPG, amostras, "
+                "médias da liga, inputs do Poisson, threshold e probabilidades "
+                "brutas dos restantes mercados.",
+                "• O histórico antigo não é enriquecido retroativamente.",
+                "",
+                "🧭 DECISÃO",
+            ]
+        )
+        if resumo["liquidadas"] >= resumo["alvo"]:
+            linhas.append(
+                "✅ Meta V1.2 atingida. Podemos iniciar a auditoria para desenhar "
+                "uma V1.3 controlada."
+            )
+        else:
+            linhas.append(
+                f"⏳ Faltam {resumo['faltam']} liquidadas V1.2 para a meta. "
+                "Continuar a recolher evidência sem alterar o motor."
+            )
+        linhas.append("🛡️ Este laboratório é apenas leitura.")
+        return "\n".join(linhas)
+
     def _relatorio_ciclo_v12(self):
         resumo = self.resumo_v12()
         if not resumo["registadas"]:
