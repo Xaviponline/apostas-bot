@@ -23,6 +23,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /analisa_full — Relatório técnico completo do mesmo modelo
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /v12_status — Centro de controlo da validação V1.2 (apenas leitura)
+/modelo_lab — Auditoria técnica do modelo e telemetria para a futura V1.3 (admin)
 /picks — Ver a área de picks Premium já congeladas
 /plano — Ver o estado/validade do acesso Premium
 /clientes — Listar clientes Premium (admin)
