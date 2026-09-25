@@ -406,6 +406,19 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self.enviar_mensagem(chat_id, resposta)
             return
 
+        if comando == "/modelo_lab":
+            if not owner_admin:
+                return
+            try:
+                resposta = self.previsoes.relatorio_modelo_lab()
+            except (ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "Não foi possível executar o laboratório do modelo. "
+                    "O histórico e a V1.2 não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
         if comando in {"/cliente_add", "/cliente_del", "/clientes"}:
             if not owner_admin:
                 return
