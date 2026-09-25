@@ -58,6 +58,7 @@ class V12StatusTests(unittest.TestCase):
         self.assertEqual(resumo["pendentes"], 12)
         self.assertEqual(resumo["faltam"], 13)
         self.assertEqual(resumo["potencial"], 39)
+        self.assertEqual(resumo["faltam_apos_pendentes"], 1)
         self.assertAlmostEqual(resumo["progresso"], 0.675)
         self.assertEqual(reg.dados, antes)
 
