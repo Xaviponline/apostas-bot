@@ -25,6 +25,10 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
     """Liquidação robusta e auditoria segmentada das previsões diárias."""
 
     ALVO_V12_LIQUIDADAS = 40
+    V13_SHADOW_TREINO = 39
+    V13_SHADOW_MIN_OOS = 40
+    V13_SHADOW_MIN_DIAS = 3
+    V13_SHADOW_NOME = "V1.3-SHADOW-CAL1"
 
     RESULTADO_LIGAS_EXTRA = {
         "english fa cup": "eng.fa",
@@ -410,6 +414,242 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             "telemetria": com_telemetria,
             "telemetria_anomala": telemetria_anomala,
         }
+
+    @staticmethod
+    def _metricas_probabilidade_alternativa(previsoes, probabilidade_fn):
+        """Mede uma probabilidade alternativa sem alterar os snapshots."""
+        pares = []
+        for p in previsoes or []:
+            if p.get("resultado_binario") not in (0, 1):
+                continue
+            try:
+                prob = float(probabilidade_fn(p))
+                resultado = int(p["resultado_binario"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if not 0.0 < prob < 1.0:
+                continue
+            pares.append((prob, resultado))
+        if not pares:
+            return None
+        total = len(pares)
+        ganhos = sum(y for _, y in pares)
+        brier = sum((prob - y) ** 2 for prob, y in pares) / total
+        prob_media = sum(prob for prob, _ in pares) / total
+        hit_rate = ganhos / total
+        return {
+            "total": total,
+            "ganhos": ganhos,
+            "perdas": total - ganhos,
+            "hit_rate": hit_rate,
+            "brier": brier,
+            "prob_media": prob_media,
+            "gap_calibracao": hit_rate - prob_media,
+        }
+
+    @staticmethod
+    def _coeficiente_shadow_calibracao(treino):
+        """Slope Brier ótimo com intercepto fixo em 50%, limitado a [0, 1]."""
+        numerador = 0.0
+        denominador = 0.0
+        usados = 0
+        for p in treino or []:
+            if p.get("resultado_binario") not in (0, 1):
+                continue
+            try:
+                x = float(p["probabilidade"]) - 0.50
+                y = int(p["resultado_binario"]) - 0.50
+            except (TypeError, ValueError, KeyError):
+                continue
+            numerador += x * y
+            denominador += x * x
+            usados += 1
+        if usados == 0 or denominador <= 0.0:
+            return None
+        beta = numerador / denominador
+        return max(0.0, min(1.0, beta))
+
+    @staticmethod
+    def _probabilidade_shadow(probabilidade_v12, beta):
+        prob = 0.50 + ((float(probabilidade_v12) - 0.50) * float(beta))
+        return max(0.01, min(0.99, prob))
+
+    def _estado_v13_shadow(self):
+        """Constrói treino/holdout fixos a partir do histórico append-only V1.2."""
+        v12 = [
+            p
+            for p in self.dados.get("previsoes", [])
+            if self._versao_snapshot(p) == "V1.2"
+        ]
+        treino = v12[: self.V13_SHADOW_TREINO]
+        fora_amostra = v12[self.V13_SHADOW_TREINO :]
+        treino_pronto = (
+            len(treino) == self.V13_SHADOW_TREINO
+            and all(p.get("resultado_binario") in (0, 1) for p in treino)
+        )
+        beta = (
+            self._coeficiente_shadow_calibracao(treino)
+            if treino_pronto
+            else None
+        )
+        return {
+            "v12": v12,
+            "treino": treino,
+            "fora_amostra": fora_amostra,
+            "treino_pronto": treino_pronto,
+            "beta": beta,
+        }
+
+    def relatorio_v13_shadow(self):
+        """Backtest e acompanhamento fora da amostra da calibração Shadow."""
+        estado = self._estado_v13_shadow()
+        treino = estado["treino"]
+        oos = estado["fora_amostra"]
+        beta = estado["beta"]
+
+        linhas = [
+            f"🌓 {self.V13_SHADOW_NOME}",
+            "🔒 Shadow apenas • V1.2 de produção inalterada",
+            "",
+            "🧪 DESENHO",
+            f"• Treino fixo: primeiros {self.V13_SHADOW_TREINO} snapshots V1.2",
+            "• Calibração: p = 0,50 + β × (p_V1.2 − 0,50)",
+            "• β é ajustado apenas no treino para minimizar Brier.",
+            "• β fica limitado a 0–1: a Shadow pode reduzir confiança, nunca ampliá-la.",
+        ]
+
+        if not estado["treino_pronto"] or beta is None:
+            liquidadas_treino = sum(
+                p.get("resultado_binario") in (0, 1) for p in treino
+            )
+            linhas.extend(
+                [
+                    "",
+                    "⏳ TREINO AINDA NÃO CONGELADO",
+                    f"• Registos de treino: {len(treino)}/{self.V13_SHADOW_TREINO}",
+                    f"• Liquidados no treino: {liquidadas_treino}/{self.V13_SHADOW_TREINO}",
+                    "🛡️ Nenhum parâmetro Shadow foi promovido ou gravado na V1.2.",
+                ]
+            )
+            return "\n".join(linhas)
+
+        m_treino_v12 = self._metricas_grupo(treino)
+        m_treino_shadow = self._metricas_probabilidade_alternativa(
+            treino,
+            lambda p: self._probabilidade_shadow(p["probabilidade"], beta),
+        )
+        oos_liquidadas = [
+            p for p in oos if p.get("resultado_binario") in (0, 1)
+        ]
+        oos_pendentes = [
+            p for p in oos if p.get("resultado_binario") not in (0, 1)
+        ]
+        datas_oos = {
+            str(p.get("data_jogo") or "")
+            for p in oos_liquidadas
+            if str(p.get("data_jogo") or "")
+        }
+
+        linhas.extend(
+            [
+                "",
+                "🧮 CALIBRADOR CONGELADO",
+                f"• β: {beta:.4f}",
+                f"• Fator equivalente sobre a probabilidade bruta: "
+                f"{0.80 * beta:.4f}",
+                "• O treino não volta a crescer: previsões posteriores são teste fora da amostra.",
+                "",
+                "📚 TREINO — IN-SAMPLE (39)",
+                f"• V1.2: Brier {m_treino_v12['brier']:.4f} | "
+                f"{self._calibracao_texto(m_treino_v12)}",
+                f"• Shadow: Brier {m_treino_shadow['brier']:.4f} | "
+                f"{self._calibracao_texto(m_treino_shadow)}",
+            ]
+        )
+
+        linhas.extend(
+            [
+                "",
+                "🧪 TESTE FORA DA AMOSTRA",
+                f"• Registadas após treino: {len(oos)}",
+                f"• Liquidadas: {len(oos_liquidadas)}",
+                f"• Pendentes: {len(oos_pendentes)}",
+                f"• Dias liquidados representados: {len(datas_oos)}",
+            ]
+        )
+
+        if not oos_liquidadas:
+            linhas.extend(
+                [
+                    "• Ainda sem resultados fora da amostra.",
+                    "",
+                    "🧭 GATE DE REVISÃO",
+                    f"• OOS: 0/{self.V13_SHADOW_MIN_OOS}",
+                    f"• Dias: 0/{self.V13_SHADOW_MIN_DIAS}",
+                    "⏳ Continuar a V1.2 e recolher resultados Shadow.",
+                    "🛡️ Nenhuma alteração automática ao motor.",
+                ]
+            )
+            return "\n".join(linhas)
+
+        m_oos_v12 = self._metricas_grupo(oos_liquidadas)
+        m_oos_shadow = self._metricas_probabilidade_alternativa(
+            oos_liquidadas,
+            lambda p: self._probabilidade_shadow(p["probabilidade"], beta),
+        )
+        ganho_brier = m_oos_v12["brier"] - m_oos_shadow["brier"]
+        gap_v12 = abs(m_oos_v12["gap_calibracao"])
+        gap_shadow = abs(m_oos_shadow["gap_calibracao"])
+        ganho_gap = gap_v12 - gap_shadow
+
+        linhas.extend(
+            [
+                f"• V1.2: Brier {m_oos_v12['brier']:.4f} | "
+                f"{self._calibracao_texto(m_oos_v12)}",
+                f"• Shadow: Brier {m_oos_shadow['brier']:.4f} | "
+                f"{self._calibracao_texto(m_oos_shadow)}",
+                f"• Melhoria Brier: {ganho_brier:+.4f} "
+                "(positivo = Shadow melhor)",
+                f"• Melhoria |gap|: {ganho_gap*100:+.1f}pp "
+                "(positivo = Shadow mais calibrada)",
+            ]
+        )
+
+        n_ok = len(oos_liquidadas) >= self.V13_SHADOW_MIN_OOS
+        dias_ok = len(datas_oos) >= self.V13_SHADOW_MIN_DIAS
+        brier_ok = ganho_brier > 0
+        gap_ok = ganho_gap > 0
+        pronta = n_ok and dias_ok and brier_ok and gap_ok
+
+        linhas.extend(
+            [
+                "",
+                "🧭 GATE DE REVISÃO",
+                f"• OOS: {len(oos_liquidadas)}/{self.V13_SHADOW_MIN_OOS} "
+                f"{'✅' if n_ok else '⏳'}",
+                f"• Dias: {len(datas_oos)}/{self.V13_SHADOW_MIN_DIAS} "
+                f"{'✅' if dias_ok else '⏳'}",
+                f"• Brier melhor que V1.2: {'✅' if brier_ok else '❌'}",
+                f"• Calibração absoluta melhor: {'✅' if gap_ok else '❌'}",
+            ]
+        )
+        if pronta:
+            linhas.append(
+                "✅ Gate mínimo atingido: a calibração Shadow pode ser auditada "
+                "para possível inclusão numa V1.3. Não é promovida automaticamente."
+            )
+        else:
+            linhas.append(
+                "⏳ Ainda não promover. Continuar a recolher previsões V1.2; "
+                "a Shadow é avaliada em paralelo."
+            )
+        linhas.extend(
+            [
+                "🛡️ A Shadow não muda seleção, ranking, mercados, odds ou snapshots V1.2.",
+                "🧠 Esta fase testa apenas calibração; filtros por ranking/mercado ficam para experiências separadas.",
+            ]
+        )
+        return "\n".join(linhas)
 
     @staticmethod
     def _grupo_telemetria_adicionar(grupos, chave, previsao):
