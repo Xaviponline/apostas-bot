@@ -411,6 +411,287 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             "telemetria_anomala": telemetria_anomala,
         }
 
+    @staticmethod
+    def _grupo_telemetria_adicionar(grupos, chave, previsao):
+        grupos.setdefault(chave, []).append(previsao)
+
+    @staticmethod
+    def _faixa_margem_limite(diag):
+        try:
+            margem = float(diag.get("margem_limite")) * 100.0
+        except (TypeError, ValueError, AttributeError):
+            return "Desconhecida"
+        if margem < 2.0:
+            return "<2pp"
+        if margem < 4.0:
+            return "2–4pp"
+        return "≥4pp"
+
+    @staticmethod
+    def _faixa_lambda_total(diag):
+        try:
+            total = float(diag.get("lambda_casa")) + float(diag.get("lambda_fora"))
+        except (TypeError, ValueError, AttributeError):
+            return "Desconhecida"
+        if total < 2.2:
+            return "<2.20"
+        if total < 2.8:
+            return "2.20–2.79"
+        return "≥2.80"
+
+    @staticmethod
+    def _faixa_lambda_diferenca(diag):
+        try:
+            diferenca = abs(
+                float(diag.get("lambda_casa")) - float(diag.get("lambda_fora"))
+            )
+        except (TypeError, ValueError, AttributeError):
+            return "Desconhecida"
+        if diferenca < 0.35:
+            return "<0.35"
+        if diferenca < 0.75:
+            return "0.35–0.74"
+        return "≥0.75"
+
+    @staticmethod
+    def _faixa_amostra_local(diag):
+        try:
+            minimo = min(
+                int(diag.get("amostra_casa_local")),
+                int(diag.get("amostra_fora_local")),
+            )
+        except (TypeError, ValueError, AttributeError):
+            return "Desconhecida"
+        if minimo < 3:
+            return "<3"
+        if minimo < 5:
+            return "3–4"
+        return "≥5"
+
+    @staticmethod
+    def _faixa_ppg_gap(diag):
+        try:
+            gap = abs(float(diag.get("ppg_casa")) - float(diag.get("ppg_fora")))
+        except (TypeError, ValueError, AttributeError):
+            return "Desconhecida"
+        if gap < 0.50:
+            return "<0.50"
+        if gap < 1.00:
+            return "0.50–0.99"
+        return "≥1.00"
+
+    def relatorio_auditoria_v13(self):
+        """Auditoria exploratória read-only da telemetria disponível da V1.2."""
+        v12 = [
+            p
+            for p in self.dados.get("previsoes", [])
+            if self._versao_snapshot(p) == "V1.2"
+            and p.get("resultado_binario") in (0, 1)
+        ]
+        detalhadas = [
+            p for p in v12 if isinstance(p.get("diagnostico_modelo"), dict)
+        ]
+
+        linhas = [
+            "🔬 AUDITORIA V1.3 — DIAGNÓSTICO DA V1.2",
+            "🔒 Apenas leitura • nenhuma alteração ao motor",
+            "",
+            f"📦 V1.2 liquidadas: {len(v12)}",
+            f"🧬 Com telemetria detalhada: {len(detalhadas)}",
+        ]
+        if not detalhadas:
+            linhas.extend(
+                [
+                    "",
+                    "ℹ️ Ainda não existem previsões liquidadas com telemetria suficiente.",
+                    "Continuar a recolher previsões sem alterar a V1.2.",
+                ]
+            )
+            return "\n".join(linhas)
+
+        m_total = self._metricas_grupo(v12)
+        m_diag = self._metricas_grupo(detalhadas)
+        datas = sorted({str(p.get("data_jogo") or "") for p in detalhadas})
+        competicoes = sorted({self._competicao_snapshot(p) for p in detalhadas})
+        linhas.extend(
+            [
+                f"📅 Dias representados: {len(datas)}",
+                f"🏆 Competições representadas: {len(competicoes)}",
+                "",
+                "📐 COORTELEMETRIA",
+                f"• Acerto: {m_diag['ganhos']}/{m_diag['total']} "
+                f"({m_diag['hit_rate']*100:.1f}%)",
+                f"• Brier: {m_diag['brier']:.4f}",
+                f"• {self._calibracao_texto(m_diag)}",
+                f"• V1.2 total: {m_total['ganhos']}/{m_total['total']} "
+                f"({m_total['hit_rate']*100:.1f}%) | Brier {m_total['brier']:.4f}",
+            ]
+        )
+
+        grupos = {
+            "Mercado": {},
+            "Ranking": {},
+            "Margem sobre threshold": {},
+            "Lambda total": {},
+            "Diferença de lambdas": {},
+            "Amostra local mínima": {},
+            "Diferença PPG": {},
+        }
+        for p in detalhadas:
+            diag = p["diagnostico_modelo"]
+            self._grupo_telemetria_adicionar(
+                grupos["Mercado"],
+                str(p.get("mercado") or "Mercado desconhecido"),
+                p,
+            )
+            self._grupo_telemetria_adicionar(
+                grupos["Ranking"], self._faixa_ranking(p), p
+            )
+            self._grupo_telemetria_adicionar(
+                grupos["Margem sobre threshold"],
+                self._faixa_margem_limite(diag),
+                p,
+            )
+            self._grupo_telemetria_adicionar(
+                grupos["Lambda total"], self._faixa_lambda_total(diag), p
+            )
+            self._grupo_telemetria_adicionar(
+                grupos["Diferença de lambdas"],
+                self._faixa_lambda_diferenca(diag),
+                p,
+            )
+            self._grupo_telemetria_adicionar(
+                grupos["Amostra local mínima"],
+                self._faixa_amostra_local(diag),
+                p,
+            )
+            self._grupo_telemetria_adicionar(
+                grupos["Diferença PPG"], self._faixa_ppg_gap(diag), p
+            )
+
+        ordens = {
+            "Ranking": ["#1–5", "#6–10", "#11–15", "#16–20", "#21+"],
+            "Margem sobre threshold": ["<2pp", "2–4pp", "≥4pp", "Desconhecida"],
+            "Lambda total": ["<2.20", "2.20–2.79", "≥2.80", "Desconhecida"],
+            "Diferença de lambdas": ["<0.35", "0.35–0.74", "≥0.75", "Desconhecida"],
+            "Amostra local mínima": ["<3", "3–4", "≥5", "Desconhecida"],
+            "Diferença PPG": ["<0.50", "0.50–0.99", "≥1.00", "Desconhecida"],
+        }
+
+        sinais = []
+        for titulo in (
+            "Mercado",
+            "Ranking",
+            "Margem sobre threshold",
+            "Lambda total",
+            "Diferença de lambdas",
+            "Amostra local mínima",
+            "Diferença PPG",
+        ):
+            linhas.extend(["", f"📊 {titulo.upper()}"])
+            chaves = (
+                sorted(grupos[titulo])
+                if titulo == "Mercado"
+                else ordens[titulo]
+            )
+            mostrou = False
+            for chave in chaves:
+                grupo = grupos[titulo].get(chave)
+                if not grupo:
+                    continue
+                m = self._metricas_grupo(grupo)
+                if m is None:
+                    continue
+                mostrou = True
+                linhas.append(
+                    f"• {chave}: n={m['total']} | "
+                    f"{m['ganhos']}/{m['total']} ({m['hit_rate']*100:.1f}%) | "
+                    f"Brier {m['brier']:.4f} | {self._calibracao_texto(m)}"
+                )
+                if m["total"] >= 5 and m["gap_calibracao"] <= -0.10:
+                    sinais.append(
+                        (
+                            m["gap_calibracao"],
+                            titulo,
+                            chave,
+                            m["total"],
+                            m["prob_media"],
+                            m["hit_rate"],
+                        )
+                    )
+            if not mostrou:
+                linhas.append("• Sem dados suficientes.")
+
+        falhas = sorted(
+            [p for p in detalhadas if p.get("resultado_binario") == 0],
+            key=lambda p: float(p.get("probabilidade") or 0.0),
+            reverse=True,
+        )[:5]
+        linhas.extend(["", "❌ MAIORES FALHAS DA COORTE"])
+        if not falhas:
+            linhas.append("• Nenhuma falha nesta coorte.")
+        else:
+            for p in falhas:
+                diag = p.get("diagnostico_modelo") or {}
+                try:
+                    total_lambda = (
+                        float(diag.get("lambda_casa"))
+                        + float(diag.get("lambda_fora"))
+                    )
+                    lambda_txt = f"{total_lambda:.2f}"
+                except (TypeError, ValueError):
+                    lambda_txt = "—"
+                try:
+                    margem = float(diag.get("margem_limite")) * 100.0
+                    margem_txt = f"{margem:.1f}pp"
+                except (TypeError, ValueError):
+                    margem_txt = "—"
+                linhas.append(
+                    f"• {p.get('casa') or '?'} vs {p.get('fora') or '?'} | "
+                    f"{p.get('mercado') or '?'} | P {float(p.get('probabilidade') or 0)*100:.1f}% | "
+                    f"Rank {p.get('ranking_modelo') or '—'} | "
+                    f"λ total {lambda_txt} | margem {margem_txt}"
+                )
+
+        linhas.extend(["", "⚠️ SINAIS EXPLORATÓRIOS"])
+        if sinais:
+            for _, titulo, chave, n, prev, real in sorted(sinais)[:5]:
+                linhas.append(
+                    f"• {titulo} — {chave}: n={n} | "
+                    f"Prev {prev*100:.1f}% | Real {real*100:.1f}% | "
+                    f"Gap {(real-prev)*100:.1f}pp"
+                )
+        else:
+            linhas.append(
+                "• Nenhum grupo com n≥5 e sobreconfiança ≥10pp nesta coorte."
+            )
+
+        linhas.extend(["", "🧭 LEITURA"])
+        if len(datas) <= 1:
+            linhas.append(
+                "• A telemetria detalhada ainda representa apenas 1 dia. "
+                "Serve para gerar hipóteses, não para alterar regras isoladamente."
+            )
+        elif len(datas) < 3:
+            linhas.append(
+                f"• A telemetria detalhada cobre só {len(datas)} dias. "
+                "Os padrões continuam exploratórios."
+            )
+        else:
+            linhas.append(
+                f"• A telemetria detalhada já cobre {len(datas)} dias, mas "
+                "os subgrupos pequenos continuam sujeitos a muito ruído."
+            )
+        linhas.extend(
+            [
+                "• A meta de 40 permite iniciar a auditoria; não prova edge por si só.",
+                "• Qualquer V1.3 deve atacar padrões repetidos e preservar um teste "
+                "fora da amostra, em vez de otimizar estes 20 casos.",
+                "🛡️ Este comando não altera snapshots, thresholds ou previsões.",
+            ]
+        )
+        return "\n".join(linhas)
+
     def relatorio_modelo_lab(self):
         """Laboratório read-only: mede qualidade do sistema antes da V1.3."""
         resumo = self.resumo_v12()
