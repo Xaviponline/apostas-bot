@@ -278,6 +278,31 @@ Regras:
 - qualquer alteração futura do motor só pode acontecer depois da auditoria da
   amostra-alvo V1.2 e deve ser versionada como V1.3
 
+## V1.3 Shadow — experiência CAL1
+
+A primeira candidata V1.3 é apenas uma experiência de calibração. A V1.2 continua
+como motor de produção e não é alterada.
+
+Comando owner-only/read-only: `/v13_shadow`.
+
+Desenho:
+- treino fixo = primeiros 39 snapshots V1.2 na ordem append-only
+- o treino tem de estar totalmente liquidado
+- ajusta um único coeficiente beta para minimizar Brier com intercepto fixo em 50%
+- fórmula Shadow: `p_shadow = 0.50 + beta * (p_v12 - 0.50)`
+- beta é limitado a [0, 1], portanto a Shadow pode reduzir confiança mas nunca ampliá-la
+- todos os snapshots V1.2 posteriores ao 39.º são teste fora da amostra
+- o treino nunca cresce e não é refeito com os resultados do holdout
+- a Shadow não muda seleção, ranking, mercados, odds, confiança persistida ou snapshots
+
+Gate mínimo de revisão, sem promoção automática:
+- pelo menos 40 previsões fora da amostra liquidadas
+- pelo menos 3 dias representados
+- Brier Shadow menor que Brier V1.2 no mesmo holdout
+- gap absoluto de calibração Shadow menor que o da V1.2
+
+Mesmo com o gate atingido, qualquer promoção exige nova auditoria e versão explícita.
+
 ## Auditoria para desenho da V1.3
 
 Depois da V1.2 atingir a amostra-alvo, usar `/v13_audit` antes de alterar o motor.
