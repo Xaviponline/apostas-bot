@@ -448,6 +448,33 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         }
 
     @staticmethod
+    def _auc_probabilidades(previsoes, probabilidade_fn):
+        """AUC por pares vitória/derrota; 0.5 em empates de score."""
+        positivos = []
+        negativos = []
+        for p in previsoes or []:
+            if p.get("resultado_binario") not in (0, 1):
+                continue
+            try:
+                prob = float(probabilidade_fn(p))
+                resultado = int(p["resultado_binario"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            (positivos if resultado == 1 else negativos).append(prob)
+        if not positivos or not negativos:
+            return None
+        pontos = 0.0
+        pares = 0
+        for positivo in positivos:
+            for negativo in negativos:
+                pares += 1
+                if positivo > negativo:
+                    pontos += 1.0
+                elif positivo == negativo:
+                    pontos += 0.5
+        return pontos / pares if pares else None
+
+    @staticmethod
     def _coeficiente_shadow_calibracao(treino):
         """Slope Brier ótimo com intercepto fixo em 50%, limitado a [0, 1]."""
         numerador = 0.0
@@ -597,10 +624,21 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             oos_liquidadas,
             lambda p: self._probabilidade_shadow(p["probabilidade"], beta),
         )
+        taxa_treino = m_treino_v12["hit_rate"]
+        m_oos_base_50 = self._metricas_probabilidade_alternativa(
+            oos_liquidadas, lambda p: 0.50
+        )
+        m_oos_base_treino = self._metricas_probabilidade_alternativa(
+            oos_liquidadas, lambda p: taxa_treino
+        )
+        auc_oos = self._auc_probabilidades(
+            oos_liquidadas, lambda p: float(p["probabilidade"])
+        )
         ganho_brier = m_oos_v12["brier"] - m_oos_shadow["brier"]
         gap_v12 = abs(m_oos_v12["gap_calibracao"])
         gap_shadow = abs(m_oos_shadow["gap_calibracao"])
         ganho_gap = gap_v12 - gap_shadow
+        ganho_vs_base_treino = m_oos_base_treino["brier"] - m_oos_shadow["brier"]
 
         linhas.extend(
             [
@@ -612,6 +650,16 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 "(positivo = Shadow melhor)",
                 f"• Melhoria |gap|: {ganho_gap*100:+.1f}pp "
                 "(positivo = Shadow mais calibrada)",
+                "",
+                "🪵 BASELINES INGÉNUAS — MESMO HOLDOUT",
+                f"• Sempre 50%: Brier {m_oos_base_50['brier']:.4f}",
+                f"• Taxa do treino congelada ({taxa_treino*100:.1f}%): "
+                f"Brier {m_oos_base_treino['brier']:.4f}",
+                f"• Shadow vs baseline treino: {ganho_vs_base_treino:+.4f} "
+                "(positivo = Shadow acrescenta skill)",
+                f"• AUC da ordenação V1.2/Shadow: "
+                f"{auc_oos:.3f}" if auc_oos is not None else
+                "• AUC da ordenação V1.2/Shadow: indisponível",
             ]
         )
 
@@ -619,7 +667,8 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         dias_ok = len(datas_oos) >= self.V13_SHADOW_MIN_DIAS
         brier_ok = ganho_brier > 0
         gap_ok = ganho_gap > 0
-        pronta = n_ok and dias_ok and brier_ok and gap_ok
+        baseline_ok = ganho_vs_base_treino > 0
+        pronta = n_ok and dias_ok and brier_ok and gap_ok and baseline_ok
 
         linhas.extend(
             [
@@ -631,6 +680,8 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 f"{'✅' if dias_ok else '⏳'}",
                 f"• Brier melhor que V1.2: {'✅' if brier_ok else '❌'}",
                 f"• Calibração absoluta melhor: {'✅' if gap_ok else '❌'}",
+                f"• Brier melhor que baseline do treino: "
+                f"{'✅' if baseline_ok else '❌'}",
             ]
         )
         if pronta:

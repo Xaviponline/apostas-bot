@@ -81,6 +81,11 @@ class V13ShadowTests(unittest.TestCase):
             self.assertIn("Dias liquidados representados: 1", texto)
             self.assertIn("Brier melhor que V1.2: ✅", texto)
             self.assertIn("Calibração absoluta melhor: ✅", texto)
+            self.assertIn("BASELINES INGÉNUAS", texto)
+            self.assertIn("Sempre 50%: Brier 0.2500", texto)
+            self.assertIn("Taxa do treino congelada", texto)
+            self.assertIn("AUC da ordenação V1.2/Shadow", texto)
+            self.assertIn("Brier melhor que baseline do treino: ✅", texto)
             self.assertIn("OOS: 20/40 ⏳", texto)
             self.assertIn("Dias: 1/3 ⏳", texto)
             self.assertEqual(reg.dados, antes)
@@ -98,6 +103,23 @@ class V13ShadowTests(unittest.TestCase):
 
             self.assertIn("TREINO AINDA NÃO CONGELADO", texto)
             self.assertIn("Registos de treino: 38/39", texto)
+
+    def test_auc_distingue_ordem_util_de_ordem_invertida(self):
+        previsoes = [
+            {"resultado_binario": 1, "probabilidade": 0.8},
+            {"resultado_binario": 1, "probabilidade": 0.7},
+            {"resultado_binario": 0, "probabilidade": 0.4},
+            {"resultado_binario": 0, "probabilidade": 0.3},
+        ]
+        reg = RegistoPrevisoesDiario.__new__(RegistoPrevisoesDiario)
+        auc = reg._auc_probabilidades(
+            previsoes, lambda p: p["probabilidade"]
+        )
+        auc_invertida = reg._auc_probabilidades(
+            previsoes, lambda p: 1.0 - p["probabilidade"]
+        )
+        self.assertEqual(auc, 1.0)
+        self.assertEqual(auc_invertida, 0.0)
 
     def test_comando_shadow_so_responde_ao_admin_e_ajuda_documenta(self):
         with tempfile.TemporaryDirectory() as tmp:
