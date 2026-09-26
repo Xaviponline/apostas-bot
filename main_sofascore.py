@@ -24,6 +24,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /v12_status — Centro de controlo da validação V1.2 (apenas leitura)
 /modelo_lab — Auditoria técnica do modelo e telemetria para a futura V1.3 (admin)
+/v13_audit — Cruzar telemetria liquidada para desenhar a V1.3 sem alterar o motor (admin)
 /picks — Ver a área de picks Premium já congeladas
 /plano — Ver o estado/validade do acesso Premium
 /clientes — Listar clientes Premium (admin)
