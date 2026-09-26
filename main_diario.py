@@ -518,7 +518,7 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 f"📅 Dias representados: {len(datas)}",
                 f"🏆 Competições representadas: {len(competicoes)}",
                 "",
-                "📐 COORTELEMETRIA",
+                "📐 COORTE COM TELEMETRIA",
                 f"• Acerto: {m_diag['ganhos']}/{m_diag['total']} "
                 f"({m_diag['hit_rate']*100:.1f}%)",
                 f"• Brier: {m_diag['brier']:.4f}",
