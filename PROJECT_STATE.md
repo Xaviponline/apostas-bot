@@ -278,6 +278,27 @@ Regras:
 - qualquer alteração futura do motor só pode acontecer depois da auditoria da
   amostra-alvo V1.2 e deve ser versionada como V1.3
 
+## Auditoria para desenho da V1.3
+
+Depois da V1.2 atingir a amostra-alvo, usar `/v13_audit` antes de alterar o motor.
+
+O comando é owner-only e read-only e cruza apenas previsões V1.2 liquidadas que
+tenham `diagnostico_modelo`. Mostra:
+- desempenho da coorte com telemetria versus a V1.2 completa
+- mercado e faixa de ranking
+- margem da probabilidade sobre o threshold do mercado
+- lambda total e diferença entre lambdas casa/fora
+- tamanho mínimo da amostra local casa/fora
+- diferença de PPG recente
+- maiores falhas da coorte
+- sinais de sobreconfiança apenas com n>=5
+- alerta explícito quando a telemetria cobre poucos dias
+
+Regras:
+- a auditoria gera hipóteses; não muda thresholds, shrink, ranking ou mercados
+- não converter um padrão de um único dia numa regra da V1.3
+- V1.3 deve ser versionada, testada e avaliada fora da amostra usada para a desenhar
+
 ## Camada comercial Premium
 
 Arquitetura preparada para clientes sem expor comandos internos do modelo.
