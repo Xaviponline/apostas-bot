@@ -419,6 +419,19 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self.enviar_mensagem(chat_id, resposta)
             return
 
+        if comando == "/v13_audit":
+            if not owner_admin:
+                return
+            try:
+                resposta = self.previsoes.relatorio_auditoria_v13()
+            except (ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "Não foi possível executar a auditoria V1.3. "
+                    "O histórico e a V1.2 não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
         if comando in {"/cliente_add", "/cliente_del", "/clientes"}:
             if not owner_admin:
                 return
