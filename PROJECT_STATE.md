@@ -300,6 +300,11 @@ Gate mínimo de revisão, sem promoção automática:
 - pelo menos 3 dias representados
 - Brier Shadow menor que Brier V1.2 no mesmo holdout
 - gap absoluto de calibração Shadow menor que o da V1.2
+- Brier Shadow menor que uma baseline congelada que usa apenas a taxa de acerto do treino
+
+O relatório também mostra Brier de uma baseline fixa de 50% e AUC da ordenação
+V1.2/Shadow no holdout. Isto evita promover uma recalibração que apenas esmague
+todas as probabilidades para perto de 50% sem acrescentar skill preditiva.
 
 Mesmo com o gate atingido, qualquer promoção exige nova auditoria e versão explícita.
 
