@@ -23,6 +23,38 @@ from nomes_ligas import nome_liga_pt
 class BuscadorJogosEnriquecido(BuscadorJogosReais):
     """Preserva todos os jogos globais e enriquece os que têm código conhecido."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Metadados estáveis da agenda do próprio processo.
+        # Se um endpoint específico falhar numa chamada seguinte, reaproveita
+        # apenas league_code/nome já confirmados para o mesmo event_id e data.
+        self._agenda_enriquecida = {}
+
+    def _aplicar_cache_enriquecimento(self, data_iso, por_id):
+        cache_dia = self._agenda_enriquecida.setdefault(str(data_iso), {})
+        for event_id, jogo in list(por_id.items()):
+            if not isinstance(jogo, dict):
+                continue
+            codigo = str(jogo.get("league_code") or "").strip()
+            nome = str(jogo.get("liga") or "").strip()
+            if codigo:
+                cache_dia[int(event_id)] = {
+                    "league_code": codigo,
+                    "liga": nome,
+                }
+                continue
+            conhecido = cache_dia.get(int(event_id))
+            if conhecido:
+                jogo["league_code"] = conhecido["league_code"]
+                if conhecido.get("liga"):
+                    jogo["liga"] = conhecido["liga"]
+
+        # Mantém o cache curto e estritamente diário.
+        for chave in list(self._agenda_enriquecida):
+            if chave != str(data_iso):
+                self._agenda_enriquecida.pop(chave, None)
+
+
     EXTRA_ESPN_LEAGUES = (
         "eng.fa",
         "eng.league_cup",
@@ -137,6 +169,7 @@ class BuscadorJogosEnriquecido(BuscadorJogosReais):
                         por_id[jogo["id"]] = jogo
 
         if por_id:
+            self._aplicar_cache_enriquecimento(data_iso, por_id)
             return list(por_id.values())
         if consultas_validas > 0:
             self._espn_respondeu = True
