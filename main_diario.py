@@ -825,14 +825,19 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         n_ok = len(top5) >= self.V13_TOP5_MIN_SELECOES
         dias_ok = len(datas_top5) >= self.V13_TOP5_MIN_DIAS
         gap_ok = abs(m_top5["gap_calibracao"]) <= 0.08
-        if m_rest:
+        comparador_disponivel = bool(m_rest)
+        if comparador_disponivel:
             vantagem_acerto = m_top5["hit_rate"] - m_rest["hit_rate"]
             acerto_ok = vantagem_acerto >= 0.05
             brier_ok = m_top5["brier"] < m_rest["brier"]
+            acerto_estado = "✅" if acerto_ok else "❌"
+            brier_estado = "✅" if brier_ok else "❌"
         else:
             vantagem_acerto = None
             acerto_ok = False
             brier_ok = False
+            acerto_estado = "⏳"
+            brier_estado = "⏳"
 
         linhas.extend(["", "🧭 GATE SEL1"])
         linhas.extend(
@@ -842,11 +847,12 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 f"• Dias: {len(datas_top5)}/{self.V13_TOP5_MIN_DIAS} "
                 f"{'✅' if dias_ok else '⏳'}",
                 f"• |Gap calibração| ≤8pp: {'✅' if gap_ok else '❌'}",
-                f"• Hit rate ≥5pp acima de #6–20: "
-                f"{'✅' if acerto_ok else '❌'}",
-                f"• Brier melhor que #6–20: {'✅' if brier_ok else '❌'}",
+                f"• Hit rate ≥5pp acima de #6–20: {acerto_estado}",
+                f"• Brier melhor que #6–20: {brier_estado}",
             ]
         )
+        if not comparador_disponivel:
+            linhas.append("• Comparador #6–20: ainda sem previsões prospetivas liquidadas.")
         if vantagem_acerto is not None:
             linhas.append(
                 f"• Diferença de acerto Top 5 vs #6–20: "
