@@ -84,6 +84,28 @@ class V13Top5ShadowTests(unittest.TestCase):
             self.assertIn("Top 5 OOS: 0/25", texto)
             self.assertIn("não contam no gate prospetivo", texto.lower())
 
+    def test_gate_top5_sem_comparador_fica_pendente_e_nao_falhado(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoesDiario(Path(tmp) / "previsoes.json")
+            previsoes = self._desenvolvimento()
+            previsoes.extend(
+                [
+                    self._p(60, 1, 1),
+                    self._p(61, 1, 2),
+                    self._p(62, 0, 3),
+                ]
+            )
+            reg.dados = {"versao": 1, "previsoes": previsoes}
+
+            texto = reg.relatorio_v13_shadow_top5()
+
+            self.assertIn("Hit rate ≥5pp acima de #6–20: ⏳", texto)
+            self.assertIn("Brier melhor que #6–20: ⏳", texto)
+            self.assertIn(
+                "Comparador #6–20: ainda sem previsões prospetivas liquidadas.",
+                texto,
+            )
+
     def test_gate_top5_exige_amostra_dias_e_superioridade(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = RegistoPrevisoesDiario(Path(tmp) / "previsoes.json")
