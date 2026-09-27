@@ -82,7 +82,7 @@ class V13Top5ShadowTests(unittest.TestCase):
             self.assertIn("RACIONAL HISTÓRICO — NÃO É TESTE", texto)
             self.assertIn("Registadas: 0", texto)
             self.assertIn("Top 5 OOS: 0/25", texto)
-            self.assertIn("nenhum resultado anterior entra no gate", texto.lower())
+            self.assertIn("não contam no gate prospetivo", texto.lower())
 
     def test_gate_top5_exige_amostra_dias_e_superioridade(self):
         with tempfile.TemporaryDirectory() as tmp:
