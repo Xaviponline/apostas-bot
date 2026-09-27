@@ -445,6 +445,19 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self.enviar_mensagem(chat_id, resposta)
             return
 
+        if comando == "/v13_top5":
+            if not owner_admin:
+                return
+            try:
+                resposta = self.previsoes.relatorio_v13_shadow_top5()
+            except (ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "Não foi possível executar a Shadow Top 5. "
+                    "O histórico e a V1.2 não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
         if comando in {"/cliente_add", "/cliente_del", "/clientes"}:
             if not owner_admin:
                 return
