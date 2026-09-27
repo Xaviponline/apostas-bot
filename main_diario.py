@@ -29,6 +29,10 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
     V13_SHADOW_MIN_OOS = 40
     V13_SHADOW_MIN_DIAS = 3
     V13_SHADOW_NOME = "V1.3-SHADOW-CAL1"
+    V13_TOP5_START = 59
+    V13_TOP5_MIN_SELECOES = 25
+    V13_TOP5_MIN_DIAS = 5
+    V13_TOP5_NOME = "V1.3-SHADOW-SEL1-TOP5"
 
     RESULTADO_LIGAS_EXTRA = {
         "english fa cup": "eng.fa",
@@ -698,6 +702,171 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             [
                 "🛡️ A Shadow não muda seleção, ranking, mercados, odds ou snapshots V1.2.",
                 "🧠 Esta fase testa apenas calibração; filtros por ranking/mercado ficam para experiências separadas.",
+            ]
+        )
+        return "\n".join(linhas)
+
+    @staticmethod
+    def _ranking_top5(previsao):
+        try:
+            ranking = int((previsao or {}).get("ranking_modelo"))
+        except (TypeError, ValueError):
+            return False
+        return 1 <= ranking <= 5
+
+    def relatorio_v13_shadow_top5(self):
+        """Experiência prospetiva de seleção: aceitar apenas ranks #1–5."""
+        v12 = [
+            p
+            for p in self.dados.get("previsoes", [])
+            if self._versao_snapshot(p) == "V1.2"
+        ]
+        desenvolvimento = v12[: self.V13_TOP5_START]
+        futuro = v12[self.V13_TOP5_START :]
+
+        dev_liq = [
+            p for p in desenvolvimento if p.get("resultado_binario") in (0, 1)
+        ]
+        dev_top5 = [p for p in dev_liq if self._ranking_top5(p)]
+        dev_restantes = [p for p in dev_liq if not self._ranking_top5(p)]
+
+        futuro_liq = [
+            p for p in futuro if p.get("resultado_binario") in (0, 1)
+        ]
+        futuro_pend = [
+            p for p in futuro if p.get("resultado_binario") not in (0, 1)
+        ]
+        top5 = [p for p in futuro_liq if self._ranking_top5(p)]
+        restantes = [p for p in futuro_liq if not self._ranking_top5(p)]
+        datas_top5 = {
+            str(p.get("data_jogo") or "")
+            for p in top5
+            if str(p.get("data_jogo") or "")
+        }
+
+        linhas = [
+            f"🎯 {self.V13_TOP5_NOME}",
+            "🔒 Shadow de seleção apenas • V1.2 de produção inalterada",
+            "",
+            "🧪 REGRA PRÉ-REGISTADA",
+            f"• Desenvolvimento encerrado nos primeiros {self.V13_TOP5_START} snapshots V1.2.",
+            "• A partir do snapshot #60, a Shadow aceita apenas ranking #1–5.",
+            "• Probabilidade, mercado, threshold e ranking continuam exatamente os da V1.2.",
+            "• Resultados dos primeiros 59 servem apenas de racional; não contam no gate prospetivo.",
+        ]
+
+        if dev_top5 and dev_restantes:
+            m_dev_top5 = self._metricas_grupo(dev_top5)
+            m_dev_rest = self._metricas_grupo(dev_restantes)
+            linhas.extend(
+                [
+                    "",
+                    "📚 RACIONAL HISTÓRICO — NÃO É TESTE",
+                    f"• #1–5: {m_dev_top5['ganhos']}/{m_dev_top5['total']} "
+                    f"({m_dev_top5['hit_rate']*100:.1f}%) | "
+                    f"Brier {m_dev_top5['brier']:.4f} | "
+                    f"{self._calibracao_texto(m_dev_top5)}",
+                    f"• #6–20: {m_dev_rest['ganhos']}/{m_dev_rest['total']} "
+                    f"({m_dev_rest['hit_rate']*100:.1f}%) | "
+                    f"Brier {m_dev_rest['brier']:.4f} | "
+                    f"{self._calibracao_texto(m_dev_rest)}",
+                ]
+            )
+
+        linhas.extend(
+            [
+                "",
+                "🧪 TESTE PROSPETIVO — DESDE O SNAPSHOT #60",
+                f"• Registadas: {len(futuro)}",
+                f"• Liquidadas: {len(futuro_liq)}",
+                f"• Pendentes: {len(futuro_pend)}",
+                f"• Top 5 liquidadas: {len(top5)}",
+                f"• Dias Top 5 representados: {len(datas_top5)}",
+            ]
+        )
+
+        if not top5:
+            linhas.extend(
+                [
+                    "• Ainda não há Top 5 prospetivas liquidadas.",
+                    "",
+                    "🧭 GATE SEL1",
+                    f"• Top 5 OOS: 0/{self.V13_TOP5_MIN_SELECOES} ⏳",
+                    f"• Dias: 0/{self.V13_TOP5_MIN_DIAS} ⏳",
+                    "⏳ Continuar a recolher V1.2. Nenhuma regra é promovida automaticamente.",
+                    "🛡️ Esta Shadow não altera o que o bot publica ou guarda.",
+                ]
+            )
+            return "\n".join(linhas)
+
+        m_top5 = self._metricas_grupo(top5)
+        m_rest = self._metricas_grupo(restantes) if restantes else None
+        m_todos = self._metricas_grupo(futuro_liq) if futuro_liq else None
+
+        linhas.extend(
+            [
+                f"• Top 5: {m_top5['ganhos']}/{m_top5['total']} "
+                f"({m_top5['hit_rate']*100:.1f}%) | Brier {m_top5['brier']:.4f} | "
+                f"{self._calibracao_texto(m_top5)}",
+            ]
+        )
+        if m_rest:
+            linhas.append(
+                f"• #6–20: {m_rest['ganhos']}/{m_rest['total']} "
+                f"({m_rest['hit_rate']*100:.1f}%) | Brier {m_rest['brier']:.4f} | "
+                f"{self._calibracao_texto(m_rest)}"
+            )
+        if m_todos:
+            linhas.append(
+                f"• Todas V1.2 prospetivas: {m_todos['ganhos']}/{m_todos['total']} "
+                f"({m_todos['hit_rate']*100:.1f}%) | Brier {m_todos['brier']:.4f}"
+            )
+
+        n_ok = len(top5) >= self.V13_TOP5_MIN_SELECOES
+        dias_ok = len(datas_top5) >= self.V13_TOP5_MIN_DIAS
+        gap_ok = abs(m_top5["gap_calibracao"]) <= 0.08
+        if m_rest:
+            vantagem_acerto = m_top5["hit_rate"] - m_rest["hit_rate"]
+            acerto_ok = vantagem_acerto >= 0.05
+            brier_ok = m_top5["brier"] < m_rest["brier"]
+        else:
+            vantagem_acerto = None
+            acerto_ok = False
+            brier_ok = False
+
+        linhas.extend(["", "🧭 GATE SEL1"])
+        linhas.extend(
+            [
+                f"• Top 5 OOS: {len(top5)}/{self.V13_TOP5_MIN_SELECOES} "
+                f"{'✅' if n_ok else '⏳'}",
+                f"• Dias: {len(datas_top5)}/{self.V13_TOP5_MIN_DIAS} "
+                f"{'✅' if dias_ok else '⏳'}",
+                f"• |Gap calibração| ≤8pp: {'✅' if gap_ok else '❌'}",
+                f"• Hit rate ≥5pp acima de #6–20: "
+                f"{'✅' if acerto_ok else '❌'}",
+                f"• Brier melhor que #6–20: {'✅' if brier_ok else '❌'}",
+            ]
+        )
+        if vantagem_acerto is not None:
+            linhas.append(
+                f"• Diferença de acerto Top 5 vs #6–20: "
+                f"{vantagem_acerto*100:+.1f}pp"
+            )
+
+        pronta = n_ok and dias_ok and gap_ok and acerto_ok and brier_ok
+        if pronta:
+            linhas.append(
+                "✅ Gate mínimo atingido: SEL1 pode ir a auditoria para possível "
+                "inclusão numa V1.3. Não é promovida automaticamente."
+            )
+        else:
+            linhas.append(
+                "⏳ Ainda não promover. Continuar a recolha prospetiva sem mexer na V1.2."
+            )
+        linhas.extend(
+            [
+                "🛡️ O teste começou no snapshot #60; nenhum resultado anterior entra no gate.",
+                "🧠 Se SEL1 falhar, descartamos a hipótese Top 5 sem contaminar a V1.2.",
             ]
         )
         return "\n".join(linhas)

@@ -26,6 +26,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /modelo_lab — Auditoria técnica do modelo e telemetria para a futura V1.3 (admin)
 /v13_audit — Cruzar telemetria liquidada para desenhar a V1.3 sem alterar o motor (admin)
 /v13_shadow — Comparar calibração Shadow com a V1.2 fora da amostra (admin)
+/v13_top5 — Testar prospetivamente apenas os ranks #1–5 sem alterar a V1.2 (admin)
 /picks — Ver a área de picks Premium já congeladas
 /plano — Ver o estado/validade do acesso Premium
 /clientes — Listar clientes Premium (admin)
