@@ -308,6 +308,30 @@ todas as probabilidades para perto de 50% sem acrescentar skill preditiva.
 
 Mesmo com o gate atingido, qualquer promoção exige nova auditoria e versão explícita.
 
+## V1.3 Shadow — experiência SEL1 Top 5
+
+A segunda experiência separa calibração de seleção. Não recalibra probabilidades e
+não altera a V1.2.
+
+Comando owner-only/read-only: `/v13_top5`.
+
+Hipótese pré-registada:
+- desenvolvimento fechado nos primeiros 59 snapshots V1.2
+- os resultados históricos justificam testar Top 5, mas não contam para aprovação
+- o teste prospetivo começa no snapshot V1.2 #60
+- a Shadow aceita apenas ranks #1–5; ranks #6–20 formam o comparador
+- probabilidades, mercados, thresholds e ranking são exatamente os da V1.2
+
+Gate mínimo, sem promoção automática:
+- pelo menos 25 Top 5 prospetivas liquidadas
+- pelo menos 5 dias com Top 5 liquidadas
+- gap absoluto de calibração Top 5 <= 8pp
+- hit rate Top 5 pelo menos 5pp acima de #6–20
+- Brier Top 5 menor que #6–20
+
+Nenhuma previsão anterior ao snapshot #60 entra no gate. Assim evitamos usar o
+mesmo histórico para escolher a regra e depois fingir que ele também a validou.
+
 ## Auditoria para desenho da V1.3
 
 Depois da V1.2 atingir a amostra-alvo, usar `/v13_audit` antes de alterar o motor.
