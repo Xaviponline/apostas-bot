@@ -327,12 +327,20 @@ class BotPremiumDiarioDiagnostico(BotPremiumDiario):
             and float(j["timestamp"]) > agora_ts
         ]
 
-        resolver = self.analisador.estatisticas.resolver_liga
+        estatisticas = self.analisador.estatisticas
+        resolver = estatisticas.resolver_liga
         suportados = [j for j in futuros if resolver(j) is not None]
-        historicos = (
-            self.analisador.estatisticas.carregar_historicos(suportados)
-            if suportados else {}
-        )
+
+        # Os diagnósticos são por execução, não histórico cumulativo. Limpa
+        # apenas metadados transitórios antes de calcular a cobertura atual.
+        if hasattr(estatisticas, "diagnostico_base"):
+            estatisticas.diagnostico_base = {}
+        if hasattr(estatisticas, "diagnostico_forma_global"):
+            estatisticas.diagnostico_forma_global = {}
+
+        # Mesmo sem jogos suportados, a chamada vazia limpa ultimo_erros e
+        # formas globais da execução anterior sem tocar em snapshots/modelo.
+        historicos = estatisticas.carregar_historicos(suportados)
 
         por_liga = {}
         candidatos = []
