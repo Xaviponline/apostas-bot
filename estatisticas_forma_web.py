@@ -1,7 +1,9 @@
 """Forma recente multicompetição via calendários públicos da ESPN.
 
 Para resultados já concluídos, a rota site.api com parâmetros de resultados é
-mais fiável do que a rota web usada sobretudo para fixtures. Esta camada altera
+mais fiável do que a rota web usada sobretudo para fixtures. A Liga das Nações
+pode ainda reconstruir a base da própria prova pelos calendários de equipa quando
+SofaScore falha, mantendo a amostra mínima existente. Esta camada altera
 a recolha da forma recente usada em taças/UEFA e trata explicitamente provas em
 campo neutro quando a designação casa/fora do feed não representa vantagem real.
 """
