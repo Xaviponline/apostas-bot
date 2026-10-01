@@ -558,6 +558,25 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                         f"• {codigo}: 0 jogos | SofaScore indisponível | {motivo}"
                     )
                     continue
+                if fonte in {"espn_team_schedules", "cache_espn_equipas"}:
+                    equipas = int(diag.get("equipas") or 0)
+                    temporada = str(diag.get("temporada") or "-")
+                    origem = (
+                        "ESPN calendários de equipa"
+                        if fonte == "espn_team_schedules"
+                        else "ESPN calendários de equipa (cache)"
+                    )
+                    linhas.append(
+                        f"• {codigo}: {jogos} jogos | {origem} | "
+                        f"{equipas} equipas | temporada {temporada}"
+                    )
+                    continue
+                if fonte == "sofa_e_espn_equipas_indisponiveis":
+                    motivo = str(diag.get("motivo") or "sem detalhe")
+                    linhas.append(
+                        f"• {codigo}: 0 jogos | fontes históricas indisponíveis | {motivo}"
+                    )
+                    continue
 
                 blocos = int(diag.get("blocos") or 0)
                 ok = int(diag.get("blocos_ok") or 0)
