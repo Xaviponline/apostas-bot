@@ -70,8 +70,134 @@ class SessaoFake:
         raise AssertionError(url)
 
 
+class SessaoHistoricoNationsFake:
+    def __init__(self, nations=12):
+        self.nations = nations
+        self.chamadas = []
+
+    @staticmethod
+    def _evento(i, liga_slug="uefa-nations-league", liga_nome="UEFA Nations League"):
+        data = datetime(2024, 9, 1 + (i % 20), 18, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+        return {
+            "id": 8000 + i,
+            "date": data,
+            "name": f"Nation A {i} vs Nation B {i}",
+            "season": {
+                "displayName": "2024-25 UEFA Nations League",
+                "slug": liga_slug,
+            },
+            "league": {"name": liga_nome, "slug": liga_slug},
+            "status": {"type": {"state": "post", "completed": True, "name": "STATUS_FINAL"}},
+            "competitions": [
+                {
+                    "date": data,
+                    "competitors": [
+                        {
+                            "homeAway": "home",
+                            "score": "2",
+                            "team": {"id": str(1000 + i), "displayName": f"H{i}"},
+                        },
+                        {
+                            "homeAway": "away",
+                            "score": "1",
+                            "team": {"id": str(2000 + i), "displayName": f"A{i}"},
+                        },
+                    ],
+                }
+            ],
+        }
+
+    def get(self, url, params=None, timeout=None):
+        self.chamadas.append((url, dict(params or {})))
+        eventos = [self._evento(i) for i in range(self.nations)]
+        eventos.extend(
+            self._evento(100 + i, "international-friendly", "International Friendly")
+            for i in range(4)
+        )
+        return RespostaFake({"events": eventos})
+
+
 class FormaWebTests(unittest.TestCase):
     REF = datetime(2026, 9, 16, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
+
+    def test_fetch_liga_nations_cai_para_calendarios_quando_sofa_falha(self):
+        class Probe(EstatisticasFormaWeb):
+            def _fetch_base_sofa(self, liga_codigo, data_ref=None):
+                raise ValueError("Sofa bloqueado")
+
+        sessao = SessaoHistoricoNationsFake(nations=12)
+        stats = Probe(session=sessao)
+        stats._equipas_contexto_liga = {"uefa.nations": {10, 20, 30}}
+
+        base = stats._fetch_liga("uefa.nations", self.REF)
+
+        self.assertEqual(len(base), 12)
+        self.assertEqual(
+            stats.diagnostico_base["uefa.nations"]["fonte"],
+            "espn_team_schedules",
+        )
+
+    def test_carregar_historicos_prepara_ids_da_competicao_antes_do_fetch(self):
+        class Probe(EstatisticasFormaWeb):
+            def __init__(self):
+                super().__init__()
+                self.ids_vistos = set()
+
+            def _fetch_liga(self, liga_codigo, data_ref=None):
+                self.ids_vistos = set(self._equipas_contexto_liga.get(liga_codigo) or set())
+                return []
+
+            def _precarregar_formas_globais(self, jogos, data_ref=None):
+                self._formas_globais = {}
+                self.ultimo_erros_forma = {}
+
+        stats = Probe()
+        stats.carregar_historicos(
+            [
+                {
+                    "league_code": "uefa.nations",
+                    "liga": "UEFA Nations League",
+                    "casa_id": 10,
+                    "fora_id": 20,
+                }
+            ],
+            self.REF,
+        )
+        self.assertEqual(stats.ids_vistos, {10, 20})
+
+    def test_base_nations_por_equipas_filtra_competicao_deduplica_e_usa_2024(self):
+        sessao = SessaoHistoricoNationsFake(nations=12)
+        stats = EstatisticasFormaWeb(session=sessao)
+        stats._equipas_contexto_liga = {"uefa.nations": {10, 20, 30}}
+
+        base = stats._fetch_base_nations_por_equipas(self.REF)
+
+        self.assertEqual(len(base), 12)
+        self.assertTrue(all(x["liga_codigo"] == "uefa.nations" for x in base))
+        self.assertEqual(stats.diagnostico_base["uefa.nations"]["fonte"], "espn_team_schedules")
+        self.assertEqual(stats.diagnostico_base["uefa.nations"]["temporada"], 2024)
+        self.assertTrue(sessao.chamadas)
+        self.assertTrue(all(chamada[1].get("season") == 2024 for chamada in sessao.chamadas))
+        self.assertFalse(any(x["id"] >= 8100 for x in base))
+
+    def test_base_nations_por_equipas_recusa_amostra_inferior_ao_minimo(self):
+        sessao = SessaoHistoricoNationsFake(nations=9)
+        stats = EstatisticasFormaWeb(session=sessao)
+        stats._equipas_contexto_liga = {"uefa.nations": {10, 20}}
+
+        with self.assertRaisesRegex(ValueError, "insuficiente"):
+            stats._fetch_base_nations_por_equipas(self.REF)
+
+    def test_codigo_competicao_evento_nao_confunde_amigavel(self):
+        nations = SessaoHistoricoNationsFake._evento(1)
+        friendly = SessaoHistoricoNationsFake._evento(
+            2, "international-friendly", "International Friendly"
+        )
+        self.assertEqual(
+            EstatisticasFormaWeb._codigo_competicao_evento(nations),
+            "uefa.nations",
+        )
+        self.assertIsNone(EstatisticasFormaWeb._codigo_competicao_evento(friendly))
 
     def test_forma_global_usa_primeiro_rota_de_resultados_concluidos(self):
         sessao = SessaoFake()

@@ -5,6 +5,7 @@ mais fiável do que a rota web usada sobretudo para fixtures. Esta camada altera
 a recolha da forma recente usada em taças/UEFA e trata explicitamente provas em
 campo neutro quando a designação casa/fora do feed não representa vantagem real.
 """
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from time import monotonic
 from zoneinfo import ZoneInfo
@@ -21,6 +22,7 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.diagnostico_forma_global = {}
+        self._equipas_contexto_liga = {}
 
     @classmethod
     def _numero_score_forma(cls, valor):
@@ -126,6 +128,185 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
             }
         except (KeyError, TypeError, ValueError):
             return None
+
+    @classmethod
+    def _codigo_competicao_evento(cls, evento):
+        if not isinstance(evento, dict):
+            return None
+
+        slugs = []
+        nomes = []
+        season = evento.get("season") or {}
+        league = evento.get("league") or {}
+        competicoes = evento.get("competitions") or []
+        comp = competicoes[0] if competicoes and isinstance(competicoes[0], dict) else {}
+        comp_league = comp.get("league") or {}
+
+        for bloco in (season, league, comp_league):
+            if not isinstance(bloco, dict):
+                continue
+            slug = str(bloco.get("slug") or "").strip()
+            if slug:
+                slugs.append(slug)
+            for chave in ("name", "displayName", "shortName"):
+                nome = str(bloco.get(chave) or "").strip()
+                if nome:
+                    nomes.append(nome)
+
+        for slug in slugs:
+            codigo = cls.resolver_liga({"season_slug": slug})
+            if codigo:
+                return codigo
+        for nome in nomes:
+            codigo = cls.resolver_liga({"liga": nome})
+            if codigo:
+                return codigo
+        return None
+
+    def _eventos_equipa_temporada(self, team_id, season):
+        team_id = int(team_id)
+        rota_site = f"{self.BASE}/all/teams/{team_id}/schedule"
+        rota_web = f"{self.ESPN_WEB_BASE}/all/teams/{team_id}/schedule"
+        pedidos = [
+            (rota_site, {"season": int(season)}),
+            (
+                rota_site,
+                {"season": int(season), "seasontype": 1, "type": 0, "level": 3},
+            ),
+            (rota_web, {"season": int(season)}),
+        ]
+        primeiro_erro = None
+        resposta_valida = False
+        for url, params in pedidos:
+            try:
+                resposta = self.session.get(url, params=params, timeout=(5, 25))
+                resposta.raise_for_status()
+                dados = resposta.json()
+                eventos = dados.get("events") if isinstance(dados, dict) else None
+                if not isinstance(eventos, list):
+                    raise ValueError("Calendário histórico ESPN inválido.")
+                resposta_valida = True
+                if eventos:
+                    return eventos
+            except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
+                primeiro_erro = primeiro_erro or exc
+        if resposta_valida:
+            return []
+        if primeiro_erro is not None:
+            raise primeiro_erro
+        raise ValueError("Calendário histórico ESPN indisponível.")
+
+    def _fetch_base_nations_por_equipas(self, data_ref=None):
+        liga_codigo = "uefa.nations"
+        agora = data_ref or datetime.now(ZoneInfo("Europe/Lisbon"))
+        if agora.tzinfo is None:
+            agora = agora.replace(tzinfo=ZoneInfo("Europe/Lisbon"))
+
+        equipas = sorted(self._equipas_contexto_liga.get(liga_codigo) or [])
+        if len(equipas) < 2:
+            raise ValueError("equipas da Liga das Nações indisponíveis")
+
+        alvo = self._ano_alvo_sofa(liga_codigo, agora)
+        try:
+            inicio_curto = int(str(alvo).split("/", 1)[0])
+        except (TypeError, ValueError):
+            raise ValueError("época-alvo inválida") from None
+        season = 2000 + inicio_curto
+
+        chave = ("base_nations_equipas", season, tuple(equipas), agora.date().isoformat())
+        with self._lock:
+            cached = self._cache.get(chave)
+            if cached and monotonic() - cached[0] < self.cache_segundos:
+                self.diagnostico_base[liga_codigo] = {
+                    "fonte": "cache_espn_equipas",
+                    "jogos": len(cached[1]),
+                    "equipas": len(equipas),
+                    "temporada": season,
+                }
+                return cached[1]
+
+        por_id = {}
+        respostas_ok = 0
+        primeiro_erro = None
+        with ThreadPoolExecutor(max_workers=min(6, len(equipas))) as executor:
+            futuros = {
+                executor.submit(self._eventos_equipa_temporada, team_id, season): team_id
+                for team_id in equipas
+            }
+            for futuro in as_completed(futuros):
+                try:
+                    eventos = futuro.result()
+                    respostas_ok += 1
+                except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
+                    primeiro_erro = primeiro_erro or exc
+                    continue
+
+                for evento in eventos:
+                    if self._codigo_competicao_evento(evento) != liga_codigo:
+                        continue
+                    item = self._normalizar_resultado_forma(evento)
+                    if item is None:
+                        continue
+                    if float(item["timestamp"]) >= agora.timestamp():
+                        continue
+                    item["liga_codigo"] = liga_codigo
+                    por_id[item["id"]] = item
+
+        resultados = sorted(
+            por_id.values(), key=lambda x: x["timestamp"], reverse=True
+        )
+        if len(resultados) < self.MIN_JOGOS_BASE:
+            if respostas_ok == 0 and primeiro_erro is not None:
+                raise primeiro_erro
+            raise ValueError(
+                f"base ESPN por equipas insuficiente: {len(resultados)}/{self.MIN_JOGOS_BASE}"
+            )
+
+        self.diagnostico_base[liga_codigo] = {
+            "fonte": "espn_team_schedules",
+            "jogos": len(resultados),
+            "equipas": len(equipas),
+            "temporada": season,
+        }
+        with self._lock:
+            self._cache[chave] = (monotonic(), resultados)
+        return resultados
+
+    def _fetch_liga(self, liga_codigo, data_ref=None):
+        try:
+            return super()._fetch_liga(liga_codigo, data_ref)
+        except (requests.RequestException, RuntimeError, ValueError, TypeError) as erro_primario:
+            if liga_codigo != "uefa.nations":
+                raise
+
+            try:
+                return self._fetch_base_nations_por_equipas(data_ref)
+            except (requests.RequestException, RuntimeError, ValueError, TypeError) as erro_fallback:
+                self.diagnostico_base[liga_codigo] = {
+                    "fonte": "sofa_e_espn_equipas_indisponiveis",
+                    "jogos": 0,
+                    "motivo": (
+                        f"SofaScore: {self._motivo_seguro_sofa(erro_primario)}; "
+                        f"ESPN equipas: {self._motivo_seguro_sofa(erro_fallback)}"
+                    ),
+                }
+                raise erro_fallback
+
+    def carregar_historicos(self, jogos, data_ref=None):
+        contexto = {}
+        for jogo in jogos or []:
+            if not isinstance(jogo, dict):
+                continue
+            codigo = self.resolver_liga(jogo)
+            if not codigo:
+                continue
+            ids = contexto.setdefault(codigo, set())
+            for campo in ("casa_id", "fora_id"):
+                team_id = jogo.get(campo)
+                if isinstance(team_id, int) and team_id > 0:
+                    ids.add(team_id)
+        self._equipas_contexto_liga = contexto
+        return super().carregar_historicos(jogos, data_ref)
 
     def _fetch_forma_global(self, team_id, data_ref=None):
         agora = data_ref or datetime.now(ZoneInfo("Europe/Lisbon"))
