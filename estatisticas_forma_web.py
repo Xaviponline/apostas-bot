@@ -168,14 +168,15 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
         rota_site = f"{self.BASE}/all/teams/{team_id}/schedule"
         rota_web = f"{self.ESPN_WEB_BASE}/all/teams/{team_id}/schedule"
         pedidos = [
+            (rota_site, {"season": int(season)}),
             (
                 rota_site,
                 {"season": int(season), "seasontype": 1, "type": 0, "level": 3},
             ),
-            (rota_site, {"season": int(season)}),
             (rota_web, {"season": int(season)}),
         ]
         primeiro_erro = None
+        resposta_valida = False
         for url, params in pedidos:
             try:
                 resposta = self.session.get(url, params=params, timeout=(5, 25))
@@ -184,9 +185,13 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
                 eventos = dados.get("events") if isinstance(dados, dict) else None
                 if not isinstance(eventos, list):
                     raise ValueError("Calendário histórico ESPN inválido.")
-                return eventos
+                resposta_valida = True
+                if eventos:
+                    return eventos
             except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
                 primeiro_erro = primeiro_erro or exc
+        if resposta_valida:
+            return []
         if primeiro_erro is not None:
             raise primeiro_erro
         raise ValueError("Calendário histórico ESPN indisponível.")
