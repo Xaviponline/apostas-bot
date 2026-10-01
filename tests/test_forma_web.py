@@ -120,6 +120,51 @@ class SessaoHistoricoNationsFake:
 class FormaWebTests(unittest.TestCase):
     REF = datetime(2026, 9, 16, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
 
+    def test_fetch_liga_nations_cai_para_calendarios_quando_sofa_falha(self):
+        class Probe(EstatisticasFormaWeb):
+            def _fetch_base_sofa(self, liga_codigo, data_ref=None):
+                raise ValueError("Sofa bloqueado")
+
+        sessao = SessaoHistoricoNationsFake(nations=12)
+        stats = Probe(session=sessao)
+        stats._equipas_contexto_liga = {"uefa.nations": {10, 20, 30}}
+
+        base = stats._fetch_liga("uefa.nations", self.REF)
+
+        self.assertEqual(len(base), 12)
+        self.assertEqual(
+            stats.diagnostico_base["uefa.nations"]["fonte"],
+            "espn_team_schedules",
+        )
+
+    def test_carregar_historicos_prepara_ids_da_competicao_antes_do_fetch(self):
+        class Probe(EstatisticasFormaWeb):
+            def __init__(self):
+                super().__init__()
+                self.ids_vistos = set()
+
+            def _fetch_liga(self, liga_codigo, data_ref=None):
+                self.ids_vistos = set(self._equipas_contexto_liga.get(liga_codigo) or set())
+                return []
+
+            def _precarregar_formas_globais(self, jogos, data_ref=None):
+                self._formas_globais = {}
+                self.ultimo_erros_forma = {}
+
+        stats = Probe()
+        stats.carregar_historicos(
+            [
+                {
+                    "league_code": "uefa.nations",
+                    "liga": "UEFA Nations League",
+                    "casa_id": 10,
+                    "fora_id": 20,
+                }
+            ],
+            self.REF,
+        )
+        self.assertEqual(stats.ids_vistos, {10, 20})
+
     def test_base_nations_por_equipas_filtra_competicao_deduplica_e_usa_2024(self):
         sessao = SessaoHistoricoNationsFake(nations=12)
         stats = EstatisticasFormaWeb(session=sessao)
