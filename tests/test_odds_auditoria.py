@@ -108,6 +108,51 @@ class FonteLote:
 
 
 
+class FonteLoteIncompleto:
+    configurada = True
+    nome_fonte = "Fonte Lote Incompleto"
+
+    def __init__(self):
+        self.chamadas_individuais = []
+
+    def eventos_hoje(self):
+        return [
+            {
+                "id": "evt1",
+                "casa": "Portugal",
+                "fora": "Wales",
+                "tournament_id": 77,
+            },
+            {
+                "id": "evt2",
+                "casa": "Netherlands",
+                "fora": "Germany",
+                "tournament_id": 77,
+            },
+        ]
+
+    def odds_eventos_em_lote(self, eventos):
+        return {"evt1": None, "evt2": None}
+
+    def odds_evento(self, event_id):
+        self.chamadas_individuais.append(event_id)
+        if event_id == "evt1":
+            return {
+                "id": "evt1",
+                "casa": "Portugal",
+                "fora": "Wales",
+                "fonte": self.nome_fonte,
+                "mercados": [
+                    {
+                        "name": "Full Time Result",
+                        "period": "fulltime",
+                        "odds": [{"seleção": "1", "odd": 1.75}],
+                    }
+                ],
+            }
+        return None
+
+
 class FonteDesligada:
     configurada = False
 
@@ -157,6 +202,45 @@ class OddsAuditoriaTests(unittest.TestCase):
         self.assertEqual(fonte.chamadas_individuais, 0)
         self.assertEqual(saida[0]["odd_real"], 1.70)
         self.assertEqual(saida[1]["odd_real"], 1.80)
+
+    def test_fallback_individual_opcional_recupera_lote_incompleto(self):
+        fonte = FonteLoteIncompleto()
+        selecoes = [
+            {
+                "jogo": {"id": 1, "casa": "Portugal", "fora": "Wales"},
+                "mercado": "Vitória Casa",
+                "probabilidade": 0.66,
+            },
+            {
+                "jogo": {"id": 2, "casa": "Netherlands", "fora": "Germany"},
+                "mercado": "Vitória Casa",
+                "probabilidade": 0.67,
+            },
+        ]
+
+        sem_fallback = AuditoriaOdds(fonte).enriquecer(selecoes)
+        self.assertEqual(fonte.chamadas_individuais, [])
+        self.assertNotIn("odd_real", sem_fallback[0])
+
+        fonte = FonteLoteIncompleto()
+        com_fallback = AuditoriaOdds(fonte).enriquecer(
+            selecoes,
+            fallback_individual_ausentes=True,
+            max_fallback_individual=1,
+        )
+        self.assertEqual(fonte.chamadas_individuais, ["evt1"])
+        self.assertEqual(com_fallback[0]["odd_real"], 1.75)
+        self.assertNotIn("odd_real", com_fallback[1])
+
+    def test_aliases_brasil_conservadores(self):
+        self.assertEqual(
+            AuditoriaOdds._canon_equipa("Atlético Goianiense"),
+            AuditoriaOdds._canon_equipa("Atletico GO"),
+        )
+        self.assertEqual(
+            AuditoriaOdds._canon_equipa("América Mineiro"),
+            AuditoriaOdds._canon_equipa("America MG"),
+        )
 
     def test_normaliza_siglas_de_clube_sem_fuzzy_matching(self):
         self.assertEqual(
