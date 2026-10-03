@@ -9,6 +9,7 @@ e usada para medir taxa de acerto, Brier Score e, quando aplicável, ROI.
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+import hashlib
 import json
 import os
 import tempfile
@@ -19,6 +20,8 @@ class RegistoPrevisoes:
     VERSAO = 1
     MODELO_VERSAO = "V1.2"
     DIAGNOSTICO_SNAPSHOT_VERSAO = 1
+    INTEGRIDADE_SNAPSHOT_VERSAO = 1
+    JANELA_CLV_SEG = 30 * 60
     ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
     def __init__(self, path=None, session=None):
@@ -95,6 +98,245 @@ class RegistoPrevisoes:
         if numero != numero or numero in (float("inf"), float("-inf")):
             return None
         return round(numero, casas)
+
+    @classmethod
+    def _payload_integridade(cls, registo):
+        """Campos do modelo que devem permanecer imutáveis após o snapshot."""
+        campos = (
+            "chave",
+            "event_id",
+            "data_jogo",
+            "timestamp_jogo",
+            "casa",
+            "fora",
+            "liga",
+            "mercado",
+            "modelo_versao",
+            "ranking_modelo",
+            "confianca_modelo",
+            "score_modelo",
+            "probabilidade",
+            "probabilidade_bruta",
+            "qualidade",
+            "odd_justa",
+            "odd_minima",
+            "criada_em",
+            "diagnostico_modelo",
+        )
+        return {campo: registo.get(campo) for campo in campos}
+
+    @classmethod
+    def _hash_snapshot(cls, registo):
+        payload = json.dumps(
+            cls._payload_integridade(registo),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _selar_snapshot(cls, registo):
+        """Sela apenas snapshots novos; históricos antigos não são retro-selados."""
+        registo["integridade_versao"] = cls.INTEGRIDADE_SNAPSHOT_VERSAO
+        registo["snapshot_hash"] = cls._hash_snapshot(registo)
+
+    @classmethod
+    def _odd_entrada_valor(cls, registo):
+        confirmada = cls._odd_real_valida(registo.get("odd_valor_confirmado"))
+        if confirmada is not None:
+            return confirmada
+        inicial = cls._odd_real_valida(registo.get("odd_real"))
+        minima = cls._odd_real_valida(registo.get("odd_minima"))
+        if inicial is not None and minima is not None and inicial >= minima:
+            return inicial
+        return None
+
+    @classmethod
+    def _marcar_valor_inicial(cls, registo, agora_iso):
+        """Classifica a odd congelada sem alterar a decisão/modelo."""
+        odd = cls._odd_real_valida(registo.get("odd_real"))
+        minima = cls._odd_real_valida(registo.get("odd_minima"))
+        if odd is None:
+            registo["valor_estado"] = "sem_odd"
+            return
+        registo["odd_mercado_atual"] = round(odd, 4)
+        registo["odd_mercado_atual_em"] = agora_iso
+        if minima is not None and odd >= minima:
+            registo["valor_estado"] = "confirmado"
+            registo.setdefault("valor_confirmado_em", agora_iso)
+            registo.setdefault("odd_valor_confirmado", round(odd, 4))
+        else:
+            registo["valor_estado"] = "sem_valor"
+
+    def verificar_integridade(self):
+        """Verifica hashes dos snapshots selados sem modificar qualquer registo."""
+        protegidos = validos = divergentes = legados = 0
+        for p in self.dados.get("previsoes", []):
+            hash_guardado = str(p.get("snapshot_hash") or "").strip()
+            if not hash_guardado:
+                legados += 1
+                continue
+            protegidos += 1
+            if hash_guardado == self._hash_snapshot(p):
+                validos += 1
+            else:
+                divergentes += 1
+        return {
+            "total": len(self.dados.get("previsoes", [])),
+            "protegidos": protegidos,
+            "validos": validos,
+            "divergentes": divergentes,
+            "legados_sem_hash": legados,
+        }
+
+    def atualizar_estado_mercado(self, selecoes, agora=None, janela_clv_seg=None):
+        """Atualiza apenas metadados comerciais com odds atuais pré-jogo.
+
+        A odd inicial congelada, probabilidades e restantes campos do modelo
+        nunca são reescritos. Se a consulta ocorrer perto do início, a odd atual
+        também é guardada como melhor aproximação disponível à closing line.
+        """
+        agora_dt = agora or datetime.now(timezone.utc)
+        if agora_dt.tzinfo is None:
+            agora_dt = agora_dt.replace(tzinfo=timezone.utc)
+        agora_ts = agora_dt.timestamp()
+        agora_iso = agora_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        janela = int(
+            self.JANELA_CLV_SEG if janela_clv_seg is None else janela_clv_seg
+        )
+        existentes = {
+            self._chave(p.get("event_id"), p.get("mercado")): p
+            for p in self.dados.get("previsoes", [])
+        }
+        alterados = confirmados = expirados = fechos = 0
+
+        for s in selecoes or []:
+            jogo = s.get("jogo") or {}
+            chave = self._chave(jogo.get("id"), s.get("mercado"))
+            registo = existentes.get(chave)
+            if not registo or registo.get("estado") != "pendente":
+                continue
+            if not self._jogo_ainda_nao_comecou(registo, agora_ts):
+                continue
+            odd_atual = self._odd_real_valida(s.get("odd_real"))
+            minima = self._odd_real_valida(registo.get("odd_minima"))
+            if odd_atual is None or minima is None:
+                continue
+
+            estado_anterior = str(registo.get("valor_estado") or "")
+            registo["odd_mercado_atual"] = round(odd_atual, 4)
+            registo["odd_mercado_atual_em"] = agora_iso
+            try:
+                prob = float(registo["probabilidade"])
+                registo["ev_mercado_atual"] = round((prob * odd_atual) - 1.0, 6)
+            except (KeyError, TypeError, ValueError):
+                pass
+
+            if odd_atual >= minima:
+                if not registo.get("valor_confirmado_em"):
+                    registo["valor_confirmado_em"] = agora_iso
+                    registo["odd_valor_confirmado"] = round(odd_atual, 4)
+                    confirmados += 1
+                elif estado_anterior == "expirado":
+                    registo["valor_reativado_em"] = agora_iso
+                registo["valor_estado"] = "confirmado"
+            else:
+                if registo.get("valor_confirmado_em"):
+                    if estado_anterior != "expirado":
+                        expirados += 1
+                        registo["valor_expirou_em"] = agora_iso
+                    registo["valor_estado"] = "expirado"
+                else:
+                    registo["valor_estado"] = "sem_valor"
+
+            ts = registo.get("timestamp_jogo")
+            if isinstance(ts, (int, float)):
+                faltam = float(ts) - agora_ts
+                if 0 < faltam <= janela:
+                    registo["odd_fecho"] = round(odd_atual, 4)
+                    registo["odd_fecho_capturada_em"] = agora_iso
+                    entrada = self._odd_entrada_valor(registo)
+                    if entrada is not None:
+                        registo["clv_odds"] = round((entrada / odd_atual) - 1.0, 6)
+                    fechos += 1
+            alterados += 1
+
+        if alterados:
+            self._guardar()
+        return {
+            "alterados": alterados,
+            "confirmados_novos": confirmados,
+            "expirados_novos": expirados,
+            "fechos_capturados": fechos,
+        }
+
+    def metricas_carteira_valor(self, modelo_versao="V1.2"):
+        """Carteira shadow: 1u apenas quando a odd atingiu a odd mínima."""
+        elegiveis = []
+        for p in self.dados.get("previsoes", []):
+            if modelo_versao and str(p.get("modelo_versao") or "") != modelo_versao:
+                continue
+            entrada = self._odd_entrada_valor(p)
+            if entrada is None:
+                continue
+            elegiveis.append((p, entrada))
+
+        liquidadas = [
+            (p, odd) for p, odd in elegiveis if p.get("resultado_binario") in (0, 1)
+        ]
+        liquidadas.sort(
+            key=lambda item: (
+                float(item[0].get("timestamp_jogo") or 0),
+                str(item[0].get("chave") or ""),
+            )
+        )
+        ganhos = sum(int(p["resultado_binario"]) for p, _ in liquidadas)
+        lucro = 0.0
+        acumulado = pico = 0.0
+        max_drawdown = 0.0
+        streak = max_streak = 0
+        for p, odd in liquidadas:
+            pnl = (odd - 1.0) if int(p["resultado_binario"]) == 1 else -1.0
+            lucro += pnl
+            acumulado += pnl
+            pico = max(pico, acumulado)
+            max_drawdown = max(max_drawdown, pico - acumulado)
+            if int(p["resultado_binario"]) == 0:
+                streak += 1
+                max_streak = max(max_streak, streak)
+            else:
+                streak = 0
+        total = len(liquidadas)
+        return {
+            "elegiveis": len(elegiveis),
+            "liquidadas": total,
+            "pendentes": len(elegiveis) - total,
+            "ganhos": ganhos,
+            "perdas": total - ganhos,
+            "lucro_unidades": lucro,
+            "roi": (lucro / total) if total else None,
+            "max_drawdown": max_drawdown,
+            "max_streak_perdas": max_streak,
+        }
+
+    def metricas_clv(self, modelo_versao="V1.2"):
+        amostras = []
+        for p in self.dados.get("previsoes", []):
+            if modelo_versao and str(p.get("modelo_versao") or "") != modelo_versao:
+                continue
+            entrada = self._odd_entrada_valor(p)
+            fecho = self._odd_real_valida(p.get("odd_fecho"))
+            if entrada is None or fecho is None:
+                continue
+            amostras.append((entrada / fecho) - 1.0)
+        if not amostras:
+            return {"total": 0, "media": None, "positivos": 0}
+        return {
+            "total": len(amostras),
+            "media": sum(amostras) / len(amostras),
+            "positivos": sum(1 for valor in amostras if valor > 0),
+        }
 
     @classmethod
     def _snapshot_diagnostico(cls, selecao):
@@ -183,6 +425,7 @@ class RegistoPrevisoes:
                 "odds_capturada_em": agora_iso,
             }
         )
+        self._marcar_valor_inicial(registo, agora_iso)
         return True
 
     def registar(self, selecoes):
@@ -275,6 +518,8 @@ class RegistoPrevisoes:
                     }
                 )
 
+            self._marcar_valor_inicial(registo, agora)
+            self._selar_snapshot(registo)
             self.dados["previsoes"].append(registo)
             existentes[chave] = registo
             adicionadas += 1

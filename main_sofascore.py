@@ -27,6 +27,10 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /v13_audit — Cruzar telemetria liquidada para desenhar a V1.3 sem alterar o motor (admin)
 /v13_shadow — Comparar calibração Shadow com a V1.2 fora da amostra (admin)
 /v13_top5 — Testar prospetivamente apenas os ranks #1–5 sem alterar a V1.2 (admin)
+/carteira — Carteira shadow de picks com valor confirmado (admin)
+/clv — Auditoria de Closing Line Value (admin)
+/sync_valor — Atualizar estado de valor/fecho sem alterar a odd inicial (admin)
+/integridade — Verificar hashes dos snapshots novos (admin)
 /picks — Ver a área de picks Premium já congeladas
 /plano — Ver o estado/validade do acesso Premium
 /clientes — Listar clientes Premium (admin)
