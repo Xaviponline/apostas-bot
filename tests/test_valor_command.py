@@ -39,6 +39,14 @@ class OddsFake:
         }
 
 
+class OddsSemEventos:
+    configurada = True
+    nome_fonte = "Betano teste"
+
+    def eventos_hoje(self):
+        return []
+
+
 class OddsStatusFake:
     configurada = True
     nome_fonte = "OddsPapi / Betano PT"
@@ -57,6 +65,14 @@ class OddsStatusFake:
 
 
 class PrevisoesFake:
+    def atualizar_estado_mercado(self, selecoes):
+        return {
+            "alterados": 0,
+            "confirmados_novos": 0,
+            "expirados_novos": 0,
+            "fechos_capturados": 0,
+        }
+
     def __init__(self):
         agora = datetime.now(TZ_PORTUGAL)
         self.dados = {
@@ -94,6 +110,18 @@ class ValorCommandTests(unittest.TestCase):
         self.assertIn("Diferença elevada", texto)
         self.assertEqual(bot.previsoes.dados, antes)
 
+
+    def test_sync_valor_expoe_motivo_quando_odd_nao_e_associada(self):
+        bot = BotPremiumDiarioCompeticoes.__new__(BotPremiumDiarioCompeticoes)
+        bot.odds = OddsSemEventos()
+        bot.previsoes = PrevisoesFake()
+
+        texto = bot._executar_sync_valor()
+
+        self.assertIn("DIAGNÓSTICO DAS ODDS", texto)
+        self.assertIn("evento não encontrado na fonte", texto)
+        self.assertIn("Independiente Rivadavia vs Atlético Tucumán", texto)
+        self.assertIn("Odds atuais associadas: 0", texto)
 
     def test_odds_status_mostra_quota_sem_tocar_previsoes(self):
         bot = BotPremiumDiarioCompeticoes.__new__(BotPremiumDiarioCompeticoes)
