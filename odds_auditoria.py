@@ -24,6 +24,10 @@ class AuditoriaOdds:
         "ferencvaros": "ferencvaros",
         "ferencvarosi": "ferencvaros",
         "ferencvarosi tc": "ferencvaros",
+        "atletico goianiense": "atletico go",
+        "atletico go": "atletico go",
+        "america mineiro": "america mg",
+        "america mg": "america mg",
     }
 
     # Só usamos a hora para desempatar candidatos que já passaram a validação
@@ -335,8 +339,17 @@ class AuditoriaOdds:
         except (TypeError, ValueError, RuntimeError):
             return ""
 
-    def enriquecer(self, selecoes):
-        """Devolve cópias das seleções; nunca filtra nem reordena o V1."""
+    def enriquecer(
+        self,
+        selecoes,
+        fallback_individual_ausentes=False,
+        max_fallback_individual=8,
+    ):
+        """Devolve cópias das seleções; nunca filtra nem reordena o V1.
+
+        O fallback individual é opcional e destina-se à camada comercial.
+        O fluxo normal do /analisa mantém o comportamento e consumo anteriores.
+        """
         saida = deepcopy(list(selecoes or []))
         if not saida or not self.fonte or not getattr(self.fonte, "configurada", False):
             return saida
@@ -403,9 +416,18 @@ class AuditoriaOdds:
                 # Fonte antiga/fallback: mantém a consulta individual segura.
                 pass
 
+        fallback_restantes = max(int(max_fallback_individual or 0), 0)
         for selecao, jogo, event_id, chave_evento in resolvidas:
             if chave_evento in cache_odds:
                 dados = cache_odds[chave_evento]
+                if (
+                    dados is None
+                    and fallback_individual_ausentes
+                    and fallback_restantes > 0
+                ):
+                    dados = self.fonte.odds_evento(event_id)
+                    cache_odds[chave_evento] = dados
+                    fallback_restantes -= 1
             else:
                 dados = self.fonte.odds_evento(event_id)
                 cache_odds[chave_evento] = dados
