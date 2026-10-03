@@ -55,6 +55,9 @@ As apostas não são colocadas na Betano pelo bot.'''
 class BotPremiumReal:
     ODDS_AUTO_INTERVALO_SEG = 2 * 60 * 60
     ODDS_AUTO_JANELA_SEG = 4 * 60 * 60
+    CLV_AUTO_INTERVALO_SEG = 5 * 60
+    CLV_AUTO_JANELA_SEG = 10 * 60
+    CLV_AUTO_MAX_FALLBACK = 4
     JOGOS_RETRY_VAZIO_SEG = 1.0
 
     def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None, analisador=None, previsoes=None):
@@ -73,6 +76,7 @@ class BotPremiumReal:
         self.previsoes = previsoes or RegistoPrevisoes()
         self.username = None
         self._proxima_captura_odds = 0.0
+        self._proxima_captura_clv = 0.0
 
     def api(self, metodo, data):
         r = self.session.post(f'{self.base_url}/{metodo}', json=data, timeout=(5, 40))
@@ -258,6 +262,104 @@ class BotPremiumReal:
             logging.info('ODDS_AUTO | %s odd(s) congelada(s) antes do jogo', capturadas)
         return capturadas
 
+    def _selecoes_clv_proximas(self):
+        """Reconstrói apenas entradas de valor sem fecho nos últimos minutos."""
+        if not self.odds.configurada:
+            return []
+
+        agora = datetime.now(ZoneInfo('Europe/Lisbon'))
+        agora_ts = agora.timestamp()
+        limite_ts = agora_ts + self.CLV_AUTO_JANELA_SEG
+        data_iso = agora.strftime('%Y-%m-%d')
+        selecoes = []
+
+        for p in self.previsoes.dados.get('previsoes', []):
+            if p.get('data_jogo') != data_iso or p.get('estado') != 'pendente':
+                continue
+            if self.previsoes._odd_entrada_valor(p) is None:
+                continue
+            if self.previsoes._odd_real_valida(p.get('odd_fecho')) is not None:
+                continue
+            ts = p.get('timestamp_jogo')
+            if not isinstance(ts, (int, float)):
+                continue
+            if float(ts) <= agora_ts or float(ts) > limite_ts:
+                continue
+            try:
+                prob = float(p['probabilidade'])
+                qualidade = int(p['qualidade'])
+                odd_justa = float(p['odd_justa'])
+                odd_minima = float(p['odd_minima'])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            selecoes.append(
+                {
+                    'jogo': {
+                        'id': p.get('event_id'),
+                        'casa': p.get('casa') or '?',
+                        'fora': p.get('fora') or '?',
+                        'liga': p.get('liga') or 'Competição',
+                        'timestamp': ts,
+                    },
+                    'mercado': p.get('mercado') or 'Mercado desconhecido',
+                    'probabilidade': prob,
+                    'qualidade': qualidade,
+                    'odd_justa': odd_justa,
+                    'odd_minima': odd_minima,
+                }
+            )
+        return selecoes
+
+    def _capturar_clv_pendentes(self, selecoes=None):
+        """Guarda uma aproximação automática ao fecho sem alterar a odd inicial."""
+        candidatas = list(selecoes) if selecoes is not None else self._selecoes_clv_proximas()
+        if not candidatas:
+            return 0
+
+        enriquecidas = AuditoriaOdds(self.odds).enriquecer(
+            candidatas,
+            fallback_individual_ausentes=True,
+            max_fallback_individual=self.CLV_AUTO_MAX_FALLBACK,
+        )
+        resumo = self.previsoes.atualizar_estado_mercado(enriquecidas)
+        fechos = int(resumo.get('fechos_capturados') or 0)
+        if fechos:
+            logging.info('CLV_AUTO | %s closing line(s) capturada(s)', fechos)
+        return fechos
+
+    def _capturar_clv_se_devido(self):
+        """Tenta fecho automático só quando há entradas de valor a ≤10 min do jogo."""
+        agora = time.monotonic()
+        if agora < self._proxima_captura_clv:
+            return 0
+
+        candidatas = self._selecoes_clv_proximas()
+        if not candidatas:
+            return 0
+
+        self._proxima_captura_clv = agora + self.CLV_AUTO_INTERVALO_SEG
+
+        status_fn = getattr(self.odds, "status_conta", None)
+        if callable(status_fn):
+            try:
+                status = status_fn()
+                if isinstance(status, dict) and status.get("remaining") == 0:
+                    logging.info("CLV_AUTO | suspensa: quota OddsPapi esgotada")
+                    return 0
+            except (requests.RequestException, RuntimeError, ValueError, TypeError):
+                pass
+
+        if str(getattr(self.odds, "ultimo_diagnostico_eventos", "") or "") == "odds_quota_esgotada":
+            logging.info("CLV_AUTO | suspensa: quota OddsPapi esgotada")
+            return 0
+
+        try:
+            return self._capturar_clv_pendentes(candidatas)
+        except (requests.RequestException, RuntimeError, ValueError, TypeError):
+            logging.warning('CLV_AUTO | captura indisponível; tenta novamente mais tarde')
+            return 0
+
     def _capturar_odds_se_devida(self):
         """Executa no máximo uma ronda a cada 2 horas para poupar quota."""
         agora = time.monotonic()
@@ -395,6 +497,7 @@ class BotPremiumReal:
                         )
                     self.gestor.marcar_update(update['update_id'])
                 self._capturar_odds_se_devida()
+                self._capturar_clv_se_devido()
             except (requests.RequestException, RuntimeError, ValueError):
                 logging.warning('Falha na comunicação Telegram; nova tentativa em 5 segundos.')
                 time.sleep(5)
