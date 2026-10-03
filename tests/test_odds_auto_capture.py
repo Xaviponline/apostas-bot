@@ -113,6 +113,40 @@ class OddsAutoCaptureTests(unittest.TestCase):
             self.assertEqual(snapshot["odd_real"], 1.80)
 
 
+    def test_captura_clv_automatica_para_entrada_de_valor_perto_do_jogo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            snapshot = self._snapshot(reg, inicio_seg=8 * 60)
+            bot = self._bot(reg)
+
+            # Primeiro congela a odd de entrada; 1.80 >= mínima 1.72.
+            self.assertEqual(bot._capturar_odds_pendentes(), 1)
+            self.assertEqual(snapshot["valor_estado"], "confirmado")
+            self.assertNotIn("odd_fecho", snapshot)
+
+            fechos = bot._capturar_clv_pendentes()
+
+            self.assertEqual(fechos, 1)
+            self.assertEqual(snapshot["odd_fecho"], 1.80)
+            self.assertAlmostEqual(snapshot["clv_odds"], 0.0, places=6)
+            # Nunca substitui a odd inicial congelada.
+            self.assertEqual(snapshot["odd_real"], 1.80)
+
+            # Depois de existir fecho, deixa de voltar a consultar esta entrada.
+            self.assertEqual(bot._capturar_clv_pendentes(), 0)
+
+    def test_clv_automatico_ignora_previsao_sem_valor_confirmado(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            snapshot = self._snapshot(reg, inicio_seg=8 * 60)
+            snapshot["odd_real"] = 1.60
+            snapshot["valor_estado"] = "sem_valor"
+            bot = self._bot(reg)
+
+            self.assertEqual(bot._selecoes_clv_proximas(), [])
+            self.assertEqual(bot._capturar_clv_se_devido(), 0)
+            self.assertNotIn("odd_fecho", snapshot)
+
     def test_suspende_captura_automatica_quando_quota_esgotada(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
@@ -130,6 +164,28 @@ class OddsAutoCaptureTests(unittest.TestCase):
 
             bot._proxima_captura_odds = 0
             self.assertEqual(bot._capturar_odds_se_devida(), 0)
+
+    def test_clv_automatico_respeita_quota_esgotada(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            snapshot = self._snapshot(reg, inicio_seg=8 * 60)
+            snapshot["odd_real"] = 1.80
+            snapshot["valor_estado"] = "confirmado"
+            snapshot["odd_valor_confirmado"] = 1.80
+            bot = BotPremiumReal(
+                token="teste",
+                gestor=GestorFake(),
+                owner_id=1,
+                chat_id=1,
+                buscador=object(),
+                odds=OddsQuotaFake(),
+                analisador=object(),
+                previsoes=reg,
+            )
+
+            bot._proxima_captura_clv = 0
+            self.assertEqual(bot._capturar_clv_se_devido(), 0)
+            self.assertNotIn("odd_fecho", snapshot)
 
     def test_ignora_jogo_fora_da_janela_de_seis_horas(self):
         with tempfile.TemporaryDirectory() as tmp:
