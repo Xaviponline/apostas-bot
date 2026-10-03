@@ -310,7 +310,7 @@ class AnalisadorInteligente:
                 linhas.extend(
                     [
                         f"   ⭐ {estrelas}",
-                        f"   🧪 Dados {s['qualidade']}/100",
+                        f"   🧪 Cobertura dos dados {s['qualidade']}/100",
                     ]
                 )
                 numero += 1
