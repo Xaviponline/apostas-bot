@@ -346,7 +346,11 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 "🔄 SYNC VALOR\n\n"
                 "Não existem previsões futuras para sincronizar hoje."
             )
-        atuais = AuditoriaOdds(self.odds).enriquecer(selecoes)
+        atuais = AuditoriaOdds(self.odds).enriquecer(
+            selecoes,
+            fallback_individual_ausentes=True,
+            max_fallback_individual=8,
+        )
         resumo = self.previsoes.atualizar_estado_mercado(atuais)
         estados = Counter(
             str(p.get("valor_estado") or "sem_estado")
