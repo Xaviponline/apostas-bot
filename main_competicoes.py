@@ -131,6 +131,32 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     f"  {estrela} {confianca or 'MODELO'} | Ranking #{ranking if ranking < 999 else '—'}",
                 ]
             )
+            estado_valor = str(p.get("valor_estado") or "")
+            try:
+                odd_atual = float(p.get("odd_mercado_atual"))
+            except (TypeError, ValueError):
+                odd_atual = None
+            try:
+                odd_confirmada = float(
+                    p.get("odd_valor_confirmado", p.get("odd_real"))
+                )
+            except (TypeError, ValueError):
+                odd_confirmada = None
+            if estado_valor == "confirmado" and odd_confirmada and odd_confirmada > 1.0:
+                linhas.append(
+                    f"  🟢 Valor confirmado @ {odd_confirmada:.2f}".replace(".", ",")
+                )
+            elif estado_valor == "expirado":
+                sufixo = (
+                    f" — odd atual {odd_atual:.2f} < {odd_minima:.2f}"
+                    if odd_atual and odd_atual > 1.0
+                    else ""
+                )
+                linhas.append(("  ⛔ PICK EXPIRADO" + sufixo).replace(".", ","))
+            elif estado_valor == "sem_valor" and odd_atual and odd_atual > 1.0:
+                linhas.append(
+                    f"  🔴 Sem valor à odd {odd_atual:.2f}".replace(".", ",")
+                )
 
         linhas.extend(
             [
@@ -270,6 +296,155 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             ]
         )
         return "\n".join(linhas).rstrip()
+
+    def _selecoes_futuras_para_mercado(self):
+        agora = datetime.now(TZ_PORTUGAL)
+        agora_ts = agora.timestamp()
+        data_iso = agora.strftime("%Y-%m-%d")
+        selecoes = []
+        for p in self.previsoes.dados.get("previsoes", []):
+            if p.get("data_jogo") != data_iso or p.get("estado") != "pendente":
+                continue
+            ts = p.get("timestamp_jogo")
+            if not isinstance(ts, (int, float)) or float(ts) <= agora_ts:
+                continue
+            try:
+                prob = float(p["probabilidade"])
+                odd_minima = float(p["odd_minima"])
+                odd_justa = float(p["odd_justa"])
+                qualidade = int(p["qualidade"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            selecoes.append(
+                {
+                    "jogo": {
+                        "id": p.get("event_id"),
+                        "casa": p.get("casa") or "?",
+                        "fora": p.get("fora") or "?",
+                        "liga": p.get("liga") or "Competição",
+                        "timestamp": ts,
+                    },
+                    "mercado": p.get("mercado") or "Mercado desconhecido",
+                    "probabilidade": prob,
+                    "qualidade": qualidade,
+                    "odd_justa": odd_justa,
+                    "odd_minima": odd_minima,
+                }
+            )
+        return selecoes
+
+    def _executar_sync_valor(self):
+        """Atualiza estado comercial/CLV sem tocar na odd inicial nem no modelo."""
+        if not self.odds.configurada:
+            return (
+                "🔄 SYNC VALOR\n\n"
+                "Fonte de odds não configurada. Nenhum snapshot foi alterado."
+            )
+        selecoes = self._selecoes_futuras_para_mercado()
+        if not selecoes:
+            return (
+                "🔄 SYNC VALOR\n\n"
+                "Não existem previsões futuras para sincronizar hoje."
+            )
+        atuais = AuditoriaOdds(self.odds).enriquecer(selecoes)
+        resumo = self.previsoes.atualizar_estado_mercado(atuais)
+        estados = Counter(
+            str(p.get("valor_estado") or "sem_estado")
+            for p in self.previsoes.dados.get("previsoes", [])
+            if p.get("data_jogo") == datetime.now(TZ_PORTUGAL).strftime("%Y-%m-%d")
+            and p.get("estado") == "pendente"
+            and isinstance(p.get("timestamp_jogo"), (int, float))
+            and float(p.get("timestamp_jogo")) > datetime.now(TZ_PORTUGAL).timestamp()
+        )
+        return "\n".join(
+            [
+                "🔄 SYNC VALOR — CAMADA COMERCIAL",
+                f"• Odds atuais associadas: {resumo['alterados']}",
+                f"• Novos valores confirmados: {resumo['confirmados_novos']}",
+                f"• Picks que expiraram agora: {resumo['expirados_novos']}",
+                f"• Closing lines capturadas: {resumo['fechos_capturados']}",
+                "",
+                f"🟢 Confirmados: {estados.get('confirmado', 0)}",
+                f"⛔ Expirados: {estados.get('expirado', 0)}",
+                f"🔴 Sem valor: {estados.get('sem_valor', 0)}",
+                f"⚪ Sem odd: {estados.get('sem_odd', 0) + estados.get('sem_estado', 0)}",
+                "",
+                "🔒 Probabilidade, ranking, seleção e odd inicial congelada não foram alterados.",
+                "ℹ️ Este comando consulta a fonte de odds e pode consumir quota.",
+            ]
+        )
+
+    def _executar_carteira_shadow(self):
+        m = self.previsoes.metricas_carteira_valor()
+        linhas = [
+            "💼 CARTEIRA SHADOW — VALUE",
+            "🧪 Pré-oficial: não altera a V1.2 nem a SEL1.",
+            "Regra: 1u apenas quando a odd capturada atingiu a odd mínima.",
+            "",
+            f"Entradas elegíveis: {m['elegiveis']}",
+            f"Liquidadas: {m['liquidadas']} | Pendentes: {m['pendentes']}",
+        ]
+        if not m["liquidadas"]:
+            linhas.append("Ainda não há entradas liquidadas suficientes para ROI.")
+            return "\n".join(linhas)
+        sinal = "+" if m["lucro_unidades"] >= 0 else ""
+        sinal_roi = "+" if m["roi"] is not None and m["roi"] >= 0 else ""
+        linhas.extend(
+            [
+                f"✅ {m['ganhos']} | ❌ {m['perdas']}",
+                f"Resultado: {sinal}{m['lucro_unidades']:.2f}u".replace(".", ","),
+                f"ROI: {sinal_roi}{m['roi']*100:.1f}%".replace(".", ","),
+                f"Drawdown máximo: {m['max_drawdown']:.2f}u".replace(".", ","),
+                f"Maior sequência de perdas: {m['max_streak_perdas']}",
+                "",
+                "⚠️ É uma auditoria shadow; só passa a carteira oficial após validação pré-definida.",
+            ]
+        )
+        return "\n".join(linhas)
+
+    def _executar_clv(self):
+        m = self.previsoes.metricas_clv()
+        linhas = [
+            "📉 CLV — CLOSING LINE VALUE",
+            "Entrada = primeira odd com valor confirmado; fecho = última odd capturada até 30 min antes do jogo.",
+            "",
+            f"Amostras com entrada + fecho: {m['total']}",
+        ]
+        if not m["total"]:
+            linhas.extend(
+                [
+                    "Ainda não existem closing lines suficientes.",
+                    "Usa /sync_valor perto do início dos jogos para começar a recolha.",
+                ]
+            )
+            return "\n".join(linhas)
+        sinal = "+" if m["media"] >= 0 else ""
+        linhas.extend(
+            [
+                f"CLV médio: {sinal}{m['media']*100:.1f}%".replace(".", ","),
+                f"CLV positivo: {m['positivos']}/{m['total']} ({m['positivos']/m['total']*100:.1f}%)".replace(".", ","),
+                "",
+                "ℹ️ CLV positivo significa que a odd de entrada foi melhor que a odd capturada perto do fecho.",
+            ]
+        )
+        return "\n".join(linhas)
+
+    def _executar_integridade(self):
+        m = self.previsoes.verificar_integridade()
+        estado = "✅ SEM DIVERGÊNCIAS" if m["divergentes"] == 0 else "🚨 DIVERGÊNCIA DETETADA"
+        return "\n".join(
+            [
+                "🛡️ INTEGRIDADE DOS SNAPSHOTS",
+                f"Estado: {estado}",
+                f"Total histórico: {m['total']}",
+                f"Selados por hash: {m['protegidos']}",
+                f"Hashes válidos: {m['validos']}",
+                f"Divergentes: {m['divergentes']}",
+                f"Legados sem hash: {m['legados_sem_hash']}",
+                "",
+                "ℹ️ Apenas snapshots criados após esta função são selados; históricos anteriores não são retro-selados.",
+            ]
+        )
 
     @staticmethod
     def _formatar_instante_quota(valor):
@@ -489,6 +664,34 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Formato inválido. Usa /cliente_add USER_ID DIAS, "
                     "/cliente_del USER_ID ou /clientes."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando in {"/carteira", "/clv", "/integridade", "/sync_valor"}:
+            if not owner_admin:
+                return
+            try:
+                if comando == "/carteira":
+                    resposta = self._executar_carteira_shadow()
+                elif comando == "/clv":
+                    resposta = self._executar_clv()
+                elif comando == "/integridade":
+                    resposta = self._executar_integridade()
+                else:
+                    resposta = self._executar_sync_valor()
+            except (
+                requests.RequestException,
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                ArithmeticError,
+                OSError,
+            ):
+                resposta = (
+                    "Não foi possível gerar a auditoria comercial agora. "
+                    "A V1.2, a SEL1 e a odd inicial congelada não foram alteradas."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
