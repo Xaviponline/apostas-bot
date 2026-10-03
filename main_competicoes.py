@@ -352,6 +352,22 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             max_fallback_individual=8,
         )
         resumo = self.previsoes.atualizar_estado_mercado(atuais)
+        diagnosticos = Counter()
+        detalhes_diag = []
+        for s in atuais:
+            if s.get("odd_real") is not None:
+                continue
+            motivo = str(s.get("_odds_diag") or "odd_nao_associada")
+            diagnosticos[motivo] += 1
+            jogo = s.get("jogo") or {}
+            detalhes_diag.append(
+                (
+                    f"{jogo.get('casa') or '?'} vs {jogo.get('fora') or '?'}",
+                    str(s.get("mercado") or "Mercado"),
+                    motivo,
+                )
+            )
+
         estados = Counter(
             str(p.get("valor_estado") or "sem_estado")
             for p in self.previsoes.dados.get("previsoes", [])
@@ -360,23 +376,44 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             and isinstance(p.get("timestamp_jogo"), (int, float))
             and float(p.get("timestamp_jogo")) > datetime.now(TZ_PORTUGAL).timestamp()
         )
-        return "\n".join(
+        linhas = [
+            "🔄 SYNC VALOR — CAMADA COMERCIAL",
+            f"• Odds atuais associadas: {resumo['alterados']}",
+            f"• Novos valores confirmados: {resumo['confirmados_novos']}",
+            f"• Picks que expiraram agora: {resumo['expirados_novos']}",
+            f"• Closing lines capturadas: {resumo['fechos_capturados']}",
+            "",
+            f"🟢 Confirmados: {estados.get('confirmado', 0)}",
+            f"⛔ Expirados: {estados.get('expirado', 0)}",
+            f"🔴 Sem valor: {estados.get('sem_valor', 0)}",
+            f"⚪ Sem odd: {estados.get('sem_odd', 0) + estados.get('sem_estado', 0)}",
+        ]
+        if diagnosticos:
+            linhas.extend(["", "🔎 DIAGNÓSTICO DAS ODDS"])
+            nomes = {
+                "evento_nao_encontrado": "evento não encontrado na fonte",
+                "evento_ambiguo": "evento ambíguo",
+                "betano_sem_odds_no_evento": "Betano sem odds nesse fixture",
+                "odds_evento_sem_resposta": "fixture sem resposta de odds",
+                "linha_ou_selecao_nao_disponivel": "mercado/linha não disponível",
+                "odds_payload_evento_divergente": "payload do evento divergente",
+                "odd_nao_extraida": "odd não extraída",
+                "odds_quota_esgotada": "quota esgotada",
+            }
+            for motivo, total in diagnosticos.most_common():
+                linhas.append(f"• {total}× {nomes.get(motivo, motivo)}")
+            for jogo_nome, mercado, motivo in detalhes_diag[:8]:
+                linhas.append(
+                    f"  - {jogo_nome} | {mercado} → {nomes.get(motivo, motivo)}"
+                )
+        linhas.extend(
             [
-                "🔄 SYNC VALOR — CAMADA COMERCIAL",
-                f"• Odds atuais associadas: {resumo['alterados']}",
-                f"• Novos valores confirmados: {resumo['confirmados_novos']}",
-                f"• Picks que expiraram agora: {resumo['expirados_novos']}",
-                f"• Closing lines capturadas: {resumo['fechos_capturados']}",
-                "",
-                f"🟢 Confirmados: {estados.get('confirmado', 0)}",
-                f"⛔ Expirados: {estados.get('expirado', 0)}",
-                f"🔴 Sem valor: {estados.get('sem_valor', 0)}",
-                f"⚪ Sem odd: {estados.get('sem_odd', 0) + estados.get('sem_estado', 0)}",
                 "",
                 "🔒 Probabilidade, ranking, seleção e odd inicial congelada não foram alterados.",
                 "ℹ️ Este comando consulta a fonte de odds e pode consumir quota.",
             ]
         )
+        return "\n".join(linhas)
 
     def _executar_carteira_shadow(self):
         m = self.previsoes.metricas_carteira_valor()
