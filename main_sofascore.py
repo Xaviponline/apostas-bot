@@ -55,8 +55,8 @@ As apostas não são colocadas na Betano pelo bot.'''
 class BotPremiumReal:
     ODDS_AUTO_INTERVALO_SEG = 2 * 60 * 60
     ODDS_AUTO_JANELA_SEG = 4 * 60 * 60
-    CLV_AUTO_INTERVALO_SEG = 5 * 60
-    CLV_AUTO_JANELA_SEG = 10 * 60
+    CLV_AUTO_INTERVALO_SEG = 20 * 60
+    CLV_AUTO_JANELA_SEG = 30 * 60
     CLV_AUTO_MAX_FALLBACK = 4
     JOGOS_RETRY_VAZIO_SEG = 1.0
 
@@ -329,7 +329,7 @@ class BotPremiumReal:
         return fechos
 
     def _capturar_clv_se_devido(self):
-        """Tenta fecho automático só quando há entradas de valor a ≤10 min do jogo."""
+        """Tenta fecho automático a partir dos últimos 30 min do jogo."""
         agora = time.monotonic()
         if agora < self._proxima_captura_clv:
             return 0
