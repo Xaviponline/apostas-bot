@@ -135,6 +135,28 @@ class OddsAutoCaptureTests(unittest.TestCase):
             # Depois de existir fecho, deixa de voltar a consultar esta entrada.
             self.assertEqual(bot._capturar_clv_pendentes(), 0)
 
+    def test_clv_automatico_inicia_nos_ultimos_30_minutos(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            snapshot = self._snapshot(reg, inicio_seg=25 * 60)
+            snapshot["odd_real"] = 1.80
+            snapshot["valor_estado"] = "confirmado"
+            snapshot["odd_valor_confirmado"] = 1.80
+            bot = self._bot(reg)
+
+            self.assertEqual(len(bot._selecoes_clv_proximas()), 1)
+
+    def test_clv_automatico_ignora_jogo_a_mais_de_30_minutos(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            snapshot = self._snapshot(reg, inicio_seg=31 * 60)
+            snapshot["odd_real"] = 1.80
+            snapshot["valor_estado"] = "confirmado"
+            snapshot["odd_valor_confirmado"] = 1.80
+            bot = self._bot(reg)
+
+            self.assertEqual(bot._selecoes_clv_proximas(), [])
+
     def test_clv_automatico_ignora_previsao_sem_valor_confirmado(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
