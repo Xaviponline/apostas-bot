@@ -854,6 +854,7 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             f"• Desenvolvimento encerrado nos primeiros {self.V13_TOP5_START} snapshots V1.2.",
             "• A partir do snapshot #60, a Shadow aceita apenas ranking #1–5.",
             "• Probabilidade, mercado, threshold e ranking continuam exatamente os da V1.2.",
+            "• Resultados dos primeiros 59 servem apenas de racional; não contam no gate prospetivo.",
             "• O checkpoint de 25 foi encerrado sem promoção; o próximo e último gate pré-registado é aos 40 Top 5.",
             "• Não existe promoção entre checkpoints, mesmo que métricas intermédias melhorem.",
         ]
@@ -902,6 +903,8 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                     f"({m_rest_live['hit_rate']*100:.1f}%) | Brier {m_rest_live['brier']:.4f} | "
                     f"{self._calibracao_texto(m_rest_live)}"
                 )
+            else:
+                linhas.append("• Comparador #6–20: ainda sem previsões prospetivas liquidadas.")
             m_todos = self._metricas_grupo(futuro_liq)
             linhas.append(
                 f"• Todas V1.2 prospetivas: {m_todos['ganhos']}/{m_todos['total']} "
