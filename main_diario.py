@@ -30,7 +30,9 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
     V13_SHADOW_MIN_DIAS = 3
     V13_SHADOW_NOME = "V1.3-SHADOW-CAL1"
     V13_TOP5_START = 59
-    V13_TOP5_MIN_SELECOES = 25
+    V13_TOP5_CHECKPOINT_1 = 25
+    V13_TOP5_CHECKPOINT_1_FUTURO = 51
+    V13_TOP5_CHECKPOINT_2 = 40
     V13_TOP5_MIN_DIAS = 5
     V13_TOP5_NOME = "V1.3-SHADOW-SEL1-TOP5"
 
@@ -715,7 +717,7 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         return 1 <= ranking <= 5
 
     def relatorio_v13_shadow_top5(self):
-        """Experiência prospetiva de seleção: aceitar apenas ranks #1–5."""
+        """Experiência prospetiva de seleção com checkpoints fixos anti-optional-stopping."""
         v12 = [
             p
             for p in self.dados.get("previsoes", [])
@@ -736,13 +738,113 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
         futuro_pend = [
             p for p in futuro if p.get("resultado_binario") not in (0, 1)
         ]
-        top5 = [p for p in futuro_liq if self._ranking_top5(p)]
-        restantes = [p for p in futuro_liq if not self._ranking_top5(p)]
-        datas_top5 = {
+        top5_live = [p for p in futuro_liq if self._ranking_top5(p)]
+        restantes_live = [p for p in futuro_liq if not self._ranking_top5(p)]
+        datas_top5_live = {
             str(p.get("data_jogo") or "")
-            for p in top5
+            for p in top5_live
             if str(p.get("data_jogo") or "")
         }
+
+        def checkpoint_por_top5(alvo):
+            top5_snapshots = []
+            corte = None
+            for indice, previsao in enumerate(futuro):
+                if not self._ranking_top5(previsao):
+                    continue
+                top5_snapshots.append(previsao)
+                if len(top5_snapshots) == alvo:
+                    corte = indice
+                    break
+
+            if corte is None:
+                janela = list(futuro)
+                top5_amostra = list(top5_snapshots)
+            else:
+                janela = futuro[: corte + 1]
+                top5_amostra = top5_snapshots[:alvo]
+
+            restantes_amostra = [
+                p for p in janela if not self._ranking_top5(p)
+            ]
+            top5_liq = [
+                p for p in top5_amostra if p.get("resultado_binario") in (0, 1)
+            ]
+            top5_pend = [
+                p for p in top5_amostra if p.get("resultado_binario") not in (0, 1)
+            ]
+            restantes_liq = [
+                p
+                for p in restantes_amostra
+                if p.get("resultado_binario") in (0, 1)
+            ]
+            restantes_pend = [
+                p
+                for p in restantes_amostra
+                if p.get("resultado_binario") not in (0, 1)
+            ]
+            datas = {
+                str(p.get("data_jogo") or "")
+                for p in top5_amostra
+                if str(p.get("data_jogo") or "")
+            }
+            return {
+                "alvo": alvo,
+                "registradas_top5": len(top5_amostra),
+                "top5_liq": top5_liq,
+                "top5_pend": top5_pend,
+                "rest_liq": restantes_liq,
+                "rest_pend": restantes_pend,
+                "datas": datas,
+                "coorte_fechada": corte is not None,
+            }
+
+        def avaliar_checkpoint(cp):
+            m_top = (
+                self._metricas_grupo(cp["top5_liq"])
+                if cp["top5_liq"]
+                else None
+            )
+            m_rest = (
+                self._metricas_grupo(cp["rest_liq"])
+                if cp["rest_liq"]
+                else None
+            )
+            completo = (
+                cp["coorte_fechada"]
+                and len(cp["top5_liq"]) == cp["alvo"]
+                and not cp["top5_pend"]
+                and not cp["rest_pend"]
+            )
+            if not completo or not m_top or not m_rest:
+                return {
+                    "completo": completo,
+                    "m_top": m_top,
+                    "m_rest": m_rest,
+                    "dias_ok": False,
+                    "gap_ok": False,
+                    "acerto_ok": False,
+                    "brier_ok": False,
+                    "vantagem": None,
+                    "passa": False,
+                }
+
+            vantagem = m_top["hit_rate"] - m_rest["hit_rate"]
+            dias_ok = len(cp["datas"]) >= self.V13_TOP5_MIN_DIAS
+            gap_ok = abs(m_top["gap_calibracao"]) <= 0.08
+            acerto_ok = vantagem >= 0.05
+            brier_ok = m_top["brier"] < m_rest["brier"]
+            return {
+                "completo": True,
+                "m_top": m_top,
+                "m_rest": m_rest,
+                "dias_ok": dias_ok,
+                "gap_ok": gap_ok,
+                "acerto_ok": acerto_ok,
+                "brier_ok": brier_ok,
+                "vantagem": vantagem,
+                "passa": dias_ok and gap_ok and acerto_ok and brier_ok,
+            }
 
         linhas = [
             f"🎯 {self.V13_TOP5_NOME}",
@@ -752,7 +854,8 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
             f"• Desenvolvimento encerrado nos primeiros {self.V13_TOP5_START} snapshots V1.2.",
             "• A partir do snapshot #60, a Shadow aceita apenas ranking #1–5.",
             "• Probabilidade, mercado, threshold e ranking continuam exatamente os da V1.2.",
-            "• Resultados dos primeiros 59 servem apenas de racional; não contam no gate prospetivo.",
+            "• O checkpoint de 25 foi encerrado sem promoção; o próximo e último gate pré-registado é aos 40 Top 5.",
+            "• Não existe promoção entre checkpoints, mesmo que métricas intermédias melhorem.",
         ]
 
         if dev_top5 and dev_restantes:
@@ -780,100 +883,142 @@ class RegistoPrevisoesDiario(RegistoPrevisoes):
                 f"• Registadas: {len(futuro)}",
                 f"• Liquidadas: {len(futuro_liq)}",
                 f"• Pendentes: {len(futuro_pend)}",
-                f"• Top 5 liquidadas: {len(top5)}",
-                f"• Dias Top 5 representados: {len(datas_top5)}",
+                f"• Top 5 liquidadas: {len(top5_live)}",
+                f"• Dias Top 5 representados: {len(datas_top5_live)}",
             ]
         )
 
-        if not top5:
-            linhas.extend(
-                [
-                    "• Ainda não há Top 5 prospetivas liquidadas.",
-                    "",
-                    "🧭 GATE SEL1",
-                    f"• Top 5 OOS: 0/{self.V13_TOP5_MIN_SELECOES} ⏳",
-                    f"• Dias: 0/{self.V13_TOP5_MIN_DIAS} ⏳",
-                    "⏳ Continuar a recolher V1.2. Nenhuma regra é promovida automaticamente.",
-                    "🛡️ Esta Shadow não altera o que o bot publica ou guarda.",
-                ]
-            )
-            return "\n".join(linhas)
-
-        m_top5 = self._metricas_grupo(top5)
-        m_rest = self._metricas_grupo(restantes) if restantes else None
-        m_todos = self._metricas_grupo(futuro_liq) if futuro_liq else None
-
-        linhas.extend(
-            [
-                f"• Top 5: {m_top5['ganhos']}/{m_top5['total']} "
-                f"({m_top5['hit_rate']*100:.1f}%) | Brier {m_top5['brier']:.4f} | "
-                f"{self._calibracao_texto(m_top5)}",
-            ]
-        )
-        if m_rest:
+        if top5_live:
+            m_top_live = self._metricas_grupo(top5_live)
             linhas.append(
-                f"• #6–20: {m_rest['ganhos']}/{m_rest['total']} "
-                f"({m_rest['hit_rate']*100:.1f}%) | Brier {m_rest['brier']:.4f} | "
-                f"{self._calibracao_texto(m_rest)}"
+                f"• Top 5 live: {m_top_live['ganhos']}/{m_top_live['total']} "
+                f"({m_top_live['hit_rate']*100:.1f}%) | Brier {m_top_live['brier']:.4f} | "
+                f"{self._calibracao_texto(m_top_live)}"
             )
-        if m_todos:
+            if restantes_live:
+                m_rest_live = self._metricas_grupo(restantes_live)
+                linhas.append(
+                    f"• #6–20 live: {m_rest_live['ganhos']}/{m_rest_live['total']} "
+                    f"({m_rest_live['hit_rate']*100:.1f}%) | Brier {m_rest_live['brier']:.4f} | "
+                    f"{self._calibracao_texto(m_rest_live)}"
+                )
+            m_todos = self._metricas_grupo(futuro_liq)
             linhas.append(
                 f"• Todas V1.2 prospetivas: {m_todos['ganhos']}/{m_todos['total']} "
                 f"({m_todos['hit_rate']*100:.1f}%) | Brier {m_todos['brier']:.4f}"
             )
-
-        n_ok = len(top5) >= self.V13_TOP5_MIN_SELECOES
-        dias_ok = len(datas_top5) >= self.V13_TOP5_MIN_DIAS
-        gap_ok = abs(m_top5["gap_calibracao"]) <= 0.08
-        comparador_disponivel = bool(m_rest)
-        if comparador_disponivel:
-            vantagem_acerto = m_top5["hit_rate"] - m_rest["hit_rate"]
-            acerto_ok = vantagem_acerto >= 0.05
-            brier_ok = m_top5["brier"] < m_rest["brier"]
-            acerto_estado = "✅" if acerto_ok else "❌"
-            brier_estado = "✅" if brier_ok else "❌"
         else:
-            vantagem_acerto = None
-            acerto_ok = False
-            brier_ok = False
-            acerto_estado = "⏳"
-            brier_estado = "⏳"
+            linhas.append("• Ainda não há Top 5 prospetivas liquidadas.")
 
-        linhas.extend(["", "🧭 GATE SEL1"])
+        # O checkpoint 25 fica congelado no exato universo prospetivo existente
+        # quando foi avaliado: os primeiros 51 snapshots após o desenvolvimento.
+        cp25_janela = futuro[: self.V13_TOP5_CHECKPOINT_1_FUTURO]
+        cp25_top = [
+            p
+            for p in cp25_janela
+            if self._ranking_top5(p) and p.get("resultado_binario") in (0, 1)
+        ]
+        cp25_rest = [
+            p
+            for p in cp25_janela
+            if not self._ranking_top5(p) and p.get("resultado_binario") in (0, 1)
+        ]
+        cp25_pend = [
+            p for p in cp25_janela if p.get("resultado_binario") not in (0, 1)
+        ]
+
+        linhas.extend(["", "🔐 CHECKPOINT 25 — ENCERRADO"])
+        if (
+            len(futuro) >= self.V13_TOP5_CHECKPOINT_1_FUTURO
+            and len(cp25_top) == self.V13_TOP5_CHECKPOINT_1
+            and not cp25_pend
+            and cp25_rest
+        ):
+            m25_top = self._metricas_grupo(cp25_top)
+            m25_rest = self._metricas_grupo(cp25_rest)
+            vantagem25 = m25_top["hit_rate"] - m25_rest["hit_rate"]
+            gap25 = abs(m25_top["gap_calibracao"]) <= 0.08
+            acerto25 = vantagem25 >= 0.05
+            brier25 = m25_top["brier"] < m25_rest["brier"]
+            dias25 = len(
+                {
+                    str(p.get("data_jogo") or "")
+                    for p in cp25_top
+                    if str(p.get("data_jogo") or "")
+                }
+            ) >= self.V13_TOP5_MIN_DIAS
+            passou25 = gap25 and acerto25 and brier25 and dias25
+            linhas.extend(
+                [
+                    f"• Top 5: {m25_top['ganhos']}/{m25_top['total']} "
+                    f"({m25_top['hit_rate']*100:.1f}%) | Brier {m25_top['brier']:.4f} | "
+                    f"{self._calibracao_texto(m25_top)}",
+                    f"• #6–20: {m25_rest['ganhos']}/{m25_rest['total']} "
+                    f"({m25_rest['hit_rate']*100:.1f}%) | Brier {m25_rest['brier']:.4f}",
+                    f"• Calibração ≤8pp: {'✅' if gap25 else '❌'}",
+                    f"• Vantagem ≥5pp: {'✅' if acerto25 else '❌'}",
+                    f"• Brier melhor: {'✅' if brier25 else '❌'}",
+                    (
+                        "• Estado: ✅ passou o checkpoint histórico, mas a decisão foi congelada para o novo gate fixo de 40."
+                        if passou25
+                        else "• Estado: ❌ NÃO PROMOVIDA no checkpoint 25."
+                    ),
+                ]
+            )
+        else:
+            linhas.append("• Aguardando dados suficientes para reconstruir o checkpoint 25.")
+
+        cp40 = checkpoint_por_top5(self.V13_TOP5_CHECKPOINT_2)
+        ev40 = avaliar_checkpoint(cp40)
         linhas.extend(
             [
-                f"• Top 5 OOS: {len(top5)}/{self.V13_TOP5_MIN_SELECOES} "
-                f"{'✅' if n_ok else '⏳'}",
-                f"• Dias: {len(datas_top5)}/{self.V13_TOP5_MIN_DIAS} "
-                f"{'✅' if dias_ok else '⏳'}",
-                f"• |Gap calibração| ≤8pp: {'✅' if gap_ok else '❌'}",
-                f"• Hit rate ≥5pp acima de #6–20: {acerto_estado}",
-                f"• Brier melhor que #6–20: {brier_estado}",
+                "",
+                "🧭 PRÓXIMO GATE SEL1 — CHECKPOINT FIXO 40",
+                f"• Top 5 do checkpoint: {len(cp40['top5_liq'])}/{self.V13_TOP5_CHECKPOINT_2} "
+                f"{'✅' if ev40['completo'] else '⏳'}",
+                f"• Dias mínimos: {len(cp40['datas'])}/{self.V13_TOP5_MIN_DIAS} "
+                f"{'✅' if ev40['completo'] and ev40['dias_ok'] else '⏳'}",
             ]
         )
-        if not comparador_disponivel:
-            linhas.append("• Comparador #6–20: ainda sem previsões prospetivas liquidadas.")
-        if vantagem_acerto is not None:
-            linhas.append(
-                f"• Diferença de acerto Top 5 vs #6–20: "
-                f"{vantagem_acerto*100:+.1f}pp"
-            )
 
-        pronta = n_ok and dias_ok and gap_ok and acerto_ok and brier_ok
-        if pronta:
+        if not ev40["completo"]:
+            linhas.extend(
+                [
+                    "• |Gap calibração| ≤8pp: ⏳",
+                    "• Hit rate ≥5pp acima de #6–20: ⏳",
+                    "• Brier melhor que #6–20: ⏳",
+                    "⏳ Sem decisão antes das 40 Top 5. Continuar a recolha sem mexer na V1.2.",
+                    "🛡️ Métricas live são apenas acompanhamento; não podem disparar promoção.",
+                ]
+            )
+            return "\n".join(linhas)
+
+        m40_top = ev40["m_top"]
+        m40_rest = ev40["m_rest"]
+        linhas.extend(
+            [
+                f"• Top 5 checkpoint: {m40_top['ganhos']}/{m40_top['total']} "
+                f"({m40_top['hit_rate']*100:.1f}%) | Brier {m40_top['brier']:.4f} | "
+                f"{self._calibracao_texto(m40_top)}",
+                f"• #6–20 checkpoint: {m40_rest['ganhos']}/{m40_rest['total']} "
+                f"({m40_rest['hit_rate']*100:.1f}%) | Brier {m40_rest['brier']:.4f} | "
+                f"{self._calibracao_texto(m40_rest)}",
+                f"• |Gap calibração| ≤8pp: {'✅' if ev40['gap_ok'] else '❌'}",
+                f"• Hit rate ≥5pp acima de #6–20: {'✅' if ev40['acerto_ok'] else '❌'}",
+                f"• Brier melhor que #6–20: {'✅' if ev40['brier_ok'] else '❌'}",
+                f"• Diferença de acerto: {ev40['vantagem']*100:+.1f}pp",
+            ]
+        )
+        if ev40["passa"]:
             linhas.append(
-                "✅ Gate mínimo atingido: SEL1 pode ir a auditoria para possível "
-                "inclusão numa V1.3. Não é promovida automaticamente."
+                "✅ CHECKPOINT 40 PASSOU — SEL1 pode ir a auditoria final para possível inclusão numa V1.3; nunca é promovida automaticamente."
             )
         else:
             linhas.append(
-                "⏳ Ainda não promover. Continuar a recolha prospetiva sem mexer na V1.2."
+                "❌ CHECKPOINT 40 FALHOU — SEL1 fica rejeitada para promoção. Resultados posteriores não reabrem este gate."
             )
-        linhas.extend(
-            [
-                "🛡️ O teste começou no snapshot #60; nenhum resultado anterior entra no gate.",
-                "🧠 Se SEL1 falhar, descartamos a hipótese Top 5 sem contaminar a V1.2.",
-            ]
+        linhas.append(
+            "🛡️ O checkpoint usa uma coorte fixa determinada pela posição do 40.º Top 5; não há optional stopping."
         )
         return "\n".join(linhas)
 
