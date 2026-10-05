@@ -455,7 +455,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             linhas.extend(
                 [
                     "Ainda não existem closing lines suficientes.",
-                    "Usa /sync_valor perto do início dos jogos para começar a recolha.",
+                    "A captura automática tenta recolher a odd de fecho nos últimos 30 minutos antes do jogo.",
+                    "O /sync_valor fica apenas como opção manual de auditoria.",
                 ]
             )
             return "\n".join(linhas)
