@@ -439,15 +439,82 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 f"Maior sequência de perdas: {m['max_streak_perdas']}",
                 "",
                 "⚠️ É uma auditoria shadow; só passa a carteira oficial após validação pré-definida.",
+                "📋 Usa /carteira_detalhe para auditar cada entrada (sem gastar quota).",
             ]
         )
+        return "\n".join(linhas)
+
+    def _executar_carteira_detalhe(self, argumentos=""):
+        """Livro de entradas VALUE, paginado, sem consultas externas nem mutações."""
+        argumentos = str(argumentos or "").strip()
+        if argumentos:
+            partes = argumentos.split()
+            if len(partes) != 1:
+                return "Formato: /carteira_detalhe [PÁGINA]. Exemplo: /carteira_detalhe 2"
+            try:
+                pagina = int(partes[0])
+            except ValueError:
+                return "Formato: /carteira_detalhe [PÁGINA]. Exemplo: /carteira_detalhe 2"
+        else:
+            pagina = 1
+        if pagina < 1:
+            return "A página tem de ser 1 ou superior. Exemplo: /carteira_detalhe 1"
+
+        entradas = self.previsoes.entradas_carteira_valor()
+        if not entradas:
+            return "📋 CARTEIRA VALUE — DETALHE\n\nAinda não existem entradas elegíveis."
+        tamanho = 8
+        paginas = (len(entradas) + tamanho - 1) // tamanho
+        if pagina > paginas:
+            return f"Só existem {paginas} página(s). Usa /carteira_detalhe {paginas}."
+
+        linhas = [
+            "📋 CARTEIRA VALUE — DETALHE",
+            f"Entradas: {len(entradas)} | Página {pagina}/{paginas}",
+            "🔒 Apenas leitura • odds congeladas preservadas",
+            "",
+        ]
+        for item in entradas[(pagina - 1) * tamanho:pagina * tamanho]:
+            data = item["data_jogo"]
+            data_legivel = f"{data[8:10]}/{data[5:7]}" if len(data) == 10 else (data or "?")
+            rank = item["ranking_modelo"]
+            rank_txt = f"#{rank}" if rank not in (None, "") else "—"
+            fecho = item["odd_fecho"]
+            minima = item["odd_minima"]
+            linhas.append(
+                f"⚽ {data_legivel} — {item['casa']} vs {item['fora']}"
+            )
+            linhas.append(f"  {item['mercado']} | Ranking {rank_txt}")
+            texto_odds = f"  Entrada {item['odd_entrada']:.2f}"
+            if minima is not None:
+                texto_odds += f" | Mín. {minima:.2f}"
+            texto_odds += f" | Fecho {fecho:.2f}" if fecho is not None else " | Fecho —"
+            linhas.append(texto_odds.replace(".", ","))
+            resultado = item["resultado_binario"]
+            if resultado == 1:
+                estado = "✅ GANHOU"
+            elif resultado == 0:
+                estado = "❌ PERDEU"
+            else:
+                estado = "⏳ PENDENTE"
+            pnl = item["lucro_unidades"]
+            texto_final = f"  {estado}"
+            if pnl is not None:
+                texto_final += f" | P/L {pnl:+.2f}u"
+            clv = item["clv"]
+            texto_final += f" | CLV {clv*100:+.1f}%" if clv is not None else " | CLV sem fecho"
+            linhas.extend([texto_final.replace(".", ","), ""])
+
+        linhas.append("ℹ️ CLV usa a odd efetivamente capturada perto do início; sem fecho não há CLV.")
+        if pagina < paginas:
+            linhas.append(f"➡️ Página seguinte: /carteira_detalhe {pagina+1}")
         return "\n".join(linhas)
 
     def _executar_clv(self):
         m = self.previsoes.metricas_clv()
         linhas = [
             "📉 CLV — CLOSING LINE VALUE",
-            "Entrada = primeira odd com valor confirmado; fecho = última odd capturada até 30 min antes do jogo.",
+            "Entrada = primeira odd com valor confirmado; fecho = odd capturada nos 30 min anteriores ao jogo.",
             "",
             f"Amostras com entrada + fecho: {m['total']}",
         ]
@@ -469,6 +536,25 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 "ℹ️ CLV positivo significa que a odd de entrada foi melhor que a odd capturada perto do fecho.",
             ]
         )
+        amostras = [
+            p for p in self.previsoes.entradas_carteira_valor()
+            if p["clv"] is not None
+        ]
+        if amostras:
+            linhas.extend(["", "📋 FECHOS INDIVIDUAIS (mais recentes)"])
+            for p in amostras[:6]:
+                data = p["data_jogo"]
+                data_legivel = f"{data[8:10]}/{data[5:7]}" if len(data) == 10 else (data or "?")
+                linhas.append(
+                    f"• {data_legivel} {p['casa']} vs {p['fora']} | {p['mercado']}"
+                )
+                linhas.append(
+                    (f"  {p['odd_entrada']:.2f} → {p['odd_fecho']:.2f}"
+                     f" | CLV {p['clv']*100:+.1f}%").replace(".", ",")
+                )
+            if len(amostras) > 6:
+                linhas.append(f"• Mais {len(amostras)-6} amostra(s): ver /carteira_detalhe.")
+        linhas.append("📋 Todas as entradas VALUE: /carteira_detalhe")
         return "\n".join(linhas)
 
     def _executar_integridade(self):
@@ -710,12 +796,14 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self.enviar_mensagem(chat_id, resposta)
             return
 
-        if comando in {"/carteira", "/clv", "/integridade", "/sync_valor"}:
+        if comando in {"/carteira", "/carteira_detalhe", "/clv", "/integridade", "/sync_valor"}:
             if not owner_admin:
                 return
             try:
                 if comando == "/carteira":
                     resposta = self._executar_carteira_shadow()
+                elif comando == "/carteira_detalhe":
+                    resposta = self._executar_carteira_detalhe(argumentos)
                 elif comando == "/clv":
                     resposta = self._executar_clv()
                 elif comando == "/integridade":
