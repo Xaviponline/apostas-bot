@@ -487,7 +487,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             linhas.append(f"  {item['mercado']} | Ranking {rank_txt}")
             texto_odds = f"  Entrada {item['odd_entrada']:.2f}"
             if minima is not None:
-                texto_odds += f" | Mín. {minima:.2f}"
+                texto_odds += f" | Mín {minima:.2f}"
             texto_odds += f" | Fecho {fecho:.2f}" if fecho is not None else " | Fecho —"
             linhas.append(texto_odds.replace(".", ","))
             resultado = item["resultado_binario"]

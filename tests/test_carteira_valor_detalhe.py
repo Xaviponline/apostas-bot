@@ -90,7 +90,7 @@ class CarteiraDetalheTests(unittest.TestCase):
             clv = bot._executar_clv()
 
             self.assertIn("CARTEIRA VALUE — DETALHE", detalhe)
-            self.assertIn("Entrada 1,80 | Mín. 1,75 | Fecho 1,70", detalhe)
+            self.assertIn("Entrada 1,80 | Mín 1,75 | Fecho 1,70", detalhe)
             self.assertIn("GANHOU | P/L +0,80u | CLV +5,9%", detalhe)
             self.assertIn("PERDEU | P/L -1,00u | CLV sem fecho", detalhe)
             self.assertIn("FECHOS INDIVIDUAIS", clv)
