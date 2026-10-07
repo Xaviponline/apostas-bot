@@ -338,6 +338,52 @@ class RegistoPrevisoes:
             "positivos": sum(1 for valor in amostras if valor > 0),
         }
 
+    def entradas_carteira_valor(self, modelo_versao="V1.2"):
+        """Detalhe auditável e apenas de leitura das mesmas entradas da carteira.
+
+        Não consulta odds, não reescreve snapshots e não infere fechos em falta.
+        """
+        entradas = []
+        for p in self.dados.get("previsoes", []):
+            if modelo_versao and str(p.get("modelo_versao") or "") != modelo_versao:
+                continue
+            odd_entrada = self._odd_entrada_valor(p)
+            if odd_entrada is None:
+                continue
+
+            odd_fecho = self._odd_real_valida(p.get("odd_fecho"))
+            resultado = p.get("resultado_binario")
+            liquidada = resultado in (0, 1)
+            pnl = (
+                (odd_entrada - 1.0) if int(resultado) == 1 else -1.0
+            ) if liquidada else None
+
+            entradas.append({
+                "chave": str(p.get("chave") or ""),
+                "data_jogo": str(p.get("data_jogo") or ""),
+                "timestamp_jogo": p.get("timestamp_jogo"),
+                "casa": str(p.get("casa") or "?"),
+                "fora": str(p.get("fora") or "?"),
+                "mercado": str(p.get("mercado") or "?"),
+                "ranking_modelo": p.get("ranking_modelo"),
+                "odd_minima": self._odd_real_valida(p.get("odd_minima")),
+                "odd_entrada": odd_entrada,
+                "odd_fecho": odd_fecho,
+                "clv": (odd_entrada / odd_fecho - 1.0) if odd_fecho else None,
+                "resultado_binario": resultado if liquidada else None,
+                "lucro_unidades": pnl,
+                "fecho_capturado_em": p.get("odd_fecho_capturada_em"),
+            })
+
+        entradas.sort(
+            key=lambda p: (
+                float(p["timestamp_jogo"] or 0),
+                p["chave"],
+            ),
+            reverse=True,
+        )
+        return entradas
+
     @classmethod
     def _snapshot_diagnostico(cls, selecao):
         """Congela inputs já calculados pelo modelo para auditoria futura.
