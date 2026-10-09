@@ -105,6 +105,29 @@ class LabFake:
                         }
                     },
                 },
+                "drift_segmentado": {
+                    "estado": "DESCRITIVO", "n": 40,
+                    "resumo": {
+                        "base": {"n": 24, "snapshot_min": 1, "snapshot_max": 24,
+                                 "metricas": {"brier": 0.24, "gap_pp": -3.1}},
+                        "recente": {"n": 16, "snapshot_min": 25, "snapshot_max": 40,
+                                    "metricas": {"brier": 0.25, "gap_pp": -2.1}},
+                        "bootstrap_brier": {"delta_brier": 0.01, "ci95_low": -0.02,
+                                            "ci95_high": 0.03, "dias_base": 5, "dias_recente": 4},
+                    },
+                    "por_mercado": {
+                        "n_segmentos_elegiveis": 1,
+                        "base_coberta_pct": 50, "recente_coberta_pct": 70,
+                        "brier_mix_base": {"base": 0.24, "recente": 0.25, "delta": 0.01},
+                        "segmentos": [{"segmento": "Under 3.5 Golos", "base_n": 12, "recente_n": 11,
+                                       "brier_base": 0.24, "brier_recente": 0.25,
+                                       "features": {"lambda_total": {"delta_media": -0.4}}}],
+                    },
+                    "por_liga": {"n_segmentos_elegiveis": 0, "base_coberta_pct": 0,
+                                 "recente_coberta_pct": 0, "brier_mix_base": None, "segmentos": []},
+                    "por_liga_mercado": {"n_segmentos_elegiveis": 0, "base_coberta_pct": 0,
+                                        "recente_coberta_pct": 0, "brier_mix_base": None, "segmentos": []},
+                },
                 "mlflow": {"logged": True, "run_id": "1234567890abcdef"},
             },
         }
@@ -143,6 +166,7 @@ class ResearchExportTests(unittest.TestCase):
         export = bot._executar_lab_export()
         status = bot._executar_lab_status()
         drift = bot._executar_lab_drift()
+        segmentado = bot._executar_lab_drift_segmentado()
         top5 = bot._executar_lab_top5()
 
         self.assertIn("ACEITE", export)
@@ -150,11 +174,31 @@ class ResearchExportTests(unittest.TestCase):
         self.assertIn("platt_calibration_v1", status)
         self.assertIn("MLflow", status)
         self.assertIn("DRIFT DETALHADO", drift)
+        self.assertIn("DRIFT SEGMENTADO", segmentado)
+        self.assertIn("Under 3.5 Golos", segmentado)
+        self.assertIn("Mix-base", segmentado.replace("mix-base", "Mix-base"))
         self.assertIn("Lambda total", drift)
         self.assertIn("Under 3.5 Golos", drift)
         self.assertIn("TOP5 OOS", top5)
         self.assertIn("melhoria consistente", top5)
         self.assertEqual(bot.previsoes.dados, antes)
+
+
+    def test_drift_segmentado_so_owner_admin(self):
+        bot = BotPremiumDiarioCompeticoes.__new__(BotPremiumDiarioCompeticoes)
+        bot.owner_id = 999
+        bot.chat_id = -100
+        bot.username = "TesteBot"
+        bot.previsoes = PrevisoesFake()
+        bot.research_lab = LabFake()
+        mensagens = []
+        bot.enviar_mensagem = lambda chat_id, texto: mensagens.append((chat_id, texto))
+
+        bot.processar_comando(-100, "/lab_drift_segmentado", user_id=998)
+        self.assertEqual(mensagens, [])
+        bot.processar_comando(-100, "/lab_drift_segmentado", user_id=999)
+        self.assertEqual(len(mensagens), 1)
+        self.assertIn("DRIFT SEGMENTADO", mensagens[0][1])
 
 
 if __name__ == "__main__":
