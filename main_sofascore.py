@@ -59,6 +59,7 @@ class BotPremiumReal:
     CLV_AUTO_INTERVALO_SEG = 20 * 60
     CLV_AUTO_JANELA_SEG = 30 * 60
     CLV_AUTO_MAX_FALLBACK = 4
+    ODDS_AUTO_MAX_FALLBACK = 5
     JOGOS_RETRY_VAZIO_SEG = 1.0
 
     def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None, analisador=None, previsoes=None):
@@ -236,8 +237,15 @@ class BotPremiumReal:
                     'qualidade': qualidade,
                     'odd_justa': odd_justa,
                     'odd_minima': odd_minima,
+                    'ranking_modelo': p.get('ranking_modelo'),
                 }
             )
+        selecoes.sort(
+            key=lambda s: (
+                int(s.get('ranking_modelo') or 999),
+                float((s.get('jogo') or {}).get('timestamp') or 0),
+            )
+        )
         return selecoes
 
     def _capturar_odds_pendentes(self):
@@ -251,7 +259,11 @@ class BotPremiumReal:
             for p in self.previsoes.dados.get('previsoes', [])
             if self.previsoes._odd_real_valida(p.get('odd_real')) is not None
         )
-        enriquecidas = AuditoriaOdds(self.odds).enriquecer(selecoes)
+        enriquecidas = AuditoriaOdds(self.odds).enriquecer(
+            selecoes,
+            fallback_individual_ausentes=True,
+            max_fallback_individual=self.ODDS_AUTO_MAX_FALLBACK,
+        )
         self.previsoes.registar(enriquecidas)
         depois = sum(
             1
