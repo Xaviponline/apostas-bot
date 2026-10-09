@@ -107,6 +107,20 @@ class ResearchLabCoreTests(unittest.TestCase):
         self.assertEqual(report["champion"]["total"]["n"], 90)
         self.assertEqual(report["challengers"]["platt_calibration_v1"]["oos_n"], 30)
         self.assertEqual(report["challengers"]["meta_logit_v1"]["oos_n"], 40)
+        self.assertGreater(
+            report["challengers"]["platt_calibration_v1"]["top5_oos_n"],
+            0,
+        )
+        self.assertIn(
+            "top5_bootstrap_delta_brier",
+            report["challengers"]["platt_calibration_v1"],
+        )
+        self.assertIn("numeric_details", report["drift"])
+        self.assertIn("lambda_total", report["drift"]["numeric_details"])
+        self.assertIn("categorical", report["drift"])
+        self.assertIn("mercado", report["drift"]["categorical"])
+        self.assertIn("base", report["drift"])
+        self.assertIn("recente", report["drift"])
         self.assertFalse(report["governance"]["auto_promotion"])
         self.assertTrue(report["governance"]["walk_forward_only"])
         self.assertTrue(report["mlflow"]["logged"])
