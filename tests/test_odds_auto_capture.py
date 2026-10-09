@@ -1,6 +1,7 @@
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from main_sofascore import BotPremiumReal
@@ -242,6 +243,76 @@ class OddsAutoCaptureTests(unittest.TestCase):
 
             self.assertEqual(bot._capturar_odds_pendentes(), 0)
             self.assertNotIn("odd_real", snapshot)
+
+
+    def test_clv_tardio_captura_separada_sem_mudar_odd_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            snapshot = self._snapshot(reg, inicio_seg=8 * 60)
+            bot = self._bot(reg)
+            self.assertEqual(bot._capturar_odds_pendentes(), 1)
+            self.assertEqual(bot._capturar_clv_pendentes(), 1)
+            hash_antes = snapshot["snapshot_hash"]
+
+            # Uma segunda consulta pode encontrar um preço diferente.
+            atual = [{
+                "jogo": {"id": 900},
+                "mercado": "Vitória Casa",
+                "odd_real": 1.65,
+            }]
+            self.assertEqual(reg.registar_fecho_tardio(atual), 1)
+            self.assertEqual(snapshot["odd_fecho_tardio"], 1.65)
+            self.assertAlmostEqual(snapshot["clv_odds_tardio"], 1.80 / 1.65 - 1, places=6)
+            self.assertEqual(snapshot["odd_fecho"], 1.80)
+            self.assertEqual(snapshot["odd_real"], 1.80)
+            self.assertEqual(snapshot["odd_valor_confirmado"], 1.80)
+            self.assertEqual(snapshot["snapshot_hash"], hash_antes)
+            self.assertEqual(reg.verificar_integridade()["divergentes"], 0)
+            self.assertEqual(reg.metricas_clv()["media"], 0)
+            self.assertGreater(reg.metricas_clv_tardio()["media"], 0)
+            self.assertEqual(reg.registar_fecho_tardio(atual), 0)
+
+    def test_clv_tardio_nao_captura_antes_da_janela_ou_apos_inicio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            snapshot = self._snapshot(reg, inicio_seg=12 * 60)
+            snapshot["odd_real"] = 1.80
+            snapshot["odd_valor_confirmado"] = 1.80
+            snapshot["odd_fecho"] = 1.80
+            bot = self._bot(reg)
+            self.assertEqual(bot._selecoes_clv_proximas(tardio=True), [])
+            selecao = [{"jogo": {"id": 900}, "mercado": "Vitória Casa", "odd_real": 1.70}]
+            self.assertEqual(reg.registar_fecho_tardio(selecao), 0)
+            depois_inicio = datetime.now(timezone.utc) + timedelta(minutes=13)
+            self.assertEqual(reg.registar_fecho_tardio(selecao, agora=depois_inicio), 0)
+            self.assertNotIn("odd_fecho_tardio", snapshot)
+
+    def test_clv_tardio_automatico_recolhe_apenas_apos_primeiro_fecho(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            snapshot = self._snapshot(reg, inicio_seg=8 * 60)
+            bot = self._bot(reg)
+            self.assertEqual(bot._selecoes_clv_proximas(tardio=True), [])
+            self.assertEqual(bot._capturar_odds_pendentes(), 1)
+            self.assertEqual(bot._capturar_clv_pendentes(), 1)
+            self.assertEqual(len(bot._selecoes_clv_proximas(tardio=True)), 1)
+            self.assertEqual(bot._capturar_clv_tardio_se_devido(), 1)
+            self.assertEqual(snapshot["odd_fecho_tardio"], 1.80)
+            self.assertEqual(bot._capturar_clv_tardio_se_devido(), 0)
+
+    def test_clv_tardio_respeita_quota_esgotada(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            snapshot = self._snapshot(reg, inicio_seg=8 * 60)
+            snapshot["odd_real"] = 1.80
+            snapshot["odd_valor_confirmado"] = 1.80
+            snapshot["odd_fecho"] = 1.80
+            bot = BotPremiumReal(
+                token="teste", gestor=GestorFake(), owner_id=1, chat_id=1,
+                buscador=object(), odds=OddsQuotaFake(), analisador=object(), previsoes=reg,
+            )
+            self.assertEqual(bot._capturar_clv_tardio_se_devido(), 0)
+            self.assertNotIn("odd_fecho_tardio", snapshot)
 
 
 if __name__ == "__main__":
