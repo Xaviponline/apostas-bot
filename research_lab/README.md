@@ -35,3 +35,16 @@ MLflow adicional e reduzindo consumo de memória/custo no Railway.
 
 Nenhum destes serviços recebe ficheiros de acessos Premium, tokens Telegram ou
 outros dados de clientes.
+
+## Drift segmentado (apenas leitura)
+
+O relatório `drift_segmentado` utiliza a mesma coorte liquidada com telemetria e o
+mesmo corte temporal **60% referência / 40% recente** do diagnóstico PSI. Compara
+mercado, liga e a interseção mercado+liga sem alterar regras de seleção.
+Só inclui grupos com **pelo menos 8 previsões em cada período**, mostrando
+quantos registos ficam abrangidos. Repondera o Brier para a composição dos
+grupos elegíveis no período base; os segmentos sem suporte comum ficam de fora.
+O Brier bruto inclui um IC95 por bootstrap de dia em cada período. São resultados
+exploratórios, não causais, e **nunca** promovem modelos. O comando Telegram
+admin-only `/lab_drift_segmentado` apenas lê o relatório já guardado; depois
+de um deploy é necessário executar `/lab_export` para atualizar o relatório.
