@@ -277,6 +277,47 @@ class RegistoPrevisoes:
             "fechos_capturados": fechos,
         }
 
+    def registar_fecho_tardio(self, selecoes, agora=None):
+        """Auditoria T-10m: acrescenta uma segunda cotação, sem modificar o CLV oficial.
+
+        A odd inicial, o fecho original e o gate comercial V1.3 ficam intactos.
+        Não cria uma entrada VALUE e nunca preenche fechos históricos.
+        """
+        agora_dt = agora or datetime.now(timezone.utc)
+        if agora_dt.tzinfo is None:
+            agora_dt = agora_dt.replace(tzinfo=timezone.utc)
+        agora_ts = agora_dt.timestamp()
+        agora_iso = agora_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        existentes = {
+            self._chave(p.get("event_id"), p.get("mercado")): p
+            for p in self.dados.get("previsoes", [])
+        }
+        capturados = 0
+        for s in selecoes or []:
+            jogo = s.get("jogo") or {}
+            p = existentes.get(self._chave(jogo.get("id"), s.get("mercado")))
+            if not p or p.get("estado") != "pendente":
+                continue
+            if self._odd_entrada_valor(p) is None:
+                continue
+            if self._odd_real_valida(p.get("odd_fecho")) is None:
+                continue
+            if self._odd_real_valida(p.get("odd_fecho_tardio")) is not None:
+                continue
+            ts = p.get("timestamp_jogo")
+            if not isinstance(ts, (int, float)) or not 0 < float(ts) - agora_ts <= 10 * 60:
+                continue
+            cotacao = self._odd_real_valida(s.get("odd_real"))
+            if cotacao is None:
+                continue
+            p["odd_fecho_tardio"] = round(cotacao, 4)
+            p["odd_fecho_tardio_capturada_em"] = agora_iso
+            p["clv_odds_tardio"] = round(self._odd_entrada_valor(p) / cotacao - 1, 6)
+            capturados += 1
+        if capturados:
+            self._guardar()
+        return capturados
+
     def metricas_carteira_valor(self, modelo_versao="V1.2"):
         """Carteira shadow: 1u apenas quando a odd atingiu a odd mínima."""
         elegiveis = []
@@ -344,6 +385,22 @@ class RegistoPrevisoes:
             "positivos": sum(1 for valor in amostras if valor > 0),
         }
 
+    def metricas_clv_tardio(self, modelo_versao="V1.2"):
+        """Métrica exploratória separada: não altera o CLV pré-registado da V1.3."""
+        amostras = []
+        for p in self.dados.get("previsoes", []):
+            if modelo_versao and str(p.get("modelo_versao") or "") != modelo_versao:
+                continue
+            entrada = self._odd_entrada_valor(p)
+            fecho = self._odd_real_valida(p.get("odd_fecho_tardio"))
+            if entrada is not None and fecho is not None:
+                amostras.append(entrada / fecho - 1)
+        return {
+            "total": len(amostras),
+            "media": sum(amostras) / len(amostras) if amostras else None,
+            "positivos": sum(v > 0 for v in amostras),
+        }
+
     def entradas_carteira_valor(self, modelo_versao="V1.2"):
         """Detalhe auditável e apenas de leitura das mesmas entradas da carteira.
 
@@ -379,6 +436,8 @@ class RegistoPrevisoes:
                 "resultado_binario": resultado if liquidada else None,
                 "lucro_unidades": pnl,
                 "fecho_capturado_em": p.get("odd_fecho_capturada_em"),
+                "odd_fecho_tardio": self._odd_real_valida(p.get("odd_fecho_tardio")),
+                "fecho_tardio_capturado_em": p.get("odd_fecho_tardio_capturada_em"),
             })
 
         entradas.sort(
