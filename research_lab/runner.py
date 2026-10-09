@@ -77,6 +77,27 @@ def _avaliar_challenger(nome: str, frame: pd.DataFrame) -> dict:
         p_challenger_col="p_challenger",
     )
     decisao = decisao_research_candidate(champion, challenger, bootstrap)
+
+    top5_frame = frame[frame["top5"].astype(bool)].copy() if "top5" in frame else frame.iloc[0:0].copy()
+    top5_champion = _metricas_frame(top5_frame, "p_champion")
+    top5_challenger = _metricas_frame(top5_frame, "p_challenger")
+    top5_bootstrap = bootstrap_delta_brier_por_dia(
+        top5_frame,
+        p_champion_col="p_champion",
+        p_challenger_col="p_challenger",
+    ) if not top5_frame.empty else {
+        "n": 0,
+        "delta": None,
+        "ci95_low": None,
+        "ci95_high": None,
+    }
+    top5_delta = (
+        top5_challenger["brier"] - top5_champion["brier"]
+        if top5_challenger.get("brier") is not None
+        and top5_champion.get("brier") is not None
+        else None
+    )
+
     return {
         "nome": nome,
         "estado": "CANDIDATO_RESEARCH" if decisao["candidate"] else "SHADOW",
@@ -89,8 +110,11 @@ def _avaliar_challenger(nome: str, frame: pd.DataFrame) -> dict:
             else None
         ),
         "bootstrap_delta_brier": bootstrap,
-        "top5_champion": _segmento_top5(frame, "p_champion"),
-        "top5_challenger": _segmento_top5(frame, "p_challenger"),
+        "top5_oos_n": int(len(top5_frame)),
+        "top5_champion": top5_champion,
+        "top5_challenger": top5_challenger,
+        "top5_delta_brier": top5_delta,
+        "top5_bootstrap_delta_brier": top5_bootstrap,
         "gate_research": decisao,
     }
 
@@ -170,7 +194,7 @@ def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str
     mercado = _auditoria_mercado(liquidadas)
 
     report = {
-        "lab_version": "1.0.0",
+        "lab_version": "1.1.0",
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "dataset": {
             "records": int(len(df)),
@@ -206,7 +230,7 @@ def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str
             with mlflow.start_run(run_name="research-lab-v1") as run:
                 mlflow.set_tags(
                     {
-                        "lab_version": "1.0.0",
+                        "lab_version": "1.1.0",
                         "production_unchanged": "true",
                         "auto_promotion": "false",
                         "dataset_sha256": str(payload.get("records_sha256") or ""),
