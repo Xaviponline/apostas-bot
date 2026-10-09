@@ -14,12 +14,14 @@ from main_enriquecido import (
     BuscadorJogosEnriquecido,
 )
 from odds_auditoria import AuditoriaOdds
+from research_export import ResearchLabClient
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
-    def __init__(self, *args, acessos=None, **kwargs):
+    def __init__(self, *args, acessos=None, research_lab=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.acessos = acessos or GestorAcessosPremium()
+        self.research_lab = research_lab or ResearchLabClient()
 
     def _e_owner_admin(self, chat_id, user_id):
         return bool(
@@ -736,6 +738,118 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         )
         return "\n".join(linhas)
 
+    def _executar_lab_export(self):
+        if not self.research_lab.configurado:
+            return (
+                "🧪 RESEARCH LAB\n\n"
+                "⚪ Ainda não está configurado no Railway. "
+                "A produção não foi alterada."
+            )
+        resposta = self.research_lab.exportar(
+            self.previsoes.dados.get("previsoes", [])
+        )
+        total = int(resposta.get("records") or 0)
+        digest = str(resposta.get("sha256") or "")
+        estado = "✅ ACEITE" if resposta.get("accepted") else "⚠️ NÃO CONFIRMADO"
+        return "\n".join(
+            [
+                "🧪 RESEARCH LAB — EXPORT",
+                f"Estado: {estado}",
+                f"Snapshots enviados: {total}",
+                f"Dataset: {digest[:16] or '—'}",
+                "Análise: agendada em shadow",
+                "",
+                "🔒 Só foram enviados campos desportivos/modelo.",
+                "🛡️ V1.2, SEL1, V1.3 comercial e snapshots de produção não foram alterados.",
+            ]
+        )
+
+    def _executar_lab_status(self):
+        if not self.research_lab.configurado:
+            return (
+                "🧪 RESEARCH LAB\n\n"
+                "⚪ Ainda não está configurado no Railway."
+            )
+        dados = self.research_lab.status()
+        dataset = dados.get("dataset") if isinstance(dados.get("dataset"), dict) else {}
+        report = dados.get("report") if isinstance(dados.get("report"), dict) else None
+        linhas = [
+            "🧠 RESEARCH LAB — CHAMPION vs CHALLENGERS",
+            "🔒 Totalmente shadow • sem promoção automática",
+            "",
+            f"Dataset: {int(dataset.get('records') or 0)} snapshots",
+            f"Execução em curso: {'sim' if dados.get('analysis_running') else 'não'}",
+        ]
+        if not report:
+            linhas.extend(["", "⏳ Ainda não existe relatório concluído."])
+            return "\n".join(linhas)
+
+        champion = report.get("champion") or {}
+        total = champion.get("total") or {}
+        top5 = champion.get("top5") or {}
+        linhas.extend(
+            [
+                "",
+                "🏆 CHAMPION — V1.2",
+                (
+                    f"• Total: n={int(total.get('n') or 0)} | "
+                    f"Brier {float(total['brier']):.4f} | "
+                    f"Gap {float(total['gap_pp']):+.1f}pp"
+                ).replace(".", ",")
+                if total.get("brier") is not None
+                else "• Sem amostra suficiente",
+                (
+                    f"• Top5: n={int(top5.get('n') or 0)} | "
+                    f"Brier {float(top5['brier']):.4f} | "
+                    f"Gap {float(top5['gap_pp']):+.1f}pp"
+                ).replace(".", ",")
+                if top5.get("brier") is not None
+                else "• Top5 sem amostra suficiente",
+                "",
+                "🧪 CHALLENGERS WALK-FORWARD",
+            ]
+        )
+        challengers = report.get("challengers") or {}
+        for nome, item in challengers.items():
+            if not isinstance(item, dict):
+                continue
+            estado = str(item.get("estado") or "?")
+            n = int(item.get("oos_n") or 0)
+            ch = item.get("challenger") or {}
+            delta = item.get("delta_brier")
+            if ch.get("brier") is None:
+                linhas.append(f"• {nome}: {estado} | OOS n={n}")
+                continue
+            delta_txt = f"{float(delta):+.4f}" if delta is not None else "—"
+            linhas.append(
+                (
+                    f"• {nome}: {estado} | OOS n={n} | "
+                    f"Brier {float(ch['brier']):.4f} | Δ {delta_txt} | "
+                    f"Gap {float(ch['gap_pp']):+.1f}pp"
+                ).replace(".", ",")
+            )
+
+        drift = report.get("drift") or {}
+        linhas.extend(
+            [
+                "",
+                f"📡 Drift: {str(drift.get('estado') or '—')}",
+            ]
+        )
+        mlflow = report.get("mlflow") or {}
+        if mlflow.get("logged"):
+            linhas.append(f"🧬 MLflow run: {str(mlflow.get('run_id') or '')[:12]}")
+        elif mlflow.get("error"):
+            linhas.append("⚠️ MLflow não registou esta execução; relatório local preservado.")
+        linhas.extend(
+            [
+                "",
+                "🛡️ Um challenger nunca entra em produção automaticamente.",
+                "Qualquer vencedor terá de passar um teste prospetivo pré-registado.",
+            ]
+        )
+        return "\n".join(linhas)
+
     def processar_comando(self, chat_id, texto, user_id=None, update_id=None):
         comando_original, _, argumentos = texto.strip().partition(" ")
         comando = comando_original
@@ -865,6 +979,31 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível gerar o gate comercial agora. "
                     "A V1.2, a SEL1 e os snapshots não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando in {"/lab_export", "/lab_status"}:
+            if not owner_admin:
+                return
+            try:
+                resposta = (
+                    self._executar_lab_export()
+                    if comando == "/lab_export"
+                    else self._executar_lab_status()
+                )
+            except (
+                requests.RequestException,
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                ArithmeticError,
+                OSError,
+            ):
+                resposta = (
+                    "Não foi possível contactar o Research Lab agora. "
+                    "A produção e os snapshots não foram alterados."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
