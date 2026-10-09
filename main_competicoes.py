@@ -946,13 +946,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 for mudanca in (item.get("top_mudancas") or [])[:3]:
                     if not isinstance(mudanca, dict):
                         continue
+                    categoria = str(mudanca.get("categoria") or "?")
+                    base_pct = f"{float(mudanca.get('base_pct') or 0):.1f}".replace(".", ",")
+                    recente_pct = f"{float(mudanca.get('recente_pct') or 0):.1f}".replace(".", ",")
+                    delta_pp = f"{float(mudanca.get('delta_pp') or 0):+.1f}".replace(".", ",")
                     linhas.append(
-                        (
-                            f"   ↳ {str(mudanca.get('categoria') or '?')}: "
-                            f"{float(mudanca.get('base_pct') or 0):.1f}%→"
-                            f"{float(mudanca.get('recente_pct') or 0):.1f}% "
-                            f"({float(mudanca.get('delta_pp') or 0):+.1f}pp)"
-                        ).replace(".", ",")
+                        f"   ↳ {categoria}: {base_pct}%→{recente_pct}% ({delta_pp}pp)"
                     )
 
         linhas.extend(
