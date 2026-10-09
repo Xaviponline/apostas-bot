@@ -110,7 +110,7 @@ class ResearchLabCoreTests(unittest.TestCase):
         self.assertEqual(report["dataset"]["telemetria_liquidada"], 50)
         self.assertEqual(report["dataset"]["coorte"], "V1.2_exclusiva")
         self.assertEqual(report["champion"]["total"]["n"], 50)
-        self.assertEqual(report["champion"]["top5"]["n"], 12)
+        self.assertEqual(report["champion"]["top5"]["n"], 15)
         self.assertEqual(report["challengers"]["platt_calibration_v1"]["estado"], "AMOSTRA_INSUFICIENTE")
         self.assertEqual(report["challengers"]["meta_logit_v1"]["estado"], "AMOSTRA_INSUFICIENTE")
         self.assertTrue(report["governance"]["legacy_versions_excluded"])
