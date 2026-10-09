@@ -9,8 +9,9 @@ from mlflow.tracking import MlflowClient
 import numpy as np
 import pandas as pd
 
+from . import LAB_VERSION
 from .config import LabConfig
-from .dataset import coorte_liquidada, dataframe_from_payload
+from .dataset import coorte_liquidada, dataframe_from_payload, filtrar_versao_modelo
 from .evaluation import (
     bootstrap_delta_brier_por_dia,
     decisao_research_candidate,
@@ -139,8 +140,13 @@ def _preparar_experimento_mlflow(config: LabConfig) -> None:
 
 def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str, Any]:
     df = dataframe_from_payload(payload)
-    liquidadas = coorte_liquidada(df, telemetria=False)
-    telemetria = coorte_liquidada(df, telemetria=True)
+    # A V1.2 é o Champion: versões V1.0/V1.1 nunca treinam nem avaliam
+    # Challengers, ROI de mercado ou drift da V1.2.
+    todas_liquidadas = coorte_liquidada(df, telemetria=False)
+    liquidadas = filtrar_versao_modelo(todas_liquidadas, "V1.2")
+    telemetria = filtrar_versao_modelo(
+        coorte_liquidada(df, telemetria=True), "V1.2"
+    )
 
     champion_total = metricas_probabilidade(
         liquidadas["resultado"] if not liquidadas.empty else [],
@@ -196,12 +202,15 @@ def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str
     mercado = _auditoria_mercado(liquidadas)
 
     report = {
-        "lab_version": "1.1.0",
+        "lab_version": LAB_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "dataset": {
             "records": int(len(df)),
+            "liquidadas_todas_versoes": int(len(todas_liquidadas)),
             "liquidadas": int(len(liquidadas)),
             "telemetria_liquidada": int(len(telemetria)),
+            "versoes_anteriores_excluidas": int(len(todas_liquidadas) - len(liquidadas)),
+            "coorte": "V1.2_exclusiva",
             "sha256": str(payload.get("records_sha256") or ""),
             "generated_at": payload.get("generated_at"),
         },
@@ -217,10 +226,13 @@ def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str
         "governance": {
             "production_unchanged": True,
             "auto_promotion": False,
+            "evaluation_cohort": "V1.2_exclusiva",
+            "legacy_versions_excluded": True,
             "walk_forward_only": True,
             "optuna_nested_in_training": True,
             "note": (
-                "Resultados do lab são exploratórios. Qualquer regra/modelo vencedor "
+                "Resultados do lab são exploratórios e usam só a coorte V1.2. "
+                "Qualquer regra/modelo vencedor "
                 "tem de ser congelado e testado prospectivamente antes de produção."
             ),
         },
@@ -230,10 +242,11 @@ def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str
     if config.mlflow_tracking_uri:
         try:
             _preparar_experimento_mlflow(config)
-            with mlflow.start_run(run_name="research-lab-v1") as run:
+            with mlflow.start_run(run_name="research-lab-v1.2-coorte-v12") as run:
                 mlflow.set_tags(
                     {
-                        "lab_version": "1.1.0",
+                        "lab_version": LAB_VERSION,
+                        "evaluation_cohort": "V1.2_exclusiva",
                         "production_unchanged": "true",
                         "auto_promotion": "false",
                         "dataset_sha256": str(payload.get("records_sha256") or ""),
@@ -245,6 +258,7 @@ def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str
                         "platt_min_train": 60,
                         "meta_min_train": 50,
                         "walk_forward": True,
+                        "coorte": "V1.2_exclusiva",
                     }
                 )
                 if champion_total.get("brier") is not None:
