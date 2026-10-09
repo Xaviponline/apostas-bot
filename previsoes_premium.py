@@ -22,6 +22,12 @@ class RegistoPrevisoes:
     DIAGNOSTICO_SNAPSHOT_VERSAO = 1
     INTEGRIDADE_SNAPSHOT_VERSAO = 1
     JANELA_CLV_SEG = 30 * 60
+    # Gate comercial pré-registado em 09/10/2026, antes de consultar as odds do dia.
+    # Os snapshots 1–206 pertencem ao período anterior e nunca entram neste teste.
+    V13_COMERCIAL_START_SNAPSHOT = 207
+    V13_COMERCIAL_TARGET = 50
+    V13_COMERCIAL_MIN_DIAS = 20
+    V13_COMERCIAL_MIN_CLV_AMOSTRAS = 40
     ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
     def __init__(self, path=None, session=None):
@@ -383,6 +389,143 @@ class RegistoPrevisoes:
             reverse=True,
         )
         return entradas
+
+    def metricas_v13_comercial(self):
+        """Gate prospetivo Top5 + VALUE, pré-registado e apenas de leitura.
+
+        Coorte fixa: primeiras 50 entradas V1.2 com ranking #1–5, a partir do
+        snapshot #207, cuja primeira odd confirmada atingiu a odd mínima.
+        Não há substituição de entradas, extensão oportunista ou promoção automática.
+        """
+        candidatos = []
+        top5_monitorizadas = 0
+        previsoes = self.dados.get("previsoes", [])
+        for indice, p in enumerate(previsoes, 1):
+            if indice < self.V13_COMERCIAL_START_SNAPSHOT:
+                continue
+            if str(p.get("modelo_versao") or "") != "V1.2":
+                continue
+            try:
+                ranking = int(p.get("ranking_modelo"))
+            except (TypeError, ValueError):
+                continue
+            if ranking < 1 or ranking > 5:
+                continue
+            top5_monitorizadas += 1
+
+            entrada = self._odd_entrada_valor(p)
+            if entrada is None:
+                continue
+            confirmado_em = str(
+                p.get("valor_confirmado_em")
+                or p.get("odds_capturada_em")
+                or p.get("criada_em")
+                or ""
+            )
+            fecho = self._odd_real_valida(p.get("odd_fecho"))
+            resultado = p.get("resultado_binario")
+            liquidada = resultado in (0, 1)
+            pnl = (
+                (entrada - 1.0) if int(resultado) == 1 else -1.0
+            ) if liquidada else None
+            candidatos.append(
+                {
+                    "snapshot": indice,
+                    "confirmado_em": confirmado_em,
+                    "data_jogo": str(p.get("data_jogo") or ""),
+                    "casa": str(p.get("casa") or "?"),
+                    "fora": str(p.get("fora") or "?"),
+                    "mercado": str(p.get("mercado") or "?"),
+                    "ranking_modelo": ranking,
+                    "odd_entrada": entrada,
+                    "odd_fecho": fecho,
+                    "clv": (entrada / fecho - 1.0) if fecho else None,
+                    "resultado_binario": resultado if liquidada else None,
+                    "lucro_unidades": pnl,
+                }
+            )
+
+        # A entrada comercial nasce quando o valor é confirmado. A hora é
+        # imutável; snapshot serve de desempate auditável.
+        candidatos.sort(
+            key=lambda x: (
+                x["confirmado_em"] or "9999-12-31T23:59:59Z",
+                x["snapshot"],
+            )
+        )
+        coorte = candidatos[: self.V13_COMERCIAL_TARGET]
+        liquidadas = [x for x in coorte if x["resultado_binario"] in (0, 1)]
+        ganhos = sum(int(x["resultado_binario"]) for x in liquidadas)
+        lucro = sum(float(x["lucro_unidades"]) for x in liquidadas)
+        roi = (lucro / len(liquidadas)) if liquidadas else None
+
+        acumulado = pico = 0.0
+        max_drawdown = 0.0
+        streak = max_streak = 0
+        for x in liquidadas:
+            pnl = float(x["lucro_unidades"])
+            acumulado += pnl
+            pico = max(pico, acumulado)
+            max_drawdown = max(max_drawdown, pico - acumulado)
+            if int(x["resultado_binario"]) == 0:
+                streak += 1
+                max_streak = max(max_streak, streak)
+            else:
+                streak = 0
+
+        clvs = [float(x["clv"]) for x in coorte if x["clv"] is not None]
+        clv_media = (sum(clvs) / len(clvs)) if clvs else None
+        dias = len({x["data_jogo"] for x in coorte if x["data_jogo"]})
+
+        coorte_fechada = len(coorte) >= self.V13_COMERCIAL_TARGET
+        todas_liquidadas = (
+            coorte_fechada and len(liquidadas) == self.V13_COMERCIAL_TARGET
+        )
+        regras = {
+            "coorte_50": coorte_fechada,
+            "dias_20": dias >= self.V13_COMERCIAL_MIN_DIAS,
+            "liquidacao_completa": todas_liquidadas,
+            "roi_positivo": bool(todas_liquidadas and roi is not None and roi > 0),
+            "clv_cobertura": len(clvs) >= self.V13_COMERCIAL_MIN_CLV_AMOSTRAS,
+            "clv_positivo": bool(
+                len(clvs) >= self.V13_COMERCIAL_MIN_CLV_AMOSTRAS
+                and clv_media is not None
+                and clv_media > 0
+            ),
+        }
+        if not coorte_fechada:
+            estado = "RECOLHA"
+        elif not todas_liquidadas:
+            estado = "AGUARDA_LIQUIDACAO"
+        elif all(regras.values()):
+            estado = "PASSOU"
+        else:
+            estado = "NAO_PASSOU"
+
+        return {
+            "inicio_snapshot": self.V13_COMERCIAL_START_SNAPSHOT,
+            "alvo": self.V13_COMERCIAL_TARGET,
+            "top5_monitorizadas": top5_monitorizadas,
+            "elegiveis_total": len(candidatos),
+            "coorte": coorte,
+            "coorte_tamanho": len(coorte),
+            "liquidadas": len(liquidadas),
+            "pendentes": len(coorte) - len(liquidadas),
+            "ganhos": ganhos,
+            "perdas": len(liquidadas) - ganhos,
+            "lucro_unidades": lucro,
+            "roi": roi,
+            "max_drawdown": max_drawdown,
+            "max_streak_perdas": max_streak,
+            "dias": dias,
+            "clv_amostras": len(clvs),
+            "clv_media": clv_media,
+            "clv_positivos": sum(1 for x in clvs if x > 0),
+            "min_dias": self.V13_COMERCIAL_MIN_DIAS,
+            "min_clv_amostras": self.V13_COMERCIAL_MIN_CLV_AMOSTRAS,
+            "regras": regras,
+            "estado": estado,
+        }
 
     @classmethod
     def _snapshot_diagnostico(cls, selecao):
