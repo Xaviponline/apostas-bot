@@ -93,6 +93,7 @@ class ResearchLabCoreTests(unittest.TestCase):
                 s3_access_key_id="",
                 s3_secret_access_key="",
                 mlflow_tracking_uri="",
+                mlflow_artifact_root="",
                 experiment_name="teste",
                 local_dir=tmp,
                 optuna_trials=4,
