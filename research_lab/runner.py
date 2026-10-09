@@ -5,6 +5,7 @@ import math
 from typing import Any
 
 import mlflow
+from mlflow.tracking import MlflowClient
 import numpy as np
 import pandas as pd
 
@@ -92,6 +93,23 @@ def _avaliar_challenger(nome: str, frame: pd.DataFrame) -> dict:
         "top5_challenger": _segmento_top5(frame, "p_challenger"),
         "gate_research": decisao,
     }
+
+
+def _preparar_experimento_mlflow(config: LabConfig) -> None:
+    """Configura tracking persistente sem exigir um servidor MLflow separado."""
+    mlflow.set_tracking_uri(config.mlflow_tracking_uri)
+    client = MlflowClient()
+    existente = client.get_experiment_by_name(config.experiment_name)
+    if existente is None:
+        kwargs = {}
+        if config.mlflow_artifact_root:
+            kwargs["artifact_location"] = config.mlflow_artifact_root
+        try:
+            client.create_experiment(config.experiment_name, **kwargs)
+        except Exception:
+            # Corrida rara de criação; set_experiment resolve se já existir.
+            pass
+    mlflow.set_experiment(config.experiment_name)
 
 
 def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str, Any]:
@@ -184,8 +202,7 @@ def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str
 
     if config.mlflow_tracking_uri:
         try:
-            mlflow.set_tracking_uri(config.mlflow_tracking_uri)
-            mlflow.set_experiment(config.experiment_name)
+            _preparar_experimento_mlflow(config)
             with mlflow.start_run(run_name="research-lab-v1") as run:
                 mlflow.set_tags(
                     {
