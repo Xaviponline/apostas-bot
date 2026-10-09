@@ -510,7 +510,9 @@ class OddsBetano:
                 {
                     "tournamentIds": ",".join(str(t) for t in torneios),
                     "bookmakers": self.papi_bookmaker,
-                    "oddsFormat": "decimal",
+                    # /odds-by-tournaments já devolve price decimal no payload.
+                    # Evita parâmetros redundantes que podem ser rejeitados
+                    # por validação estrita do endpoint.
                     "language": "en",
                     "verbosity": 3,
                 },
