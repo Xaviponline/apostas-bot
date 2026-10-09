@@ -176,7 +176,7 @@ class ResearchExportTests(unittest.TestCase):
         self.assertIn("DRIFT DETALHADO", drift)
         self.assertIn("DRIFT SEGMENTADO", segmentado)
         self.assertIn("Under 3.5 Golos", segmentado)
-        self.assertIn("Mix-base", segmentado.replace("mix-base", "Mix-base"))
+        self.assertIn("Brier mix-base", segmentado)
         self.assertIn("Lambda total", drift)
         self.assertIn("Under 3.5 Golos", drift)
         self.assertIn("TOP5 OOS", top5)
