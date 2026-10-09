@@ -13,6 +13,7 @@ class LabConfig:
     s3_access_key_id: str
     s3_secret_access_key: str
     mlflow_tracking_uri: str
+    mlflow_artifact_root: str
     experiment_name: str
     local_dir: str
     optuna_trials: int
@@ -27,6 +28,7 @@ class LabConfig:
             s3_access_key_id=str(os.getenv("LAB_S3_ACCESS_KEY_ID") or ""),
             s3_secret_access_key=str(os.getenv("LAB_S3_SECRET_ACCESS_KEY") or ""),
             mlflow_tracking_uri=str(os.getenv("MLFLOW_TRACKING_URI") or ""),
+            mlflow_artifact_root=str(os.getenv("MLFLOW_ARTIFACT_ROOT") or ""),
             experiment_name=str(os.getenv("MLFLOW_EXPERIMENT_NAME") or "apostas-bot-research"),
             local_dir=str(os.getenv("LAB_LOCAL_DIR") or "/tmp/apostas-research-lab"),
             optuna_trials=max(int(os.getenv("LAB_OPTUNA_TRIALS") or 16), 4),

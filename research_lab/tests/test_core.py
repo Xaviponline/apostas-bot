@@ -85,6 +85,8 @@ class ResearchLabCoreTests(unittest.TestCase):
     def test_runner_champion_challenger_e_governance(self):
         payload = construir_payload_research(registos_sinteticos(90))
         with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "mlflow.db"
+            artefactos = Path(tmp) / "mlflow-artifacts"
             cfg = LabConfig(
                 ingest_token="teste",
                 s3_endpoint="",
@@ -92,18 +94,23 @@ class ResearchLabCoreTests(unittest.TestCase):
                 s3_region="auto",
                 s3_access_key_id="",
                 s3_secret_access_key="",
-                mlflow_tracking_uri="",
+                mlflow_tracking_uri=f"sqlite:///{db}",
+                mlflow_artifact_root=artefactos.as_uri(),
                 experiment_name="teste",
                 local_dir=tmp,
                 optuna_trials=4,
             )
             report = executar_experimento(payload, cfg)
 
+            self.assertTrue(db.exists())
+
         self.assertEqual(report["champion"]["total"]["n"], 90)
         self.assertEqual(report["challengers"]["platt_calibration_v1"]["oos_n"], 30)
         self.assertEqual(report["challengers"]["meta_logit_v1"]["oos_n"], 40)
         self.assertFalse(report["governance"]["auto_promotion"])
         self.assertTrue(report["governance"]["walk_forward_only"])
+        self.assertTrue(report["mlflow"]["logged"])
+        self.assertTrue(report["mlflow"]["run_id"])
 
 
 if __name__ == "__main__":
