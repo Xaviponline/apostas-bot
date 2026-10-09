@@ -30,6 +30,8 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /v13_comercial — Gate prospetivo Top5 + VALUE, ROI e CLV (admin)
 /lab_export — Enviar cópia sanitizada dos snapshots para o Research Lab (admin)
 /lab_status — Champion vs Challengers, drift e MLflow (admin)
+/lab_drift — Diagnóstico detalhado de drift por variável, mercado e liga (admin)
+/lab_top5 — Comparar Champion vs Challengers apenas no Top5 OOS (admin)
 /carteira — Carteira shadow de picks com valor confirmado (admin)
 /clv — Auditoria de Closing Line Value (admin)
 /sync_valor — Atualizar estado de valor/fecho sem alterar a odd inicial (admin)
