@@ -850,6 +850,202 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         )
         return "\n".join(linhas)
 
+    @staticmethod
+    def _lab_drift_icone(estado):
+        return {
+            "ALTO": "🔴",
+            "MODERADO": "🟠",
+            "ESTAVEL": "🟢",
+            "AMOSTRA_INSUFICIENTE": "⚪",
+        }.get(str(estado or ""), "⚪")
+
+    def _executar_lab_drift(self):
+        if not self.research_lab.configurado:
+            return "🧪 RESEARCH LAB\n\n⚪ Ainda não está configurado no Railway."
+        dados = self.research_lab.status()
+        report = dados.get("report") if isinstance(dados.get("report"), dict) else None
+        if not report:
+            return "📡 RESEARCH LAB — DRIFT\n\n⏳ Ainda não existe relatório concluído."
+
+        drift = report.get("drift") if isinstance(report.get("drift"), dict) else {}
+        estado = str(drift.get("estado") or "AMOSTRA_INSUFICIENTE")
+        base = drift.get("base") if isinstance(drift.get("base"), dict) else {}
+        recente = drift.get("recente") if isinstance(drift.get("recente"), dict) else {}
+        linhas = [
+            "📡 RESEARCH LAB — DRIFT DETALHADO",
+            "🔒 Diagnóstico shadow • não altera o modelo",
+            "",
+            f"Estado: {self._lab_drift_icone(estado)} {estado}",
+            f"Amostra com telemetria: {int(drift.get('n') or 0)}",
+        ]
+        if base or recente:
+            linhas.extend(
+                [
+                    (
+                        f"Base: n={int(base.get('n') or 0)} | "
+                        f"snapshots #{base.get('snapshot_min') or '—'}–#{base.get('snapshot_max') or '—'}"
+                    ),
+                    (
+                        f"Recente: n={int(recente.get('n') or 0)} | "
+                        f"snapshots #{recente.get('snapshot_min') or '—'}–#{recente.get('snapshot_max') or '—'}"
+                    ),
+                ]
+            )
+
+        labels = {
+            "probabilidade": "Probabilidade calibrada",
+            "probabilidade_bruta": "Probabilidade bruta",
+            "lambda_total": "Lambda total",
+            "lambda_diff": "Diferença de lambda",
+            "ppg_diff": "Diferença PPG",
+            "margem_limite": "Margem sobre threshold",
+            "amostra_local_min": "Amostra local mínima",
+            "media_liga_total": "Média de golos da liga",
+        }
+        detalhes = drift.get("numeric_details") if isinstance(drift.get("numeric_details"), dict) else {}
+        if detalhes:
+            linhas.extend(["", "🔬 VARIÁVEIS NUMÉRICAS — PSI"])
+            ordenados = sorted(
+                detalhes.items(),
+                key=lambda kv: float((kv[1] or {}).get("psi") or 0.0),
+                reverse=True,
+            )
+            for nome, item in ordenados:
+                if not isinstance(item, dict) or item.get("psi") is None:
+                    continue
+                psi = float(item["psi"])
+                est = str(item.get("estado") or "")
+                b = item.get("base_media")
+                r = item.get("recente_media")
+                if b is None or r is None:
+                    media = ""
+                else:
+                    media = f" | média {float(b):.3f}→{float(r):.3f}"
+                linhas.append(
+                    (
+                        f"• {self._lab_drift_icone(est)} {labels.get(nome, nome)}: "
+                        f"PSI {psi:.3f}{media}"
+                    ).replace(".", ",")
+                )
+
+        categorico = drift.get("categorical") if isinstance(drift.get("categorical"), dict) else {}
+        if categorico:
+            linhas.extend(["", "🧩 COMPOSIÇÃO — DISTÂNCIA TOTAL"])
+            cat_labels = {"mercado": "Mercados", "liga": "Ligas"}
+            for nome, item in categorico.items():
+                if not isinstance(item, dict) or item.get("tv_distance") is None:
+                    continue
+                tv = float(item["tv_distance"])
+                est = str(item.get("estado") or "")
+                linhas.append(
+                    (
+                        f"• {self._lab_drift_icone(est)} {cat_labels.get(nome, nome)}: "
+                        f"{tv:.3f}"
+                    ).replace(".", ",")
+                )
+                for mudanca in (item.get("top_mudancas") or [])[:3]:
+                    if not isinstance(mudanca, dict):
+                        continue
+                    linhas.append(
+                        (
+                            f"   ↳ {str(mudanca.get('categoria') or '?')}: "
+                            f"{float(mudanca.get('base_pct') or 0):.1f}%→"
+                            f"{float(mudanca.get('recente_pct') or 0):.1f}% "
+                            f"({float(mudanca.get('delta_pp') or 0):+.1f}pp)"
+                        ).replace(".", ",")
+                    )
+
+        linhas.extend(
+            [
+                "",
+                "ℹ️ PSI/distância <0,10 = estável; 0,10–0,25 = moderado; ≥0,25 = alto.",
+                "⚠️ Drift não significa automaticamente que o modelo piorou; indica mudança na distribuição dos dados.",
+            ]
+        )
+        return "\n".join(linhas)
+
+    def _executar_lab_top5(self):
+        if not self.research_lab.configurado:
+            return "🧪 RESEARCH LAB\n\n⚪ Ainda não está configurado no Railway."
+        dados = self.research_lab.status()
+        report = dados.get("report") if isinstance(dados.get("report"), dict) else None
+        if not report:
+            return "🏅 RESEARCH LAB — TOP5\n\n⏳ Ainda não existe relatório concluído."
+
+        champion = report.get("champion") if isinstance(report.get("champion"), dict) else {}
+        champ_hist = champion.get("top5") if isinstance(champion.get("top5"), dict) else {}
+        linhas = [
+            "🏅 RESEARCH LAB — TOP5 OOS",
+            "🔒 Comparação apenas fora da amostra",
+            "",
+        ]
+        if champ_hist.get("brier") is not None:
+            linhas.append(
+                (
+                    f"🏆 Champion V1.2 histórico Top5: n={int(champ_hist.get('n') or 0)} | "
+                    f"Brier {float(champ_hist['brier']):.4f} | "
+                    f"Gap {float(champ_hist.get('gap_pp') or 0):+.1f}pp"
+                ).replace(".", ",")
+            )
+
+        challengers = report.get("challengers") if isinstance(report.get("challengers"), dict) else {}
+        linhas.extend(["", "🧪 CHALLENGERS — MESMA COORTE TOP5"])
+        for nome, item in challengers.items():
+            if not isinstance(item, dict):
+                continue
+            cc = item.get("top5_champion") if isinstance(item.get("top5_champion"), dict) else {}
+            ch = item.get("top5_challenger") if isinstance(item.get("top5_challenger"), dict) else {}
+            n = int(item.get("top5_oos_n") or ch.get("n") or 0)
+            if ch.get("brier") is None or cc.get("brier") is None:
+                linhas.append(f"• {nome}: Top5 OOS n={n} | amostra insuficiente")
+                continue
+
+            delta = item.get("top5_delta_brier")
+            if delta is None:
+                delta = float(ch["brier"]) - float(cc["brier"])
+            delta = float(delta)
+            boot = item.get("top5_bootstrap_delta_brier") if isinstance(
+                item.get("top5_bootstrap_delta_brier"), dict
+            ) else {}
+            ci_low = boot.get("ci95_low")
+            ci_high = boot.get("ci95_high")
+
+            if delta <= -0.005 and ci_high is not None and float(ci_high) < 0:
+                sinal = "🟢 melhoria consistente"
+            elif delta < 0:
+                sinal = "🟡 melhoria pequena/inconclusiva"
+            else:
+                sinal = "🔴 não melhora o Champion"
+
+            linhas.extend(
+                [
+                    f"• {nome} — Top5 OOS n={n}",
+                    (
+                        f"   Champion {float(cc['brier']):.4f} → "
+                        f"Challenger {float(ch['brier']):.4f} | Δ {delta:+.4f}"
+                    ).replace(".", ","),
+                    (
+                        f"   Gap challenger {float(ch.get('gap_pp') or 0):+.1f}pp | {sinal}"
+                    ).replace(".", ","),
+                ]
+            )
+            if ci_low is not None and ci_high is not None:
+                linhas.append(
+                    (
+                        f"   Bootstrap 95% Δ Brier: "
+                        f"[{float(ci_low):+.4f}, {float(ci_high):+.4f}]"
+                    ).replace(".", ",")
+                )
+
+        linhas.extend(
+            [
+                "",
+                "ℹ️ Δ Brier negativo é melhor; positivo é pior.",
+                "🛡️ Estes resultados são exploratórios. Não promovem nem alteram V1.2/SEL1.",
+            ]
+        )
+        return "\n".join(linhas)
+
     def processar_comando(self, chat_id, texto, user_id=None, update_id=None):
         comando_original, _, argumentos = texto.strip().partition(" ")
         comando = comando_original
@@ -983,15 +1179,18 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self.enviar_mensagem(chat_id, resposta)
             return
 
-        if comando in {"/lab_export", "/lab_status"}:
+        if comando in {"/lab_export", "/lab_status", "/lab_drift", "/lab_top5"}:
             if not owner_admin:
                 return
             try:
-                resposta = (
-                    self._executar_lab_export()
-                    if comando == "/lab_export"
-                    else self._executar_lab_status()
-                )
+                if comando == "/lab_export":
+                    resposta = self._executar_lab_export()
+                elif comando == "/lab_status":
+                    resposta = self._executar_lab_status()
+                elif comando == "/lab_drift":
+                    resposta = self._executar_lab_drift()
+                else:
+                    resposta = self._executar_lab_top5()
             except (
                 requests.RequestException,
                 RuntimeError,

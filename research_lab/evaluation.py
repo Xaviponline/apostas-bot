@@ -115,45 +115,157 @@ def psi(referencia: Iterable[float], recente: Iterable[float], bins: int = 6) ->
     return float(np.sum((cur_p - ref_p) * np.log(cur_p / ref_p)))
 
 
+def _severidade_drift(valor: float | None) -> str:
+    if valor is None:
+        return "AMOSTRA_INSUFICIENTE"
+    if valor >= 0.25:
+        return "ALTO"
+    if valor >= 0.10:
+        return "MODERADO"
+    return "ESTAVEL"
+
+
+def _resumo_numerico_drift(base: pd.DataFrame, recente: pd.DataFrame, coluna: str) -> dict | None:
+    if coluna not in base or coluna not in recente:
+        return None
+    b = pd.to_numeric(base[coluna], errors="coerce").dropna()
+    r = pd.to_numeric(recente[coluna], errors="coerce").dropna()
+    valor = psi(b, r)
+    if valor is None:
+        return None
+    return {
+        "psi": float(valor),
+        "estado": _severidade_drift(float(valor)),
+        "base_n": int(len(b)),
+        "recente_n": int(len(r)),
+        "base_media": float(b.mean()) if len(b) else None,
+        "recente_media": float(r.mean()) if len(r) else None,
+        "delta_media": float(r.mean() - b.mean()) if len(b) and len(r) else None,
+        "base_mediana": float(b.median()) if len(b) else None,
+        "recente_mediana": float(r.median()) if len(r) else None,
+    }
+
+
+def _drift_categorico(base: pd.DataFrame, recente: pd.DataFrame, coluna: str) -> dict | None:
+    if coluna not in base or coluna not in recente:
+        return None
+    b = base[coluna].fillna("").astype(str)
+    r = recente[coluna].fillna("").astype(str)
+    b = b[b.str.len() > 0]
+    r = r[r.str.len() > 0]
+    if len(b) < 10 or len(r) < 10:
+        return None
+
+    categorias = sorted(set(b.unique()).union(set(r.unique())))
+    if not categorias:
+        return None
+    pb = b.value_counts(normalize=True)
+    pr = r.value_counts(normalize=True)
+    mudancas = []
+    tv = 0.0
+    for categoria in categorias:
+        base_p = float(pb.get(categoria, 0.0))
+        recente_p = float(pr.get(categoria, 0.0))
+        delta = recente_p - base_p
+        tv += abs(delta)
+        mudancas.append(
+            {
+                "categoria": categoria,
+                "base_pct": base_p * 100.0,
+                "recente_pct": recente_p * 100.0,
+                "delta_pp": delta * 100.0,
+                "base_n": int((b == categoria).sum()),
+                "recente_n": int((r == categoria).sum()),
+            }
+        )
+    tv *= 0.5
+    mudancas.sort(key=lambda x: abs(float(x["delta_pp"])), reverse=True)
+    return {
+        "tv_distance": float(tv),
+        "estado": _severidade_drift(float(tv)),
+        "base_n": int(len(b)),
+        "recente_n": int(len(r)),
+        "categorias_base": int(b.nunique()),
+        "categorias_recente": int(r.nunique()),
+        "top_mudancas": mudancas[:6],
+    }
+
+
 def relatorio_drift(df: pd.DataFrame, colunas=None) -> dict:
     if df.empty or len(df) < 30:
-        return {"n": int(len(df)), "estado": "AMOSTRA_INSUFICIENTE", "features": {}}
+        return {
+            "n": int(len(df)),
+            "estado": "AMOSTRA_INSUFICIENTE",
+            "features": {},
+            "numeric_details": {},
+            "categorical": {},
+        }
 
     colunas = colunas or [
         "probabilidade",
         "probabilidade_bruta",
         "lambda_total",
+        "lambda_diff",
         "ppg_diff",
         "margem_limite",
+        "amostra_local_min",
+        "media_liga_total",
     ]
     corte = max(int(len(df) * 0.60), 1)
     base, recente = df.iloc[:corte], df.iloc[corte:]
     detalhes = {}
-    maior = 0.0
-    for coluna in colunas:
-        if coluna not in df:
-            continue
-        valor = psi(base[coluna], recente[coluna])
-        if valor is None:
-            continue
-        maior = max(maior, valor)
-        detalhes[coluna] = round(valor, 6)
+    numeric_details = {}
+    severidades = []
 
-    if not detalhes:
-        estado = "AMOSTRA_INSUFICIENTE"
-    elif maior >= 0.25:
-        estado = "ALTO"
-    elif maior >= 0.10:
-        estado = "MODERADO"
-    else:
-        estado = "ESTAVEL"
+    for coluna in colunas:
+        detalhe = _resumo_numerico_drift(base, recente, coluna)
+        if detalhe is None:
+            continue
+        numeric_details[coluna] = detalhe
+        detalhes[coluna] = round(float(detalhe["psi"]), 6)
+        severidades.append(float(detalhe["psi"]))
+
+    categorico = {}
+    for coluna in ("mercado", "liga"):
+        detalhe = _drift_categorico(base, recente, coluna)
+        if detalhe is None:
+            continue
+        categorico[coluna] = detalhe
+        severidades.append(float(detalhe["tv_distance"]))
+
+    maior = max(severidades) if severidades else None
+    estado = _severidade_drift(maior)
+
+    def _faixa(frame: pd.DataFrame) -> dict:
+        datas = [str(x) for x in frame.get("data_jogo", pd.Series(dtype=str)).tolist() if str(x)]
+        snaps = pd.to_numeric(
+            frame.get("snapshot_index", pd.Series(dtype=float)),
+            errors="coerce",
+        ).dropna()
+        return {
+            "n": int(len(frame)),
+            "snapshot_min": int(snaps.min()) if len(snaps) else None,
+            "snapshot_max": int(snaps.max()) if len(snaps) else None,
+            "data_min": min(datas) if datas else None,
+            "data_max": max(datas) if datas else None,
+        }
+
     return {
         "n": int(len(df)),
         "estado": estado,
-        "psi_max": maior if detalhes else None,
+        "psi_max": maior,
         "features": detalhes,
+        "numeric_details": numeric_details,
+        "categorical": categorico,
+        "base": _faixa(base),
+        "recente": _faixa(recente),
+        "metodologia": {
+            "split": "primeiros 60% vs últimos 40%, ordenados por snapshot",
+            "numeric": "PSI",
+            "categorical": "total variation distance",
+            "limiares": {"estavel": 0.10, "alto": 0.25},
+        },
     }
-
 
 def decisao_research_candidate(champion: dict, challenger: dict, bootstrap: dict) -> dict:
     """Gate de investigação apenas; nunca equivale a promoção para produção."""
