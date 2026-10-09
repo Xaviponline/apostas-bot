@@ -65,9 +65,46 @@ class LabFake:
                         "oos_n": 31,
                         "challenger": {"brier": 0.11, "gap_pp": 2.0},
                         "delta_brier": -0.0056,
+                        "top5_oos_n": 12,
+                        "top5_champion": {"n": 12, "brier": 0.20, "gap_pp": -1.0},
+                        "top5_challenger": {"n": 12, "brier": 0.18, "gap_pp": 0.5},
+                        "top5_delta_brier": -0.02,
+                        "top5_bootstrap_delta_brier": {
+                            "n": 12,
+                            "delta": -0.02,
+                            "ci95_low": -0.04,
+                            "ci95_high": -0.01,
+                        },
                     }
                 },
-                "drift": {"estado": "ESTAVEL"},
+                "drift": {
+                    "n": 40,
+                    "estado": "ALTO",
+                    "base": {"n": 24, "snapshot_min": 1, "snapshot_max": 24},
+                    "recente": {"n": 16, "snapshot_min": 25, "snapshot_max": 40},
+                    "numeric_details": {
+                        "lambda_total": {
+                            "psi": 0.31,
+                            "estado": "ALTO",
+                            "base_media": 2.3,
+                            "recente_media": 2.8,
+                        }
+                    },
+                    "categorical": {
+                        "mercado": {
+                            "tv_distance": 0.15,
+                            "estado": "MODERADO",
+                            "top_mudancas": [
+                                {
+                                    "categoria": "Under 3.5 Golos",
+                                    "base_pct": 25.0,
+                                    "recente_pct": 40.0,
+                                    "delta_pp": 15.0,
+                                }
+                            ],
+                        }
+                    },
+                },
                 "mlflow": {"logged": True, "run_id": "1234567890abcdef"},
             },
         }
@@ -105,11 +142,18 @@ class ResearchExportTests(unittest.TestCase):
 
         export = bot._executar_lab_export()
         status = bot._executar_lab_status()
+        drift = bot._executar_lab_drift()
+        top5 = bot._executar_lab_top5()
 
         self.assertIn("ACEITE", export)
         self.assertIn("CHAMPION", status)
         self.assertIn("platt_calibration_v1", status)
         self.assertIn("MLflow", status)
+        self.assertIn("DRIFT DETALHADO", drift)
+        self.assertIn("Lambda total", drift)
+        self.assertIn("Under 3.5 Golos", drift)
+        self.assertIn("TOP5 OOS", top5)
+        self.assertIn("melhoria consistente", top5)
         self.assertEqual(bot.previsoes.dados, antes)
 
 
