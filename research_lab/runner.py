@@ -18,6 +18,7 @@ from .evaluation import (
     relatorio_drift,
 )
 from .models import WalkForwardConfig, walk_forward_meta_logit, walk_forward_platt
+from .segment_drift import relatorio_drift_segmentado
 
 
 def _metricas_frame(frame: pd.DataFrame, coluna: str) -> dict:
@@ -191,6 +192,7 @@ def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str
         }
 
     drift = relatorio_drift(telemetria)
+    drift_segmentado = relatorio_drift_segmentado(telemetria)
     mercado = _auditoria_mercado(liquidadas)
 
     report = {
@@ -210,6 +212,7 @@ def executar_experimento(payload: dict[str, Any], config: LabConfig) -> dict[str
         },
         "challengers": challengers,
         "drift": drift,
+        "drift_segmentado": drift_segmentado,
         "market_audit_descritivo": mercado,
         "governance": {
             "production_unchanged": True,
