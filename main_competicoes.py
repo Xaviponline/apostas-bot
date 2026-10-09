@@ -600,7 +600,14 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 texto_final += f" | P/L {pnl:+.2f}u"
             clv = item["clv"]
             texto_final += f" | CLV {clv*100:+.1f}%" if clv is not None else " | CLV sem fecho"
-            linhas.extend([texto_final.replace(".", ","), ""])
+            linhas.append(texto_final.replace(".", ","))
+            tardio = item.get("odd_fecho_tardio")
+            if tardio is not None:
+                clv_tardio = item["odd_entrada"] / tardio - 1
+                linhas.append(
+                    (f"  Diagnóstico T-10m {tardio:.2f} | CLV tardio {clv_tardio*100:+.1f}%").replace(".", ",")
+                )
+            linhas.append("")
 
         linhas.append("ℹ️ CLV usa a odd efetivamente capturada perto do início; sem fecho não há CLV.")
         if pagina < paginas:
@@ -609,6 +616,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
 
     def _executar_clv(self):
         m = self.previsoes.metricas_clv()
+        tardio = self.previsoes.metricas_clv_tardio()
         linhas = [
             "📉 CLV — CLOSING LINE VALUE",
             "Entrada = primeira odd com valor confirmado; fecho = odd capturada nos 30 min anteriores ao jogo.",
@@ -651,6 +659,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 )
             if len(amostras) > 6:
                 linhas.append(f"• Mais {len(amostras)-6} amostra(s): ver /carteira_detalhe.")
+        linhas.extend(["", "🧪 CLV T-10m — DIAGNÓSTICO SEPARADO", f"Amostras: {tardio['total']}"])
+        if tardio["total"]:
+            sinal_tardio = "+" if tardio["media"] >= 0 else ""
+            linhas.append(f"CLV tardio médio: {sinal_tardio}{tardio['media']*100:.1f}%".replace(".", ","))
+            linhas.append(f"CLV tardio positivo: {tardio['positivos']}/{tardio['total']}")
+        linhas.append("ℹ️ A cotação T-10m não substitui o fecho original nem entra no gate V1.3.")
         linhas.append("📋 Todas as entradas VALUE: /carteira_detalhe")
         return "\n".join(linhas)
 
