@@ -64,6 +64,9 @@ class BotPremiumReal:
     CLV_AUTO_INTERVALO_SEG = 20 * 60
     CLV_AUTO_JANELA_SEG = 30 * 60
     CLV_AUTO_MAX_FALLBACK = 4
+    CLV_TARDIO_JANELA_SEG = 10 * 60
+    CLV_TARDIO_INTERVALO_SEG = 5 * 60
+    CLV_TARDIO_MAX_FALLBACK = 2
     ODDS_AUTO_MAX_FALLBACK = 5
     JOGOS_RETRY_VAZIO_SEG = 1.0
 
@@ -84,6 +87,7 @@ class BotPremiumReal:
         self.username = None
         self._proxima_captura_odds = 0.0
         self._proxima_captura_clv = 0.0
+        self._proxima_captura_clv_tardio = 0.0
 
     def api(self, metodo, data):
         r = self.session.post(f'{self.base_url}/{metodo}', json=data, timeout=(5, 40))
@@ -280,14 +284,14 @@ class BotPremiumReal:
             logging.info('ODDS_AUTO | %s odd(s) congelada(s) antes do jogo', capturadas)
         return capturadas
 
-    def _selecoes_clv_proximas(self):
+    def _selecoes_clv_proximas(self, tardio=False):
         """Reconstrói apenas entradas de valor sem fecho nos últimos minutos."""
         if not self.odds.configurada:
             return []
 
         agora = datetime.now(ZoneInfo('Europe/Lisbon'))
         agora_ts = agora.timestamp()
-        limite_ts = agora_ts + self.CLV_AUTO_JANELA_SEG
+        limite_ts = agora_ts + (self.CLV_TARDIO_JANELA_SEG if tardio else self.CLV_AUTO_JANELA_SEG)
         data_iso = agora.strftime('%Y-%m-%d')
         selecoes = []
 
@@ -296,7 +300,11 @@ class BotPremiumReal:
                 continue
             if self.previsoes._odd_entrada_valor(p) is None:
                 continue
-            if self.previsoes._odd_real_valida(p.get('odd_fecho')) is not None:
+            tem_fecho = self.previsoes._odd_real_valida(p.get('odd_fecho')) is not None
+            if tardio:
+                if not tem_fecho or self.previsoes._odd_real_valida(p.get('odd_fecho_tardio')) is not None:
+                    continue
+            elif tem_fecho:
                 continue
             ts = p.get('timestamp_jogo')
             if not isinstance(ts, (int, float)):
@@ -376,6 +384,42 @@ class BotPremiumReal:
             return self._capturar_clv_pendentes(candidatas)
         except (requests.RequestException, RuntimeError, ValueError, TypeError):
             logging.warning('CLV_AUTO | captura indisponível; tenta novamente mais tarde')
+            return 0
+
+    def _capturar_clv_tardio_se_devido(self):
+        """Audita uma segunda cotação T-10m sem modificar fecho/gate oficiais."""
+        agora = time.monotonic()
+        if agora < self._proxima_captura_clv_tardio:
+            return 0
+        candidatas = self._selecoes_clv_proximas(tardio=True)
+        if not candidatas:
+            return 0
+
+        self._proxima_captura_clv_tardio = agora + self.CLV_TARDIO_INTERVALO_SEG
+        status_fn = getattr(self.odds, "status_conta", None)
+        if callable(status_fn):
+            try:
+                status = status_fn()
+                if isinstance(status, dict) and status.get("remaining") == 0:
+                    logging.info("CLV_TARDIO | suspensa: quota OddsPapi esgotada")
+                    return 0
+            except (requests.RequestException, RuntimeError, ValueError, TypeError):
+                pass
+        if str(getattr(self.odds, "ultimo_diagnostico_eventos", "") or "") == "odds_quota_esgotada":
+            logging.info("CLV_TARDIO | suspensa: quota OddsPapi esgotada")
+            return 0
+        try:
+            atualizadas = AuditoriaOdds(self.odds).enriquecer(
+                candidatas,
+                fallback_individual_ausentes=True,
+                max_fallback_individual=self.CLV_TARDIO_MAX_FALLBACK,
+            )
+            capturadas = self.previsoes.registar_fecho_tardio(atualizadas)
+            if capturadas:
+                logging.info("CLV_TARDIO | %s segunda(s) cotação(ões) T-10m capturada(s)", capturadas)
+            return capturadas
+        except (requests.RequestException, RuntimeError, ValueError, TypeError):
+            logging.warning("CLV_TARDIO | recolha indisponível; nova tentativa se ainda for pré-jogo")
             return 0
 
     def _capturar_odds_se_devida(self):
@@ -516,6 +560,7 @@ class BotPremiumReal:
                     self.gestor.marcar_update(update['update_id'])
                 self._capturar_odds_se_devida()
                 self._capturar_clv_se_devido()
+                self._capturar_clv_tardio_se_devido()
             except (requests.RequestException, RuntimeError, ValueError):
                 logging.warning('Falha na comunicação Telegram; nova tentativa em 5 segundos.')
                 time.sleep(5)
