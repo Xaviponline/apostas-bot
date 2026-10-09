@@ -6,7 +6,7 @@ from pathlib import Path
 
 from research_export import construir_payload_research
 from research_lab.config import LabConfig
-from research_lab.dataset import dataframe_from_payload, validar_payload
+from research_lab.dataset import dataframe_from_payload, filtrar_versao_modelo, validar_payload
 from research_lab.models import _splits_temporais
 from research_lab.runner import executar_experimento
 
@@ -74,6 +74,47 @@ class ResearchLabCoreTests(unittest.TestCase):
         estragado["records"][0]["probabilidade"] = 0.99
         with self.assertRaises(ValueError):
             validar_payload(estragado)
+
+    def test_coorte_v12_nao_inclui_previsoes_legadas(self):
+        mistos = registos_sinteticos(90)
+        for indice in range(40):
+            mistos[indice]["modelo_versao"] = "V1.0" if indice < 20 else "V1.1"
+        payload = construir_payload_research(mistos)
+        bruto = dataframe_from_payload(payload)
+        v12 = filtrar_versao_modelo(bruto)
+        self.assertEqual(len(bruto), 90)
+        self.assertEqual(len(v12), 50)
+        self.assertTrue(v12["modelo_versao"].eq("V1.2").all())
+        self.assertEqual(v12["snapshot_index"].tolist(), list(range(41, 91)))
+        self.assertEqual(len(filtrar_versao_modelo(v12)), 50)
+
+    def test_runner_misto_rejeita_historico_no_champion_e_desativa_gates(self):
+        mistos = registos_sinteticos(90)
+        for indice in range(40):
+            mistos[indice]["modelo_versao"] = "V1.0" if indice < 20 else "V1.1"
+        payload = construir_payload_research(mistos)
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = LabConfig(
+                ingest_token="teste", s3_endpoint="", s3_bucket="", s3_region="auto",
+                s3_access_key_id="", s3_secret_access_key="",
+                mlflow_tracking_uri="", mlflow_artifact_root="",
+                experiment_name="teste", local_dir=tmp, optuna_trials=4,
+            )
+            report = executar_experimento(payload, cfg)
+
+        self.assertEqual(report["lab_version"], "1.2.0")
+        self.assertEqual(report["dataset"]["records"], 90)
+        self.assertEqual(report["dataset"]["liquidadas_todas_versoes"], 90)
+        self.assertEqual(report["dataset"]["liquidadas"], 50)
+        self.assertEqual(report["dataset"]["versoes_anteriores_excluidas"], 40)
+        self.assertEqual(report["dataset"]["telemetria_liquidada"], 50)
+        self.assertEqual(report["dataset"]["coorte"], "V1.2_exclusiva")
+        self.assertEqual(report["champion"]["total"]["n"], 50)
+        self.assertEqual(report["champion"]["top5"]["n"], 15)
+        self.assertEqual(report["challengers"]["platt_calibration_v1"]["estado"], "AMOSTRA_INSUFICIENTE")
+        self.assertEqual(report["challengers"]["meta_logit_v1"]["estado"], "AMOSTRA_INSUFICIENTE")
+        self.assertTrue(report["governance"]["legacy_versions_excluded"])
+        self.assertFalse(report["governance"]["auto_promotion"])
 
     def test_walk_forward_nunca_treina_no_futuro(self):
         splits = list(_splits_temporais(90, 60, 10))

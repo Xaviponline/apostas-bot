@@ -130,3 +130,14 @@ def coorte_liquidada(df: pd.DataFrame, telemetria=False) -> pd.DataFrame:
     if telemetria:
         mask &= df["tem_telemetria"].astype(bool)
     return df.loc[mask].copy().reset_index(drop=True)
+
+
+def filtrar_versao_modelo(df: pd.DataFrame, versao: str = "V1.2") -> pd.DataFrame:
+    """Seleciona exclusivamente previsões da versão indicada sem alterar dados.
+
+    Versões anteriores permanecem no dataset original para auditoria histórica,
+    mas nunca entram no treino, drift ou ROI do Champion V1.2.
+    """
+    if df.empty:
+        return df.copy()
+    return df.loc[df["modelo_versao"].eq(versao)].copy().reset_index(drop=True)
