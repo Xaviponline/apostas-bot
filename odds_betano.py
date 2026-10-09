@@ -483,6 +483,17 @@ class OddsBetano:
         )
         return self._normalizar_odds_papi(dados)
 
+    @staticmethod
+    def _itens_resposta_odds_lote(dados):
+        """Normaliza a estrutura da resposta, sem aceitar formatos desconhecidos."""
+        if isinstance(dados, list):
+            return dados
+        if isinstance(dados, dict) and isinstance(dados.get("fixtures"), list):
+            return dados["fixtures"]
+        if isinstance(dados, dict) and dados.get("fixtureId") is not None:
+            return [dados]
+        raise ValueError("Resposta OddsPapi em lote inválida.")
+
     def odds_eventos_em_lote(self, eventos):
         """Obtém odds de vários fixtures OddsPapi em uma chamada por conjunto de torneios."""
         if self.provider != "oddspapi":
@@ -505,26 +516,56 @@ class OddsBetano:
             return {}
 
         try:
-            dados = self._get_papi(
-                "/odds-by-tournaments",
-                {
-                    "tournamentIds": ",".join(str(t) for t in torneios),
-                    "bookmakers": self.papi_bookmaker,
-                    # /odds-by-tournaments já devolve price decimal no payload.
-                    # Evita parâmetros redundantes que podem ser rejeitados
-                    # por validação estrita do endpoint.
-                    "language": "en",
-                    "verbosity": 3,
-                },
-            )
-            if isinstance(dados, list):
-                itens = dados
-            elif isinstance(dados, dict) and isinstance(dados.get("fixtures"), list):
-                itens = dados.get("fixtures") or []
-            elif isinstance(dados, dict) and dados.get("fixtureId") is not None:
-                itens = [dados]
-            else:
-                raise ValueError("Resposta OddsPapi em lote inválida.")
+            params = {
+                "tournamentIds": ",".join(str(t) for t in torneios),
+                "bookmakers": self.papi_bookmaker,
+                # O endpoint devolve preços decimais sem oddsFormat.
+                "language": "en",
+                "verbosity": 3,
+            }
+            falhas_por_torneio = {}
+            try:
+                itens = self._itens_resposta_odds_lote(
+                    self._get_papi("/odds-by-tournaments", params)
+                )
+            except requests.HTTPError as exc:
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status != 400 or len(torneios) < 2:
+                    raise
+
+                # O erro 400 pode depender de um subconjunto de torneios.
+                # No máximo 2 pedidos adicionais, apenas neste erro e sem
+                # alterar as regras de valor nem consultar resultados.
+                meio = max(len(torneios) // 2, 1)
+                grupos = (torneios[:meio], torneios[meio:])
+                itens = []
+                grupos_sucesso = 0
+                for grupo in grupos:
+                    parametros_grupo = dict(params)
+                    parametros_grupo["tournamentIds"] = ",".join(str(t) for t in grupo)
+                    try:
+                        itens_grupo = self._itens_resposta_odds_lote(
+                            self._get_papi("/odds-by-tournaments", parametros_grupo)
+                        )
+                        itens.extend(itens_grupo)
+                        grupos_sucesso += 1
+                    except (OddsPapiQuotaEsgotada, OddsPapiRateLimit):
+                        # Sem tentativas adicionais quando se esgota quota/limite.
+                        raise
+                    except (requests.RequestException, ValueError, TypeError, RuntimeError) as erro:
+                        motivo_grupo = self._motivo_excecao(erro)
+                        falhas_por_torneio.update({tid: motivo_grupo for tid in grupo})
+                        logging.info(
+                            "ODDS_BATCH | grupo_falhou=%s | torneios=%s",
+                            motivo_grupo,
+                            len(grupo),
+                        )
+                if not grupos_sucesso:
+                    raise
+                logging.info(
+                    "ODDS_BATCH | recuperacao_http_400 | grupos_ok=%s/2",
+                    grupos_sucesso,
+                )
 
             saida = {}
             for item in itens:
@@ -535,9 +576,21 @@ class OddsBetano:
                     continue
                 saida[fixture_id] = self._normalizar_odds_papi(item)
 
+            torneio_por_fixture = {
+                str(e.get("id")): e.get("tournament_id")
+                for e in eventos if e.get("id") not in (None, "")
+            }
             for fixture_id in ids_evento:
                 if fixture_id not in saida:
-                    self.ultimo_erro_evento[fixture_id] = "betano_sem_odds_no_evento"
+                    torneio_id = torneio_por_fixture.get(fixture_id)
+                    try:
+                        torneio_id = int(torneio_id)
+                    except (TypeError, ValueError):
+                        torneio_id = None
+                    self.ultimo_erro_evento[fixture_id] = (
+                        falhas_por_torneio.get(torneio_id)
+                        or "betano_sem_odds_no_evento"
+                    )
                     saida[fixture_id] = None
 
             logging.info(

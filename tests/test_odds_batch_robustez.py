@@ -1,6 +1,7 @@
 import tempfile
 import time
 import unittest
+import requests
 from pathlib import Path
 
 from main_sofascore import BotPremiumReal
@@ -31,6 +32,38 @@ class CapturaParamsSession:
             self.params = dict(params or {})
             return FakeResponse([])
         raise AssertionError(url)
+
+
+class HTTPFalhaResponse:
+    def __init__(self, status):
+        self.status_code = status
+        self.headers = {}
+
+    def raise_for_status(self):
+        raise requests.HTTPError("Pedido rejeitado", response=self)
+
+
+class SessaoLote400:
+    def __init__(self, falhas=None):
+        self.chamadas = []
+        self.falhas = set(falhas or {"11,22"})
+
+    def get(self, url, params=None, **kwargs):
+        if not url.endswith("/odds-by-tournaments"):
+            raise AssertionError("Endpoint inesperado: " + url)
+        torneios = str((params or {}).get("tournamentIds") or "")
+        self.chamadas.append(torneios)
+        if torneios in self.falhas:
+            return HTTPFalhaResponse(400)
+        return FakeResponse([
+            {
+                "fixtureId": "f" + torneio,
+                "participant1Name": "Casa",
+                "participant2Name": "Fora",
+                "bookmakerOdds": {},
+            }
+            for torneio in torneios.split(",")
+        ])
 
 
 class OddsBatchFalhaFake:
@@ -108,6 +141,77 @@ class OddsBatchRobustezTests(unittest.TestCase):
         self.assertEqual(sessao.params["tournamentIds"], "321")
         self.assertEqual(sessao.params["bookmakers"], "betano.pt")
         self.assertNotIn("oddsFormat", sessao.params)
+
+    def _fonte_lote(self, sessao):
+        fonte = OddsBetano(papi_key="segredo_teste", provider="oddspapi", session=sessao)
+        fonte.PAPI_BATCH_INTERVALO = 0
+        return fonte
+
+    def test_lote_400_recupera_duas_metades_com_dois_pedidos_extra(self):
+        sessao = SessaoLote400()
+        fonte = self._fonte_lote(sessao)
+        eventos = [
+            {"id": "f11", "tournament_id": 11},
+            {"id": "f22", "tournament_id": 22},
+        ]
+
+        dados = fonte.odds_eventos_em_lote(eventos)
+
+        self.assertEqual(sessao.chamadas, ["11,22", "11", "22"])
+        self.assertEqual(dados["f11"]["id"], "f11")
+        self.assertEqual(dados["f22"]["id"], "f22")
+        self.assertEqual(fonte.diagnostico_evento("f11"), "")
+
+    def test_lote_400_grupo_invalido_mantem_diagnostico_e_salva_restantes(self):
+        sessao = SessaoLote400(falhas={"11,22", "22"})
+        fonte = self._fonte_lote(sessao)
+
+        dados = fonte.odds_eventos_em_lote([
+            {"id": "f11", "tournament_id": 11},
+            {"id": "f22", "tournament_id": 22},
+        ])
+
+        self.assertEqual(len(sessao.chamadas), 3)
+        self.assertEqual(dados["f11"]["id"], "f11")
+        self.assertIsNone(dados["f22"])
+        self.assertEqual(fonte.diagnostico_evento("f22"), "odds_http_400")
+        self.assertNotIn("segredo_teste", str(dados))
+
+    def test_lote_400_sem_recuperacao_limita_tentativas(self):
+        sessao = SessaoLote400(falhas={"11,22", "11", "22"})
+        fonte = self._fonte_lote(sessao)
+        dados = fonte.odds_eventos_em_lote([
+            {"id": "f11", "tournament_id": 11},
+            {"id": "f22", "tournament_id": 22},
+        ])
+        self.assertEqual(sessao.chamadas, ["11,22", "11", "22"])
+        self.assertIsNone(dados["f11"])
+        self.assertIsNone(dados["f22"])
+        self.assertEqual(fonte.diagnostico_evento("f11"), "odds_http_400")
+
+    def test_lote_400_torneio_unico_nao_repete(self):
+        sessao = SessaoLote400(falhas={"11"})
+        fonte = self._fonte_lote(sessao)
+        self.assertEqual(
+            fonte.odds_eventos_em_lote([{"id": "f11", "tournament_id": 11}]),
+            {"f11": None},
+        )
+        self.assertEqual(sessao.chamadas, ["11"])
+
+    def test_lote_401_nao_repetir_nem_dividir(self):
+        class Sessao401(SessaoLote400):
+            def get(self, url, params=None, **kwargs):
+                self.chamadas.append(str((params or {}).get("tournamentIds") or ""))
+                return HTTPFalhaResponse(401)
+
+        sessao = Sessao401()
+        fonte = self._fonte_lote(sessao)
+        dados = fonte.odds_eventos_em_lote([
+            {"id": "f11", "tournament_id": 11},
+            {"id": "f22", "tournament_id": 22},
+        ])
+        self.assertIsNone(dados["f11"])
+        self.assertEqual(sessao.chamadas, ["11,22"])
 
     def test_captura_automatica_faz_fallback_so_nas_cinco_top5(self):
         with tempfile.TemporaryDirectory() as tmp:
