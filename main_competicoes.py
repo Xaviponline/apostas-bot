@@ -963,6 +963,98 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         )
         return "\n".join(linhas)
 
+    def _executar_lab_drift_segmentado(self):
+        """Só apresenta relatório já calculado pelo Research Lab; não reanalisa picks."""
+        if not self.research_lab.configurado:
+            return "🧪 RESEARCH LAB\n\n⚪ Ainda não está configurado no Railway."
+        dados = self.research_lab.status()
+        report = dados.get("report") if isinstance(dados.get("report"), dict) else {}
+        rel = report.get("drift_segmentado") if isinstance(report.get("drift_segmentado"), dict) else None
+        if not rel:
+            return (
+                "🧩 RESEARCH LAB — DRIFT SEGMENTADO\n\n"
+                "Ainda não há relatório desta versão. Executa /lab_export e confirma /lab_status."
+            )
+        if rel.get("estado") != "DESCRITIVO":
+            return (
+                "🧩 RESEARCH LAB — DRIFT SEGMENTADO\n\n"
+                "⚪ Amostra insuficiente ou campos em falta para comparar períodos."
+            )
+
+        base = rel["resumo"]["base"]
+        recente = rel["resumo"]["recente"]
+        boot = rel["resumo"]["bootstrap_brier"]
+        fmt = lambda v, n=4: f"{float(v):+.{n}f}".replace(".", ",")
+        linhas = [
+            "🧩 RESEARCH LAB — DRIFT SEGMENTADO",
+            "🔒 Apenas leitura • nenhuma promoção automática",
+            f"Telemetria liquidada: n={int(rel['n'])}",
+            f"Base: n={base['n']} | #{base['snapshot_min']}–#{base['snapshot_max']}",
+            f"Recente: n={recente['n']} | #{recente['snapshot_min']}–#{recente['snapshot_max']}",
+            "",
+            "📊 CHAMPION — PERÍODOS (SEM AJUSTE)",
+            (
+                f"Brier {float(base['metricas']['brier']):.4f}→"
+                f"{float(recente['metricas']['brier']):.4f} | "
+                f"Δ {fmt(boot['delta_brier'])}"
+            ).replace(".", ","),
+            (
+                f"Gap {float(base['metricas']['gap_pp']):+.1f}pp→"
+                f"{float(recente['metricas']['gap_pp']):+.1f}pp"
+            ).replace(".", ","),
+        ]
+        if boot.get("ci95_low") is not None and boot.get("ci95_high") is not None:
+            linhas.append(
+                f"IC95 bootstrap/dia: [{fmt(boot['ci95_low'])}, {fmt(boot['ci95_high'])}] "
+                f"({boot['dias_base']} / {boot['dias_recente']} dias)"
+            )
+        else:
+            linhas.append("⚪ Bootstrap inconclusivo: poucos dias ou previsões.")
+
+        labels = {
+            "por_mercado": "MERCADOS IGUAIS",
+            "por_liga": "LIGAS IGUAIS",
+            "por_liga_mercado": "MESMA LIGA + MERCADO",
+        }
+        feat_labels = {
+            "media_liga_total": "Média golos liga",
+            "lambda_total": "Lambda total",
+            "probabilidade": "Probabilidade",
+            "margem_limite": "Margem",
+        }
+        for chave, titulo in labels.items():
+            bloco = rel.get(chave) or {}
+            linhas.extend([
+                "",
+                f"🔬 {titulo}",
+                (
+                    f"Grupos válidos: {int(bloco.get('n_segmentos_elegiveis') or 0)} | "
+                    f"Cobertura base {float(bloco.get('base_coberta_pct') or 0):.0f}% / "
+                    f"recente {float(bloco.get('recente_coberta_pct') or 0):.0f}%"
+                ),
+            ])
+            ajustado = bloco.get("brier_mix_base")
+            if ajustado:
+                linhas.append(f"Brier mix-base (suporte comum): Δ {fmt(ajustado['delta'])}")
+            else:
+                linhas.append("⚪ Sem segmentos com ≥8 previsões em ambos os períodos.")
+            for item in (bloco.get("segmentos") or [])[:2]:
+                linhas.append(
+                    f"• {item['segmento']} (n={item['base_n']}→{item['recente_n']}) "
+                    f"Δ Brier {fmt(item['brier_recente'] - item['brier_base'])}"
+                )
+                for feature in ("media_liga_total", "lambda_total", "probabilidade", "margem_limite"):
+                    detalhe = (item.get("features") or {}).get(feature)
+                    if detalhe:
+                        linhas.append(f"   ↳ {feat_labels[feature]} Δ média {fmt(detalhe['delta_media'],3)}")
+        linhas.extend([
+            "",
+            "⚠️ Estimativas descritivas, com grupos pequenos e cobertura parcial.",
+            "⚠️ Mix-base não prova causalidade nem substitui validação prospetiva.",
+            "🛡️ V1.2, SEL1 e /v13_comercial permanecem intactos.",
+        ])
+        return "\n".join(linhas)
+
     def _executar_lab_top5(self):
         if not self.research_lab.configurado:
             return "🧪 RESEARCH LAB\n\n⚪ Ainda não está configurado no Railway."
@@ -1178,7 +1270,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self.enviar_mensagem(chat_id, resposta)
             return
 
-        if comando in {"/lab_export", "/lab_status", "/lab_drift", "/lab_top5"}:
+        if comando in {"/lab_export", "/lab_status", "/lab_drift", "/lab_top5", "/lab_drift_segmentado"}:
             if not owner_admin:
                 return
             try:
@@ -1188,6 +1280,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     resposta = self._executar_lab_status()
                 elif comando == "/lab_drift":
                     resposta = self._executar_lab_drift()
+                elif comando == "/lab_drift_segmentado":
+                    resposta = self._executar_lab_drift_segmentado()
                 else:
                     resposta = self._executar_lab_top5()
             except (
