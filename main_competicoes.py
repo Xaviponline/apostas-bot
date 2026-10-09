@@ -798,6 +798,16 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             linhas.extend(["", "⏳ Ainda não existe relatório concluído."])
             return "\n".join(linhas)
 
+        coorte_relatorio = (report.get("dataset") or {}).get("coorte")
+        if coorte_relatorio == "V1.2_exclusiva":
+            excluidas = int((report.get("dataset") or {}).get("versoes_anteriores_excluidas") or 0)
+            linhas.extend([
+                f"Coorte Research: V1.2 exclusiva | versões anteriores excluídas: {excluidas}",
+                "⚠️ Resultados deste Lab não são diretamente comparáveis aos relatórios multiversão anteriores.",
+            ])
+        else:
+            linhas.append("⚠️ Relatório multiversão antigo: executa /lab_export para recalcular só V1.2.")
+
         champion = report.get("champion") or {}
         total = champion.get("total") or {}
         top5 = champion.get("top5") or {}
