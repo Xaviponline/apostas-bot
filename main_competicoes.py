@@ -415,6 +415,89 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         )
         return "\n".join(linhas)
 
+    def _executar_v13_comercial(self):
+        m = self.previsoes.metricas_v13_comercial()
+        linhas = [
+            "💼 V1.3 COMERCIAL — TOP5 + VALUE",
+            "🔒 Teste prospetivo pré-registado • V1.2 e SEL1 inalteradas",
+            "",
+            "🧪 REGRA FIXA",
+            f"• Início: snapshot #{m['inicio_snapshot']} (09/10/2026)",
+            "• Apenas ranking #1–5",
+            "• Entrada só quando a primeira odd confirmada ≥ odd mínima",
+            "• Stake fixa: 1u",
+            f"• Coorte fixa: primeiras {m['alvo']} entradas elegíveis",
+            f"• Dias mínimos: {m['min_dias']}",
+            f"• CLV mínimo para avaliação: {m['min_clv_amostras']}/{m['alvo']} fechos",
+            "• Gate: ROI > 0% E CLV médio > 0%",
+            "• Sem substituição, extensão oportunista ou promoção automática",
+            "",
+            "📊 PROGRESSO",
+            f"• Top5 monitorizadas desde o início: {m['top5_monitorizadas']}",
+            f"• Entradas VALUE confirmadas: {m['coorte_tamanho']}/{m['alvo']}",
+            f"• Liquidadas: {m['liquidadas']} | Pendentes: {m['pendentes']}",
+            f"• Dias representados na coorte: {m['dias']}/{m['min_dias']}",
+        ]
+        if m["liquidadas"]:
+            sinal = "+" if m["lucro_unidades"] >= 0 else ""
+            sinal_roi = "+" if m["roi"] is not None and m["roi"] >= 0 else ""
+            linhas.extend(
+                [
+                    f"• ✅ {m['ganhos']} | ❌ {m['perdas']}",
+                    f"• P/L: {sinal}{m['lucro_unidades']:.2f}u".replace(".", ","),
+                    f"• ROI: {sinal_roi}{m['roi']*100:.1f}%".replace(".", ","),
+                    f"• Drawdown máximo: {m['max_drawdown']:.2f}u".replace(".", ","),
+                    f"• Maior sequência de perdas: {m['max_streak_perdas']}",
+                ]
+            )
+        if m["clv_amostras"]:
+            sinal_clv = "+" if m["clv_media"] is not None and m["clv_media"] >= 0 else ""
+            linhas.extend(
+                [
+                    f"• CLV: {m['clv_amostras']}/{m['coorte_tamanho']} amostras",
+                    f"• CLV médio: {sinal_clv}{m['clv_media']*100:.1f}%".replace(".", ","),
+                    f"• CLV positivo: {m['clv_positivos']}/{m['clv_amostras']}",
+                ]
+            )
+        else:
+            linhas.append("• CLV: ainda sem fechos capturados")
+
+        if m["estado"] == "RECOLHA":
+            linhas.extend(
+                [
+                    "",
+                    f"⏳ EM RECOLHA — faltam {m['alvo']-m['coorte_tamanho']} entradas VALUE Top5 para fechar a coorte.",
+                    "🛡️ Métricas intermédias são apenas acompanhamento e não permitem decisão.",
+                ]
+            )
+        elif m["estado"] == "AGUARDA_LIQUIDACAO":
+            linhas.extend(
+                [
+                    "",
+                    "⏳ COORTE FECHADA — aguardar liquidação das 50 entradas antes da decisão.",
+                ]
+            )
+        else:
+            regras = m["regras"]
+            linhas.extend(
+                [
+                    "",
+                    "🧭 GATE FINAL",
+                    f"• 50 entradas fixas: {'✅' if regras['coorte_50'] else '❌'}",
+                    f"• ≥20 dias: {'✅' if regras['dias_20'] else '❌'}",
+                    f"• 50 liquidadas: {'✅' if regras['liquidacao_completa'] else '❌'}",
+                    f"• ROI > 0%: {'✅' if regras['roi_positivo'] else '❌'}",
+                    f"• CLV ≥40/50: {'✅' if regras['clv_cobertura'] else '❌'}",
+                    f"• CLV médio > 0%: {'✅' if regras['clv_positivo'] else '❌'}",
+                    (
+                        "✅ PASSOU — pode ir a auditoria final; nunca é promovida automaticamente."
+                        if m["estado"] == "PASSOU"
+                        else "❌ NÃO PASSOU — não alterar nem prolongar esta coorte para procurar outro resultado."
+                    ),
+                ]
+            )
+        return "\n".join(linhas)
+
     def _executar_carteira_shadow(self):
         m = self.previsoes.metricas_carteira_valor()
         linhas = [
@@ -757,6 +840,19 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível executar a Shadow Top 5. "
                     "O histórico e a V1.2 não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/v13_comercial":
+            if not owner_admin:
+                return
+            try:
+                resposta = self._executar_v13_comercial()
+            except (ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "Não foi possível gerar o gate comercial agora. "
+                    "A V1.2, a SEL1 e os snapshots não foram alterados."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
