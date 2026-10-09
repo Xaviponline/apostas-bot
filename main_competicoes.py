@@ -227,8 +227,16 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     "qualidade": qualidade,
                     "odd_justa": odd_justa,
                     "odd_minima": odd_minima,
+                    "ranking_modelo": p.get("ranking_modelo"),
                 }
             )
+
+        selecoes.sort(
+            key=lambda s: (
+                int(s.get("ranking_modelo") or 999),
+                float((s.get("jogo") or {}).get("timestamp") or 0),
+            )
+        )
 
         if not selecoes:
             return (
@@ -237,7 +245,11 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 "O histórico não foi alterado."
             )
 
-        atuais = AuditoriaOdds(self.odds).enriquecer(selecoes)
+        atuais = AuditoriaOdds(self.odds).enriquecer(
+            selecoes,
+            fallback_individual_ausentes=True,
+            max_fallback_individual=5,
+        )
         atuais.sort(
             key=lambda s: (
                 float((s.get("jogo") or {}).get("timestamp") or 0),
