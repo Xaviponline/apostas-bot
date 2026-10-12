@@ -68,6 +68,9 @@ class BotPremiumReal:
     CLV_TARDIO_INTERVALO_SEG = 5 * 60
     CLV_TARDIO_MAX_FALLBACK = 2
     ODDS_AUTO_MAX_FALLBACK = 5
+    # Preservar quota para os fechos CLV oficiais; nao altera sinais/modelo.
+    ODDS_AUTO_RESERVA_CLV = 25
+    CLV_TARDIO_RESERVA_CLV = 10
     JOGOS_RETRY_VAZIO_SEG = 1.0
 
     def __init__(self, token=None, gestor=None, owner_id=None, chat_id=None, session=None, buscador=None, odds=None, analisador=None, previsoes=None):
@@ -354,6 +357,34 @@ class BotPremiumReal:
             logging.info('CLV_AUTO | %s closing line(s) capturada(s)', fechos)
         return fechos
 
+    def _quota_permite_captura(self, operacao, reserva=0):
+        """Reserva pedidos para CLV oficial; falha em modo seguro na OddsPapi."""
+        status_fn = getattr(self.odds, "status_conta", None)
+        is_papi = getattr(self.odds, "provider", None) == "oddspapi"
+        if callable(status_fn):
+            try:
+                status = status_fn()
+                restante = status.get("remaining") if isinstance(status, dict) else None
+                if restante is None:
+                    if is_papi:
+                        logging.warning("%s | suspensa: quota nao verificavel", operacao)
+                        return False
+                elif int(restante) <= reserva:
+                    logging.info(
+                        "%s | suspensa: quota baixa (restam %s; reserva %s)",
+                        operacao, restante, reserva,
+                    )
+                    return False
+            except (requests.RequestException, RuntimeError, ValueError, TypeError):
+                if is_papi:
+                    logging.warning("%s | suspensa: falha ao verificar quota", operacao)
+                    return False
+
+        if str(getattr(self.odds, "ultimo_diagnostico_eventos", "") or "") == "odds_quota_esgotada":
+            logging.info("%s | suspensa: quota OddsPapi esgotada", operacao)
+            return False
+        return True
+
     def _capturar_clv_se_devido(self):
         """Tenta fecho automático a partir dos últimos 30 min do jogo."""
         agora = time.monotonic()
@@ -366,18 +397,7 @@ class BotPremiumReal:
 
         self._proxima_captura_clv = agora + self.CLV_AUTO_INTERVALO_SEG
 
-        status_fn = getattr(self.odds, "status_conta", None)
-        if callable(status_fn):
-            try:
-                status = status_fn()
-                if isinstance(status, dict) and status.get("remaining") == 0:
-                    logging.info("CLV_AUTO | suspensa: quota OddsPapi esgotada")
-                    return 0
-            except (requests.RequestException, RuntimeError, ValueError, TypeError):
-                pass
-
-        if str(getattr(self.odds, "ultimo_diagnostico_eventos", "") or "") == "odds_quota_esgotada":
-            logging.info("CLV_AUTO | suspensa: quota OddsPapi esgotada")
+        if not self._quota_permite_captura("CLV_AUTO"):
             return 0
 
         try:
@@ -396,17 +416,7 @@ class BotPremiumReal:
             return 0
 
         self._proxima_captura_clv_tardio = agora + self.CLV_TARDIO_INTERVALO_SEG
-        status_fn = getattr(self.odds, "status_conta", None)
-        if callable(status_fn):
-            try:
-                status = status_fn()
-                if isinstance(status, dict) and status.get("remaining") == 0:
-                    logging.info("CLV_TARDIO | suspensa: quota OddsPapi esgotada")
-                    return 0
-            except (requests.RequestException, RuntimeError, ValueError, TypeError):
-                pass
-        if str(getattr(self.odds, "ultimo_diagnostico_eventos", "") or "") == "odds_quota_esgotada":
-            logging.info("CLV_TARDIO | suspensa: quota OddsPapi esgotada")
+        if not self._quota_permite_captura("CLV_TARDIO", self.CLV_TARDIO_RESERVA_CLV):
             return 0
         try:
             atualizadas = AuditoriaOdds(self.odds).enriquecer(
@@ -431,19 +441,7 @@ class BotPremiumReal:
         if not self.odds.configurada:
             return 0
 
-        status_fn = getattr(self.odds, "status_conta", None)
-        if callable(status_fn):
-            try:
-                status = status_fn()
-                if isinstance(status, dict) and status.get("remaining") == 0:
-                    logging.info("ODDS_AUTO | suspensa: quota OddsPapi esgotada")
-                    return 0
-            except (requests.RequestException, RuntimeError, ValueError, TypeError):
-                # O diagnóstico de quota nunca deve impedir o resto do bot.
-                pass
-
-        if str(getattr(self.odds, "ultimo_diagnostico_eventos", "") or "") == "odds_quota_esgotada":
-            logging.info("ODDS_AUTO | suspensa: quota OddsPapi esgotada")
+        if not self._quota_permite_captura("ODDS_AUTO", self.ODDS_AUTO_RESERVA_CLV):
             return 0
         try:
             return self._capturar_odds_pendentes()
