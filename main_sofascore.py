@@ -1,6 +1,7 @@
 """Bot privado: jogos reais, análise premium beta e registo de apostas."""
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+from pathlib import Path
 import logging
 import os
 import re
@@ -188,13 +189,30 @@ class BotPremiumReal:
                 time.sleep(self.JOGOS_RETRY_VAZIO_SEG)
         return []
 
+    def _enriquecer_com_cobertura(self, selecoes, **kwargs):
+        """Enriquece como antes e regista telemetria passiva fora dos snapshots."""
+        saida = AuditoriaOdds(self.odds).enriquecer(selecoes, **kwargs)
+        if getattr(self.odds, "provider", None) != "oddspapi":
+            return saida
+        caminho_previsoes = getattr(self.previsoes, "path", None)
+        if caminho_previsoes is None:
+            return saida
+        try:
+            from odds_cobertura import ObservatorioCobertura
+            destino = Path(caminho_previsoes).with_name("odds_cobertura.json")
+            ObservatorioCobertura(destino).registar(saida)
+        except (OSError, RuntimeError, ValueError, TypeError, OverflowError):
+            # A telemetria nao pode impedir a recolha de odds nem o CLV.
+            logging.warning("ODDS_COBERTURA | registo local indisponivel")
+        return saida
+
     def _executar_analise(self, tecnica=False):
         jogos = self._jogos_hoje_portugal()
         if not jogos:
             return self.buscador.formatar_jogos(jogos)
         selecoes = self.analisador.gerar_todas_apostas(jogos)
         try:
-            selecoes = AuditoriaOdds(self.odds).enriquecer(selecoes)
+            selecoes = self._enriquecer_com_cobertura(selecoes)
         except (RuntimeError, ValueError, TypeError):
             # Odds são opcionais; falhas nesta camada nunca bloqueiam a V1.
             pass
@@ -272,7 +290,7 @@ class BotPremiumReal:
             for p in self.previsoes.dados.get('previsoes', [])
             if self.previsoes._odd_real_valida(p.get('odd_real')) is not None
         )
-        enriquecidas = AuditoriaOdds(self.odds).enriquecer(
+        enriquecidas = self._enriquecer_com_cobertura(
             selecoes,
             fallback_individual_ausentes=True,
             max_fallback_individual=self.ODDS_AUTO_MAX_FALLBACK,
@@ -347,7 +365,7 @@ class BotPremiumReal:
         if not candidatas:
             return 0
 
-        enriquecidas = AuditoriaOdds(self.odds).enriquecer(
+        enriquecidas = self._enriquecer_com_cobertura(
             candidatas,
             fallback_individual_ausentes=True,
             max_fallback_individual=self.CLV_AUTO_MAX_FALLBACK,
@@ -420,7 +438,7 @@ class BotPremiumReal:
         if not self._quota_permite_captura("CLV_TARDIO", self.CLV_TARDIO_RESERVA_CLV):
             return 0
         try:
-            atualizadas = AuditoriaOdds(self.odds).enriquecer(
+            atualizadas = self._enriquecer_com_cobertura(
                 candidatas,
                 fallback_individual_ausentes=True,
                 max_fallback_individual=self.CLV_TARDIO_MAX_FALLBACK,
