@@ -587,24 +587,38 @@ class OddsBetano:
                         torneio_id = int(torneio_id)
                     except (TypeError, ValueError):
                         torneio_id = None
+                    # Fixture omitido da resposta nao prova ausencia de
+                    # cotacao Betano: pode haver indisponibilidade do lote.
+                    # Preservar diagnostico HTTP especifico quando existir.
                     self.ultimo_erro_evento[fixture_id] = (
                         falhas_por_torneio.get(torneio_id)
-                        or "betano_sem_odds_no_evento"
+                        or "fixture_omitido_no_lote"
                     )
                     saida[fixture_id] = None
 
+            recebidos = sum(1 for v in saida.values() if v is not None)
+            betano_presentes = sum(
+                1 for v in saida.values()
+                if isinstance(v, dict) and v.get("bookmaker_disponivel") is True
+            )
             logging.info(
-                "ODDS_BATCH | torneios=%s | fixtures=%s | respostas=%s",
+                "ODDS_BATCH | torneios=%s | fixtures=%s | respostas=%s"
+                " | betano_presente=%s | omitidos=%s",
                 len(torneios),
                 len(ids_evento),
-                sum(1 for v in saida.values() if v is not None),
+                recebidos,
+                betano_presentes,
+                len(ids_evento) - recebidos,
             )
             return saida
         except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
             motivo = self._motivo_excecao(exc)
             for fixture_id in ids_evento:
                 self.ultimo_erro_evento[fixture_id] = motivo
-            logging.info("ODDS_BATCH | falha=%s | fixtures=%s", motivo, len(ids_evento))
+            logging.info(
+                "ODDS_BATCH | falha=%s | torneios=%s | fixtures=%s",
+                motivo, len(torneios), len(ids_evento),
+            )
             return {fixture_id: None for fixture_id in ids_evento}
 
     def status_conta(self):
