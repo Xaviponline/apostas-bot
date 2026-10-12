@@ -1959,7 +1959,7 @@ class BotPremiumDiario(BotPremiumReal):
             selecoes_novas = self.analisador.gerar_todas_apostas(jogos_futuros)
             resumo_novo = dict(self.analisador.ultimo_resumo)
             try:
-                selecoes_novas = AuditoriaOdds(self.odds).enriquecer(selecoes_novas)
+                selecoes_novas = self._enriquecer_com_cobertura(selecoes_novas)
             except (RuntimeError, ValueError, TypeError):
                 # A camada de odds é opcional e nunca pode impedir a análise V1.
                 pass
