@@ -3,6 +3,7 @@ import logging
 
 import requests
 from collections import Counter
+from pathlib import Path
 from datetime import datetime
 
 from acessos_premium import GestorAcessosPremium
@@ -697,6 +698,17 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         except (TypeError, ValueError):
             return str(valor)
 
+    def _executar_odds_cobertura(self):
+        """Relatorio offline; nunca consulta OddsPapi nem modifica previsoes."""
+        from odds_cobertura import ObservatorioCobertura
+        caminho = getattr(self.previsoes, "path", None)
+        if caminho is None:
+            return "🧭 COBERTURA ODDS — historico local indisponivel."
+        destino = Path(caminho).with_name("odds_cobertura.json")
+        return ObservatorioCobertura(destino).relatorio(
+            snapshots=self.previsoes.dados.get("previsoes", [])
+        )
+
     def _executar_odds_status(self):
         """Mostra uso da quota sem consumir a quota mensal do OddsPapi."""
         if not self.odds.configurada:
@@ -1385,6 +1397,19 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível gerar a auditoria comercial agora. "
                     "A V1.2, a SEL1 e a odd inicial congelada não foram alteradas."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/odds_cobertura":
+            if not owner_admin:
+                return
+            try:
+                resposta = self._executar_odds_cobertura()
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                resposta = (
+                    "🧭 COBERTURA ODDS — historico local indisponivel. "
+                    "Sem consultas de rede; V1.2 e V1.3 intactas."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
