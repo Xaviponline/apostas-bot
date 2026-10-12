@@ -53,7 +53,7 @@ def _categoria(selecao):
 
 
 def _dados_chave(liga, data_iso, event_id, mercado):
-    if not all((liga, data_iso, str(event_id or ""), mercado)):
+    if not liga or not data_iso or event_id is None or str(event_id) == "" or not mercado:
         return None
     dados = json.dumps(
         [str(liga).casefold(), str(data_iso), str(event_id), str(mercado).casefold()],
