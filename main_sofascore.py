@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
 import logging
+from contextlib import nullcontext
 import os
 import re
 import shlex
@@ -51,6 +52,8 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /odds ID — Consultar mercados/odds Betano desse evento
 /odds_status — Ver quota usada/restante da fonte de odds
 /odds_cobertura — Cobertura observada Betano por liga/mercado, sem API (admin)
+/odds_verificacao — Alertas de odds/EV anómalos e contexto do fixture (admin)
+/quota_plano — Consumo local por operação e prioridade para CLV (admin)
 /add_aposta "Jogo" "Mercado" ODD VALOR — Registar uma aposta já feita
 /resultados — Histórico e contas
 /score ID ganhou|perdeu|anulada — Registar resultado
@@ -208,6 +211,8 @@ class BotPremiumReal:
             from odds_cobertura import ObservatorioCobertura
             destino = Path(caminho_previsoes).with_name("odds_cobertura.json")
             ObservatorioCobertura(destino).registar(saida)
+            from odds_verificacao import VerificacaoOdds
+            VerificacaoOdds(Path(caminho_previsoes).with_name("odds_verificacoes.json")).registar(saida)
         except (OSError, RuntimeError, ValueError, TypeError, OverflowError):
             # A telemetria nao pode impedir a recolha de odds nem o CLV.
             logging.warning("ODDS_COBERTURA | registo local indisponivel")
@@ -383,6 +388,10 @@ class BotPremiumReal:
             logging.info('CLV_AUTO | %s closing line(s) capturada(s)', fechos)
         return fechos
 
+    def _contexto_odds(self, operacao):
+        contexto = getattr(self.odds, "contexto_operacao", None)
+        return contexto(operacao) if callable(contexto) else nullcontext()
+
     def _quota_permite_captura(self, operacao, reserva=0):
         """Reserva pedidos para CLV oficial; falha em modo seguro na OddsPapi."""
         status_fn = getattr(self.odds, "status_conta", None)
@@ -390,6 +399,17 @@ class BotPremiumReal:
         if callable(status_fn):
             try:
                 status = status_fn()
+                # A quota /account e autoritativa; o contador local orienta
+                # apenas consumos nao prioritarios. CLV oficial sem limite diario.
+                if is_papi and operacao in {"ODDS_AUTO", "CLV_TARDIO"}:
+                    gestor = getattr(self.odds, "_quota_local", None)
+                    if gestor is not None:
+                        try:
+                            if not gestor.permite_extra(status, operacao):
+                                logging.info("%s | suspensa: orcamento diario/reserva CLV", operacao)
+                                return False
+                        except (OSError, RuntimeError, ValueError, TypeError):
+                            logging.warning("%s | contador local indisponivel; reserva global mantida", operacao)
                 restante = status.get("remaining") if isinstance(status, dict) else None
                 if restante is None:
                     if is_papi:
@@ -427,7 +447,8 @@ class BotPremiumReal:
             return 0
 
         try:
-            return self._capturar_clv_pendentes(candidatas)
+            with self._contexto_odds("CLV_AUTO"):
+                return self._capturar_clv_pendentes(candidatas)
         except (requests.RequestException, RuntimeError, ValueError, TypeError):
             logging.warning('CLV_AUTO | captura indisponível; tenta novamente mais tarde')
             return 0
@@ -445,11 +466,12 @@ class BotPremiumReal:
         if not self._quota_permite_captura("CLV_TARDIO", self.CLV_TARDIO_RESERVA_CLV):
             return 0
         try:
-            atualizadas = self._enriquecer_com_cobertura(
-                candidatas,
-                fallback_individual_ausentes=True,
-                max_fallback_individual=self.CLV_TARDIO_MAX_FALLBACK,
-            )
+            with self._contexto_odds("CLV_TARDIO"):
+                atualizadas = self._enriquecer_com_cobertura(
+                    candidatas,
+                    fallback_individual_ausentes=True,
+                    max_fallback_individual=self.CLV_TARDIO_MAX_FALLBACK,
+                )
             capturadas = self.previsoes.registar_fecho_tardio(atualizadas)
             if capturadas:
                 logging.info("CLV_TARDIO | %s segunda(s) cotação(ões) T-10m capturada(s)", capturadas)
@@ -480,7 +502,8 @@ class BotPremiumReal:
         if not self._quota_permite_captura("ODDS_AUTO", self.ODDS_AUTO_RESERVA_CLV):
             return 0
         try:
-            return self._capturar_odds_pendentes()
+            with self._contexto_odds("ODDS_AUTO"):
+                return self._capturar_odds_pendentes()
         except (requests.RequestException, RuntimeError, ValueError, TypeError):
             logging.warning('ODDS_AUTO | ronda automática indisponível; tenta novamente mais tarde')
             return 0

@@ -18,6 +18,7 @@ from main_enriquecido import (
 from odds_auditoria import AuditoriaOdds
 from research_export import ResearchLabClient
 from clv_observatorio import ObservatorioCLV
+from odds_verificacao import VerificacaoOdds
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
@@ -29,6 +30,9 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         marcador = Path(caminho_previsoes).with_name('clv_avisos.json') if caminho_previsoes else None
         self._observatorio_clv = ObservatorioCLV(marcador)
         self._proximo_check_alertas_clv = 0.0
+        self._auditoria_verificacao = VerificacaoOdds(
+            Path(caminho_previsoes).with_name("odds_verificacoes.json") if caminho_previsoes else None
+        )
 
     def _capturar_clv_tardio_se_devido(self):
         """Mantem CLV normal e verifica avisos admin de fechos em falta."""
@@ -49,6 +53,15 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         except (OSError, ValueError, TypeError, KeyError, RuntimeError, requests.RequestException):
             # A impossibilidade de enviar alerta nunca para Telegram, odds ou CLV.
             logging.warning("CLV_ALERTA | diagnostico ou envio indisponivel")
+        try:
+            avisados_odds = self._auditoria_verificacao.avisar(
+                self.previsoes,
+                lambda mensagem: self.enviar_mensagem(self.chat_id, mensagem),
+            )
+            if avisados_odds:
+                logging.info("ODDS_VERIFICACAO | %s sinal(is) enviados ao admin", avisados_odds)
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError, requests.RequestException):
+            logging.warning("ODDS_VERIFICACAO | alertas indisponiveis; producao intacta")
         return resultado
 
     def _executar_painel(self):
@@ -79,6 +92,15 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             except (OSError, RuntimeError, ValueError, TypeError, requests.RequestException):
                 quota = "consulta de conta temporariamente indisponivel"
         integ = self.previsoes.verificar_integridade()
+        try:
+            alertas_odds = len(self._auditoria_verificacao.verificacoes(self.previsoes))
+        except (AttributeError, OSError, RuntimeError, ValueError, TypeError):
+            alertas_odds = None
+        try:
+            r_quota = self.odds._quota_local.resumo()
+            quota_hoje = f"{r_quota['total']} pedidos do bot hoje"
+        except (AttributeError, OSError, RuntimeError, ValueError, TypeError):
+            quota_hoje = "contador local indisponivel"
         linhas = [
             "🧭 PAINEL DE CONTROLO — ADMIN",
             f"📅 {hoje.strftime('%d/%m/%Y')} · Hora de Portugal",
@@ -91,9 +113,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             f"Fechos em falta apos inicio: {t['sem_fecho']} | Em janela T-30m: {t['em_janela']}",
             "",
             f"📡 OddsPapi: {quota}",
+            f"📊 Atividade API: {quota_hoje}",
+            f"🔎 Sinais odds a rever (7 dias): {alertas_odds if alertas_odds is not None else '?'}",
             f"🛡️ Integridade: {integ['divergentes']} divergencia(s) em {integ['protegidos']} snapshots selados",
             "",
             "ℹ️ /clv_diagnostico — detalhes de fechos em falta",
+            "ℹ️ /odds_verificacao — EV/fixtures invulgares; /quota_plano — consumo diario",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
             "ℹ️ A consulta de conta nao desconta pedidos OddsPapi.",
@@ -1314,6 +1339,25 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     "Não foi possível gerar esta área Premium neste momento. "
                     "O histórico e o modelo não foram alterados."
                 )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando in {"/odds_verificacao", "/quota_plano"}:
+            if not owner_admin:
+                return
+            try:
+                if comando == "/odds_verificacao":
+                    resposta = self._auditoria_verificacao.relatorio(self.previsoes)
+                else:
+                    auditoria = getattr(self.odds, "_quota_local", None)
+                    status_fn = getattr(self.odds, "status_conta", None)
+                    if auditoria is None:
+                        resposta = "📊 QUOTA — contador local ainda indisponivel."
+                    else:
+                        status = status_fn() if callable(status_fn) else None
+                        resposta = auditoria.relatorio(status)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError, requests.RequestException):
+                resposta = "⚠️ Auditoria de odds/quota temporariamente indisponivel."
             self.enviar_mensagem(chat_id, resposta)
             return
 

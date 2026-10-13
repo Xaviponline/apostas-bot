@@ -6,6 +6,9 @@ As chaves são lidas apenas de variáveis de ambiente e nunca devem ser guardada
 """
 import logging
 import os
+from pathlib import Path
+from contextlib import contextmanager
+from odds_quota import GestorQuotaOdds
 from datetime import datetime, timedelta, timezone
 from time import monotonic, sleep
 from zoneinfo import ZoneInfo
@@ -47,6 +50,9 @@ class OddsBetano:
         self._papi_proximo_pedido = {}
         self._eventos_cache = None
         self._eventos_cache_expira = 0.0
+        self._operacao_odds = 'MANUAL'
+        pasta_quota = Path(os.getenv('DATA_DIR', '/data'))
+        self._quota_local = GestorQuotaOdds(pasta_quota / 'odds_pedidos.json')
 
         if provider:
             self.provider = provider
@@ -63,6 +69,18 @@ class OddsBetano:
 
         self.api_key = self.papi_key if self.provider == "oddspapi" else self.legacy_key
         self.estado = "configurada" if self.configurada else "não configurada"
+
+    @contextmanager
+    def contexto_operacao(self, nome):
+        anterior = self._operacao_odds
+        self._operacao_odds = str(nome or "MANUAL")
+        try:
+            yield
+        finally:
+            self._operacao_odds = anterior
+
+    def relatorio_quota_local(self):
+        return self._quota_local.relatorio(self.status_conta())
 
     @property
     def configurada(self):
@@ -192,6 +210,12 @@ class OddsBetano:
                 timeout=(5, 25),
             )
             ultimo = r
+            # Auditoria apenas local e best-effort, sem expor parametros nem
+            # interromper a consulta de odds se nao houver volume disponivel.
+            try:
+                self._quota_local.registar(path, self._operacao_odds)
+            except (OSError, RuntimeError, ValueError, TypeError):
+                logging.warning("ODDS_QUOTA | contador local indisponivel")
             self._marcar_cooldown_papi(path)
 
             if getattr(r, "status_code", None) != 429:
