@@ -52,6 +52,8 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /odds ID — Consultar mercados/odds Betano desse evento
 /odds_status — Ver quota usada/restante da fonte de odds
 /odds_cobertura — Cobertura observada Betano por liga/mercado, sem API (admin)
+/odds_verificacao — Alertas de odds/EV anómalos e contexto do fixture (admin)
+/quota_plano — Consumo local por operação e prioridade para CLV (admin)
 /add_aposta "Jogo" "Mercado" ODD VALOR — Registar uma aposta já feita
 /resultados — Histórico e contas
 /score ID ganhou|perdeu|anulada — Registar resultado
