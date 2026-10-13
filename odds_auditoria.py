@@ -318,6 +318,36 @@ class AuditoriaOdds:
             jogo.get("fora"), fora_payload
         )
 
+    @classmethod
+    def _alertas_contexto(cls, jogo, evento, dados=None):
+        """Confere horario e competicao para revisao manual (nao muda odds)."""
+        alertas = []
+        try:
+            ts_modelo = float(jogo.get("timestamp"))
+        except (TypeError, ValueError):
+            ts_modelo = None
+        ts_fonte = cls._timestamp_iso(evento.get("data"))
+        if ts_modelo is not None and ts_fonte is not None:
+            if abs(ts_modelo - ts_fonte) > cls.TOLERANCIA_HORA_EVENTO_SEG:
+                alertas.append("horario_divergente")
+
+        liga_modelo = cls._normalizar(jogo.get("liga"))
+        liga_evento = cls._normalizar(
+            (dados or {}).get("liga") or evento.get("liga")
+        )
+        # Nomes regionais podem diferir; so assinalar incompatibilidades
+        # claras, nunca bloquear por uma simples variacao de designacao.
+        ignorar = {"league", "liga", "football", "futebol", "english", "england"}
+        tokens_modelo = set(liga_modelo.split()) - ignorar
+        tokens_fonte = set(liga_evento.split()) - ignorar
+        if (
+            len(tokens_modelo) >= 1 and len(tokens_fonte) >= 1
+            and not (tokens_modelo & tokens_fonte)
+            and liga_modelo != "competicao" and liga_evento != "competicao"
+        ):
+            alertas.append("competicao_divergente")
+        return alertas
+
     @staticmethod
     def _registar_diagnostico(selecao, motivo):
         selecao["_odds_diag"] = motivo
@@ -395,6 +425,15 @@ class AuditoriaOdds:
                 continue
 
             evento = candidatos[0]
+            alertas_contexto = self._alertas_contexto(jogo, evento)
+            if alertas_contexto:
+                selecao["_odds_alertas"] = alertas_contexto
+                logging.warning(
+                    "ODDS_VERIFICACAO | %s vs %s | %s",
+                    jogo.get("casa") or "?",
+                    jogo.get("fora") or "?",
+                    ",".join(alertas_contexto),
+                )
             event_id = evento.get("id")
             if event_id is None:
                 self._registar_diagnostico(selecao, "evento_sem_id")
@@ -437,6 +476,11 @@ class AuditoriaOdds:
                 self._registar_diagnostico(selecao, motivo)
                 continue
 
+            if isinstance(dados, dict):
+                adicionais = self._alertas_contexto(jogo, eventos_resolvidos[chave_evento], dados)
+                selecao["_odds_alertas"] = sorted(set(
+                    (selecao.get("_odds_alertas") or []) + adicionais
+                ))
             if not self._payload_evento_compativel(dados, jogo, event_id):
                 self._registar_diagnostico(selecao, "odds_payload_evento_divergente")
                 continue
