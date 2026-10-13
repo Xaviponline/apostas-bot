@@ -22,6 +22,8 @@ from odds_verificacao import VerificacaoOdds
 from backups_locais import CopiasSeguranca
 from monitor_operacional import MonitorOperacional
 from odds_rastreio import RastreioOdds
+from backup_externo import BackupExterno
+from vigilancia_externa import VigilanciaExterna
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
@@ -45,6 +47,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         self._rastreio_odds = RastreioOdds(
             pasta_estado / "odds_rastreio.jsonl" if pasta_estado else None
         )
+        self._backup_externo = BackupExterno(self._backups)
+        self._vigilancia_externa = VigilanciaExterna(
+            pasta_estado / "healthchecks_ping.json" if pasta_estado else None
+        )
+        self._vigilancia_backup = VigilanciaExterna(
+            pasta_estado / "healthchecks_backup.json" if pasta_estado else None
+        )
+        self._proximo_backup_externo = 0.0
+
+    def _ping_externo_se_devido(self):
+        """So e chamado depois de polling Telegram e tarefas sem excecao."""
+        try:
+            self._vigilancia_externa.ping()
+        except (OSError, RuntimeError, TypeError, ValueError, requests.RequestException):
+            logging.warning("MONITOR_EXTERNO | envio de heartbeat falhou; token oculto")
 
     def _capturar_clv_tardio_se_devido(self):
         """Mantem CLV normal e verifica avisos admin de fechos em falta."""
@@ -57,6 +74,20 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     logging.info("BACKUP_LOCAL | copia diaria verificada por SHA-256")
             except (OSError, ValueError, TypeError, KeyError, RuntimeError):
                 logging.warning("BACKUP_LOCAL | copia nao criada; historico original intacto")
+            # Upload externo so antes das 18h; falhas nunca interrompem CLV.
+            if agora >= getattr(self, "_proximo_backup_externo", float("inf")):
+                self._proximo_backup_externo = agora + 3600
+                try:
+                    if self._backup_externo.executar_se_devido():
+                        logging.info("BACKUP_OFFSITE | upload cifrado e restauracao em memoria verificados")
+                        try:
+                            self._vigilancia_backup.ping(
+                                var="BACKUP_HEALTHCHECKS_PING_URL", forcar=True
+                            )
+                        except (OSError, ValueError, TypeError, RuntimeError, requests.RequestException):
+                            logging.warning("BACKUP_OFFSITE | aviso externo nao confirmado")
+                except (OSError, ValueError, TypeError, KeyError, RuntimeError, requests.RequestException):
+                    logging.warning("BACKUP_OFFSITE | falha sem tocar nos snapshots; rever /backup_externo_status")
             try:
                 avisos = self._monitor.verificar(
                     self._agenda_analise_diaria, self._backups,
@@ -1401,7 +1432,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self.enviar_mensagem(chat_id, resposta)
             return
 
-        if comando in {"/backup_status", "/monitor_status", "/odds_rastreio"}:
+        if comando in {"/backup_status", "/monitor_status", "/odds_rastreio",
+                       "/backup_externo_status", "/vigilancia_externa_status"}:
             if not owner_admin:
                 return
             try:
@@ -1409,6 +1441,10 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     resposta = self._backups.relatorio()
                 elif comando == "/monitor_status":
                     resposta = self._monitor.relatorio(self._agenda_analise_diaria, self._backups)
+                elif comando == "/backup_externo_status":
+                    resposta = self._backup_externo.relatorio()
+                elif comando == "/vigilancia_externa_status":
+                    resposta = self._vigilancia_externa.relatorio()
                 else:
                     resposta = self._rastreio_odds.relatorio()
             except (OSError, ValueError, TypeError, KeyError, RuntimeError, ArithmeticError):
