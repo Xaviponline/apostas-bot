@@ -14,6 +14,7 @@ from analisador_inteligente import AnalisadorInteligente
 from buscador_jogos_reais import BuscadorJogosReais
 from odds_auditoria import AuditoriaOdds
 from odds_betano import OddsBetano
+from analise_auto_diaria import AgendadorAnaliseDiaria
 from previsoes_premium import RegistoPrevisoes
 
 AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
@@ -21,6 +22,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /id — Ver o teu ID e o ID desta conversa
 /jogos — Consultar jogos reais de hoje (hora de Portugal; ESPN + fallback SofaScore)
 /analisa — Relatório premium compacto dos jogos de hoje
+/analise_auto_status — Estado do agendamento diário das 09:00 (admin)
 /analisa_full — Relatório técnico completo do mesmo modelo
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /v12_status — Centro de controlo da validação V1.2 (apenas leitura)
@@ -93,6 +95,9 @@ class BotPremiumReal:
         self._proxima_captura_odds = 0.0
         self._proxima_captura_clv = 0.0
         self._proxima_captura_clv_tardio = 0.0
+        caminho_previsoes = getattr(self.previsoes, 'path', None)
+        marcador = Path(caminho_previsoes).with_name('analise_diaria_auto.json') if caminho_previsoes else None
+        self._agenda_analise_diaria = AgendadorAnaliseDiaria(marcador)
 
     def api(self, metodo, data):
         r = self.session.post(f'{self.base_url}/{metodo}', json=data, timeout=(5, 40))
@@ -451,6 +456,16 @@ class BotPremiumReal:
             logging.warning("CLV_TARDIO | recolha indisponível; nova tentativa se ainda for pré-jogo")
             return 0
 
+    def _executar_analise_auto_se_devida(self, agora=None):
+        """Execucao matinal do /analisa sem notificar clientes ou alterar o protocolo."""
+        def tarefa():
+            antes = len(self.previsoes.dados.get("previsoes", []))
+            self._executar_analise(tecnica=False)
+            depois = len(self.previsoes.dados.get("previsoes", []))
+            logging.info("ANALISE_AUTO | %s novo(s) snapshot(s)", max(depois - antes, 0))
+
+        return self._agenda_analise_diaria.executar_se_devido(tarefa, agora=agora)
+
     def _capturar_odds_se_devida(self):
         """Executa no máximo uma ronda a cada 2 horas para poupar quota."""
         agora = time.monotonic()
@@ -493,6 +508,8 @@ class BotPremiumReal:
                 resposta = self._executar_analise(tecnica=False)
             elif comando == '/analisa_full':
                 resposta = self._executar_analise(tecnica=True)
+            elif comando == '/analise_auto_status':
+                resposta = self._agenda_analise_diaria.relatorio()
             elif comando == '/performance':
                 liquidadas = self.previsoes.atualizar_pendentes()
                 resposta = self.previsoes.relatorio()
@@ -575,6 +592,7 @@ class BotPremiumReal:
                             update['update_id'],
                         )
                     self.gestor.marcar_update(update['update_id'])
+                self._executar_analise_auto_se_devida()
                 self._capturar_odds_se_devida()
                 self._capturar_clv_se_devido()
                 self._capturar_clv_tardio_se_devido()
