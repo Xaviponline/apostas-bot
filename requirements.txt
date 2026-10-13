@@ -1,3 +1,6 @@
 requests>=2.32.4,<3
 tzdata>=2025.2
 curl_cffi==0.16.3
+# Apenas usados quando backups S3 externos forem ativados.
+boto3>=1.35,<2
+cryptography>=45,<49
