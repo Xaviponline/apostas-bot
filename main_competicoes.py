@@ -839,6 +839,36 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             snapshots=self.previsoes.dados.get("previsoes", [])
         )
 
+    @staticmethod
+    def _diagnostico_erro_conta_odds(exc):
+        """So devolve classe/codigo HTTP. Nunca serializar excecao ou URL com apiKey."""
+        from odds_betano import OddsBetano
+        codigo = OddsBetano._motivo_excecao(exc)
+        if codigo == "odds_http_401":
+            detalhe = "A API recusou a autenticacao. Confirmar chave no painel da OddsPapi."
+        elif codigo == "odds_http_403":
+            detalhe = "Acesso proibido pelo fornecedor. Confirmar conta e permissoes na OddsPapi."
+        elif codigo in {"odds_http_429", "odds_rate_limit_429"}:
+            detalhe = "Limite temporario de pedidos. Evitar repeticoes manuais."
+        elif codigo == "odds_quota_esgotada":
+            detalhe = "O fornecedor declarou quota esgotada. Consultar a subscricao."
+        elif codigo in {"odds_timeout", "odds_ligacao_indisponivel", "odds_rede_indisponivel"}:
+            detalhe = "Falha de comunicacao com a API. Pode ser temporaria."
+        elif codigo.startswith("odds_http_5"):
+            detalhe = "Erro do servidor da OddsPapi. Tentar novamente mais tarde."
+        elif codigo == "odds_resposta_invalida":
+            detalhe = "Resposta inesperada do fornecedor."
+        else:
+            detalhe = "Causa nao determinada; consultar logs tecnicos do Railway."
+        return (
+            "📡 ODDS STATUS — DIAGNOSTICO DE FALHA\n"
+            f"Codigo seguro: {codigo}\n"
+            f"Interpretacao: {detalhe}\n"
+            "🔒 Nenhuma chave ou resposta privada foi exposta.\n"
+            "🛡️ Capturas automaticas suspensas enquanto a quota nao for verificavel.\n"
+            "ℹ️ /account nao consome pedidos mensais de odds."
+        )
+
     def _executar_odds_status(self):
         """Mostra uso da quota sem consumir a quota mensal do OddsPapi."""
         if not self.odds.configurada:
@@ -1611,14 +1641,14 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 TypeError,
                 KeyError,
                 ArithmeticError,
-            ):
+            ) as exc:
                 if comando == "/valor":
                     resposta = (
                         "Não foi possível consultar as odds atuais. "
                         "As previsões e as odds congeladas não foram alteradas."
                     )
                 else:
-                    resposta = "Não foi possível consultar o estado da quota de odds."
+                    resposta = self._diagnostico_erro_conta_odds(exc)
             self.enviar_mensagem(chat_id, resposta)
             return
 

@@ -428,9 +428,13 @@ class BotPremiumReal:
                         operacao, restante, reserva,
                     )
                     return False
-            except (requests.RequestException, RuntimeError, ValueError, TypeError):
+            except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
                 if is_papi:
-                    logging.warning("%s | suspensa: falha ao verificar quota", operacao)
+                    # Apenas categoria/HTTP, nunca str(exc): pode incluir URL com apiKey.
+                    codigo = OddsBetano._motivo_excecao(exc)
+                    logging.warning(
+                        "%s | suspensa: falha ao verificar quota (%s)", operacao, codigo
+                    )
                     return False
 
         if str(getattr(self.odds, "ultimo_diagnostico_eventos", "") or "") == "odds_quota_esgotada":
