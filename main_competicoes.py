@@ -94,7 +94,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         integ = self.previsoes.verificar_integridade()
         try:
             alertas_odds = len(self._auditoria_verificacao.verificacoes(self.previsoes))
-        except (OSError, RuntimeError, ValueError, TypeError):
+        except (AttributeError, OSError, RuntimeError, ValueError, TypeError):
             alertas_odds = None
         try:
             r_quota = self.odds._quota_local.resumo()
