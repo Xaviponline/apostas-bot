@@ -54,6 +54,9 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /odds_cobertura — Cobertura observada Betano por liga/mercado, sem API (admin)
 /odds_verificacao — Alertas de odds/EV anómalos e contexto do fixture (admin)
 /quota_plano — Consumo local por operação e prioridade para CLV (admin)
+/backup_status — Ultima copia local e integridade SHA-256 (admin)
+/monitor_status — Heartbeat e tarefas automaticas em atraso (admin)
+/odds_rastreio — Referencias observadas de fixture/mercado/selecao (admin)
 /add_aposta "Jogo" "Mercado" ODD VALOR — Registar uma aposta já feita
 /resultados — Histórico e contas
 /score ID ganhou|perdeu|anulada — Registar resultado
@@ -213,6 +216,10 @@ class BotPremiumReal:
             ObservatorioCobertura(destino).registar(saida)
             from odds_verificacao import VerificacaoOdds
             VerificacaoOdds(Path(caminho_previsoes).with_name("odds_verificacoes.json")).registar(saida)
+            from odds_rastreio import RastreioOdds
+            RastreioOdds(Path(caminho_previsoes).with_name("odds_rastreio.jsonl")).registar(
+                saida, operacao=str(getattr(self.odds, "_operacao_odds", "ODDS"))
+            )
         except (OSError, RuntimeError, ValueError, TypeError, OverflowError):
             # A telemetria nao pode impedir a recolha de odds nem o CLV.
             logging.warning("ODDS_COBERTURA | registo local indisponivel")
