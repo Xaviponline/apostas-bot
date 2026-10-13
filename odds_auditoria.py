@@ -279,6 +279,40 @@ class AuditoriaOdds:
         return encontrados[0], None
 
     @classmethod
+    def _referencias_cotacao(cls, dados, mercado_modelo, valor, atualizado_em):
+        """Recupera IDs apenas para a cotacao ja extraida; nao faz selecao nova."""
+        encontrados = []
+        if not isinstance(dados, dict):
+            return {"association": "sem_payload"}
+        for mercado in dados.get("mercados") or []:
+            if not isinstance(mercado, dict) or not cls._mercado_compativel(mercado_modelo, mercado):
+                continue
+            for odd in mercado.get("odds") or []:
+                if not isinstance(odd, dict):
+                    continue
+                cotacao = cls._odd_numero(odd.get("odd"))
+                if cotacao is None or abs(cotacao - valor) > 0.000001:
+                    continue
+                if not cls._item_compativel(mercado_modelo, mercado, odd, dados.get("casa"), dados.get("fora")):
+                    continue
+                if cls._timestamp_odd(mercado, odd) != atualizado_em:
+                    continue
+                encontrados.append({
+                    "market_id": mercado.get("id"),
+                    "market_name": mercado.get("name"),
+                    "period": mercado.get("period"),
+                    "handicap": mercado.get("handicap"),
+                    "market_updated_at": mercado.get("updatedAt"),
+                    "selection_name": odd.get("seleção"),
+                    "outcome_ref": odd.get("ref"),
+                    "bookmakerChangedAt": odd.get("bookmakerChangedAt"),
+                    "association": "unica",
+                })
+        return encontrados[0] if len(encontrados) == 1 else {
+            "association": "referencia_ausente_ou_ambigua"
+        }
+
+    @classmethod
     def _extrair_odd(cls, dados, mercado_modelo):
         extraida, _ = cls._extrair_odd_diagnostico(dados, mercado_modelo)
         return extraida
@@ -503,5 +537,10 @@ class AuditoriaOdds:
             selecao["odds_fonte"] = str((dados or {}).get("fonte") or self.fonte.nome_fonte)
             selecao["odds_event_id"] = str(event_id)
             selecao["odds_atualizada_em"] = atualizada_em
+            # Metadados separados do snapshot; nem o modelo nem a decisao de
+            # associacao/odd original mudam com esta instrumentacao.
+            selecao["_rastreio_odds"] = self._referencias_cotacao(
+                dados, str(selecao.get("mercado") or ""), odd_real, atualizada_em
+            )
         return saida
 
