@@ -38,6 +38,8 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /lab_top5 — Comparar Champion vs Challengers apenas no Top5 OOS (admin)
 /carteira — Carteira shadow de picks com valor confirmado (admin)
 /clv — Auditoria de Closing Line Value (admin)
+/clv_diagnostico — Estado e ausências dos fechos CLV da coorte V1.3 (admin)
+/painel — Estado geral diário e alertas comerciais (admin)
 /sync_valor — Atualizar estado de valor/fecho sem alterar a odd inicial (admin)
 /integridade — Verificar hashes dos snapshots novos (admin)
 /picks — Ver a área de picks Premium já congeladas

@@ -1,5 +1,6 @@
 """Arranque de produção com cobertura V1 e histórico híbrido de competições."""
 import logging
+import time
 
 import requests
 from collections import Counter
@@ -16,6 +17,7 @@ from main_enriquecido import (
 )
 from odds_auditoria import AuditoriaOdds
 from research_export import ResearchLabClient
+from clv_observatorio import ObservatorioCLV
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
@@ -23,6 +25,80 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         super().__init__(*args, **kwargs)
         self.acessos = acessos or GestorAcessosPremium()
         self.research_lab = research_lab or ResearchLabClient()
+        caminho_previsoes = getattr(self.previsoes, 'path', None)
+        marcador = Path(caminho_previsoes).with_name('clv_avisos.json') if caminho_previsoes else None
+        self._observatorio_clv = ObservatorioCLV(marcador)
+        self._proximo_check_alertas_clv = 0.0
+
+    def _capturar_clv_tardio_se_devido(self):
+        """Mantem CLV normal e verifica avisos admin de fechos em falta."""
+        resultado = super()._capturar_clv_tardio_se_devido()
+        agora = time.monotonic()
+        if agora < self._proximo_check_alertas_clv:
+            return resultado
+        self._proximo_check_alertas_clv = agora + 120
+        if not self.owner_id or not self.chat_id:
+            return resultado
+        try:
+            enviados = self._observatorio_clv.avisar_fechos_em_falta(
+                self.previsoes,
+                lambda mensagem: self.enviar_mensagem(self.chat_id, mensagem),
+            )
+            if enviados:
+                logging.info("CLV_ALERTA | %s entradas sem fecho notificadas ao admin", enviados)
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError, requests.RequestException):
+            # A impossibilidade de enviar alerta nunca para Telegram, odds ou CLV.
+            logging.warning("CLV_ALERTA | diagnostico ou envio indisponivel")
+        return resultado
+
+    def _executar_painel(self):
+        """Centro de controlo admin sem novas consultas de odds."""
+        m = self.previsoes.metricas_v13_comercial()
+        clv = self._observatorio_clv.dados(self.previsoes)
+        t = clv["totais"]
+        hoje = datetime.now(TZ_PORTUGAL)
+        snapshots = [
+            p for p in self.previsoes.dados.get("previsoes", [])
+            if p.get("data_jogo") == hoje.strftime("%Y-%m-%d")
+        ]
+        pendentes = sum(
+            p.get("estado") == "pendente"
+            and isinstance(p.get("timestamp_jogo"), (int, float))
+            and p["timestamp_jogo"] > hoje.timestamp()
+            for p in snapshots
+        )
+        auto = self._agenda_analise_diaria.relatorio()
+        linha_auto = next((l for l in auto.splitlines() if l.startswith("Estado:")), "Estado: indisponivel")
+        quota = "indisponivel"
+        status_fn = getattr(self.odds, "status_conta", None)
+        if callable(status_fn):
+            try:
+                s = status_fn()
+                if isinstance(s, dict) and s.get("request_limit"):
+                    quota = f"{s.get('request_count', '?')}/{s['request_limit']} usados (restam {s.get('remaining', '?')})"
+            except (OSError, RuntimeError, ValueError, TypeError, requests.RequestException):
+                quota = "consulta de conta temporariamente indisponivel"
+        integ = self.previsoes.verificar_integridade()
+        linhas = [
+            "🧭 PAINEL DE CONTROLO — ADMIN",
+            f"📅 {hoje.strftime('%d/%m/%Y')} · Hora de Portugal",
+            f"🤖 Analise diaria: {linha_auto.replace('Estado: ', '')}",
+            f"🎯 Previsoes registadas hoje: {len(snapshots)} | Por iniciar: {pendentes}",
+            "",
+            "💼 V1.3 COMERCIAL — COORTE FIXA",
+            f"Entradas VALUE: {m['coorte_tamanho']}/{m['alvo']} | Liquidadas: {m['liquidadas']}",
+            f"Dias: {m['dias']}/{m['min_dias']} | CLV: {m['clv_amostras']}/{m['min_clv_amostras']} minimo",
+            f"Fechos em falta apos inicio: {t['sem_fecho']} | Em janela T-30m: {t['em_janela']}",
+            "",
+            f"📡 OddsPapi: {quota}",
+            f"🛡️ Integridade: {integ['divergentes']} divergencia(s) em {integ['protegidos']} snapshots selados",
+            "",
+            "ℹ️ /clv_diagnostico — detalhes de fechos em falta",
+            "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
+            "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
+            "ℹ️ A consulta de conta nao desconta pedidos OddsPapi.",
+        ]
+        return "\n".join(linhas)
 
     def _e_owner_admin(self, chat_id, user_id):
         return bool(
@@ -1237,6 +1313,23 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível gerar esta área Premium neste momento. "
                     "O histórico e o modelo não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando in {"/painel", "/clv_diagnostico"}:
+            if not owner_admin:
+                return
+            try:
+                resposta = (
+                    self._executar_painel()
+                    if comando == "/painel"
+                    else self._observatorio_clv.relatorio(self.previsoes)
+                )
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "🔎 Diagnostico CLV/painel temporariamente indisponivel. "
+                    "Sem alteracoes aos snapshots ou a V1.3."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
