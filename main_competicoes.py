@@ -86,8 +86,11 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                             )
                         except (OSError, ValueError, TypeError, RuntimeError, requests.RequestException):
                             logging.warning("BACKUP_OFFSITE | aviso externo nao confirmado")
-                except (OSError, ValueError, TypeError, KeyError, RuntimeError, requests.RequestException):
-                    logging.warning("BACKUP_OFFSITE | falha sem tocar nos snapshots; rever /backup_externo_status")
+                except Exception:
+                    # botocore ClientError, BadZipFile, InvalidTag e dependencias
+                    # opcionais podem nao herdar dos erros listados acima.
+                    # Nunca registar str(exc): URLs S3 podem conter identificadores.
+                    logging.warning("BACKUP_OFFSITE | falha isolada; snapshots intactos; verificar config e /backup_externo_status")
             try:
                 avisos = self._monitor.verificar(
                     self._agenda_analise_diaria, self._backups,
