@@ -19,6 +19,9 @@ from odds_auditoria import AuditoriaOdds
 from research_export import ResearchLabClient
 from clv_observatorio import ObservatorioCLV
 from odds_verificacao import VerificacaoOdds
+from backups_locais import CopiasSeguranca
+from monitor_operacional import MonitorOperacional
+from odds_rastreio import RastreioOdds
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
@@ -33,11 +36,37 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         self._auditoria_verificacao = VerificacaoOdds(
             Path(caminho_previsoes).with_name("odds_verificacoes.json") if caminho_previsoes else None
         )
+        pasta_estado = Path(caminho_previsoes).parent if caminho_previsoes else None
+        self._backups = CopiasSeguranca(pasta_estado)
+        self._monitor = MonitorOperacional(
+            pasta_estado / "monitor_estado.json" if pasta_estado else None
+        )
+        self._proximo_check_operacional = 0.0
+        self._rastreio_odds = RastreioOdds(
+            pasta_estado / "odds_rastreio.jsonl" if pasta_estado else None
+        )
 
     def _capturar_clv_tardio_se_devido(self):
         """Mantem CLV normal e verifica avisos admin de fechos em falta."""
         resultado = super()._capturar_clv_tardio_se_devido()
         agora = time.monotonic()
+        if agora >= getattr(self, "_proximo_check_operacional", float("inf")):
+            self._proximo_check_operacional = agora + 300
+            try:
+                if self._backups.executar_se_devido():
+                    logging.info("BACKUP_LOCAL | copia diaria verificada por SHA-256")
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+                logging.warning("BACKUP_LOCAL | copia nao criada; historico original intacto")
+            try:
+                avisos = self._monitor.verificar(
+                    self._agenda_analise_diaria, self._backups,
+                    lambda msg: self.enviar_mensagem(self.chat_id, msg)
+                    if self.owner_id and self.chat_id else None,
+                )
+                if avisos:
+                    logging.warning("MONITOR | %s alertas administrativos", avisos)
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError, requests.RequestException):
+                logging.warning("MONITOR | verificacao interna indisponivel; motor intacto")
         if agora < self._proximo_check_alertas_clv:
             return resultado
         self._proximo_check_alertas_clv = agora + 120
@@ -1339,6 +1368,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     "Não foi possível gerar esta área Premium neste momento. "
                     "O histórico e o modelo não foram alterados."
                 )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando in {"/backup_status", "/monitor_status", "/odds_rastreio"}:
+            if not owner_admin:
+                return
+            try:
+                if comando == "/backup_status":
+                    resposta = self._backups.relatorio()
+                elif comando == "/monitor_status":
+                    resposta = self._monitor.relatorio(self._agenda_analise_diaria, self._backups)
+                else:
+                    resposta = self._rastreio_odds.relatorio()
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError, ArithmeticError):
+                resposta = "⚠️ Auditoria operacional indisponivel. Nao alterou snapshots, modelo ou odds."
             self.enviar_mensagem(chat_id, resposta)
             return
 
