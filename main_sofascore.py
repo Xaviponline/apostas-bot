@@ -213,6 +213,10 @@ class BotPremiumReal:
             ObservatorioCobertura(destino).registar(saida)
             from odds_verificacao import VerificacaoOdds
             VerificacaoOdds(Path(caminho_previsoes).with_name("odds_verificacoes.json")).registar(saida)
+            from odds_rastreio import RastreioOdds
+            RastreioOdds(Path(caminho_previsoes).with_name("odds_rastreio.jsonl")).registar(
+                saida, operacao=str(getattr(self.odds, "_operacao_odds", "ODDS"))
+            )
         except (OSError, RuntimeError, ValueError, TypeError, OverflowError):
             # A telemetria nao pode impedir a recolha de odds nem o CLV.
             logging.warning("ODDS_COBERTURA | registo local indisponivel")
