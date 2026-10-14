@@ -7,7 +7,7 @@ import requests
 
 BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 PROVAS = ("uefa.champions", "por.taca.portugal")
-CONSULTAS = ("20261014", "20260916", "20260901-20260914")
+CONSULTAS = ("20261014", "20260916", "20260901-20260914", "202610", "2026")
 
 
 def main():
@@ -22,7 +22,15 @@ def main():
                 )
                 eventos = r.json().get("events") if r.status_code == 200 else None
                 total = len(eventos) if isinstance(eventos, list) else "n/a"
-                print(f"ESPN {prova}: dates={data} HTTP={r.status_code} eventos={total}")
+                datas = sorted(
+                    str(e.get("date") or "")[:10]
+                    for e in (eventos or []) if isinstance(e, dict)
+                ) if isinstance(eventos, list) else []
+                intervalo = f"{datas[0]}..{datas[-1]}" if datas else "-"
+                print(
+                    f"ESPN {prova}: dates={data} HTTP={r.status_code} "
+                    f"eventos={total} intervalo_real={intervalo}"
+                )
             except (requests.RequestException, ValueError, TypeError):
                 print(f"ESPN {prova}: dates={data} indisponível")
 
