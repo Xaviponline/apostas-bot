@@ -158,6 +158,16 @@ class BuscadorJogosReais:
         if nome_slug:
             return nome_slug
 
+        # Alguns eventos da rota global mostram apenas "Group Stage"/"League
+        # Phase" em league.name e season.slug. Quando league.slug identifica
+        # inequivocamente uma prova ja suportada, usar o slug de origem.
+        # Nunca adivinhar a partir de "Group Stage" isolado.
+        for bloco in (evento.get("league"), competicao.get("league")):
+            if isinstance(bloco, dict):
+                nome_slug_liga = cls._nome_liga_por_slug(bloco.get("slug"))
+                if nome_slug_liga:
+                    return nome_slug_liga
+
         candidatos_liga = [
             (evento.get("league") or {}).get("name")
             if isinstance(evento.get("league"), dict)
