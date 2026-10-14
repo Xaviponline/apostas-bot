@@ -30,6 +30,10 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "eng.league_cup": 21,
         "uefa.europa": 679,
         "uefa.nations": 10783,
+        # IDs confirmados nas paginas publicas SofaScore; consultar apenas
+        # se a base ESPN nao estiver disponivel e com epoca validada.
+        "uefa.champions": 7,
+        "por.taca.portugal": 336,
     }
     SOFA_ANO_CALENDARIO = {"arg.copa"}
     SOFA_EPOCA_ANTERIOR_BIENAL = {"uefa.nations"}
