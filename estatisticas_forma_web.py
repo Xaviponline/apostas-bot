@@ -351,6 +351,14 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
 
         resultados = sorted(por_id.values(), key=lambda x: x["timestamp"], reverse=True)
         if len(resultados) < self.MIN_JOGOS_BASE:
+            self.diagnostico_base[liga_codigo] = {
+                "fonte": "espn_equipas_clubes_insuficiente",
+                "jogos": len(resultados),
+                "equipas": len(equipas),
+                "epocas": list(epocas),
+                "consultas_ok": consultas_ok,
+                "consultas_total": len(equipas) * len(epocas),
+            }
             if not consultas_ok and primeiro_erro is not None:
                 raise primeiro_erro
             raise ValueError(
@@ -377,12 +385,19 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
                 try:
                     return self._fetch_base_clubes_por_equipas(liga_codigo, data_ref)
                 except (requests.RequestException, RuntimeError, ValueError, TypeError) as erro_fallback:
+                    diag = dict(self.diagnostico_base.get(liga_codigo) or {})
+                    detalhe_espn = self._motivo_seguro(erro_fallback)
+                    if diag.get("fonte") == "espn_equipas_clubes_insuficiente":
+                        detalhe_espn = (
+                            f"{diag.get('jogos', 0)}/{self.MIN_JOGOS_BASE} resultados; "
+                            f"{diag.get('consultas_ok', 0)}/{diag.get('consultas_total', 0)} calendarios validos"
+                        )
                     self.diagnostico_base[liga_codigo] = {
                         "fonte": "sofa_e_espn_equipas_indisponiveis",
                         "jogos": 0,
                         "motivo": (
                             f"SofaScore: {self._motivo_seguro_sofa(erro_primario)}; "
-                            f"ESPN equipas: {self._motivo_seguro(erro_fallback)}"
+                            f"ESPN equipas: {detalhe_espn}"
                         ),
                     }
                     raise erro_fallback
