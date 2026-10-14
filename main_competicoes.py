@@ -24,6 +24,7 @@ from monitor_operacional import MonitorOperacional
 from odds_rastreio import RastreioOdds
 from backup_externo import BackupExterno
 from vigilancia_externa import VigilanciaExterna
+from rotinas_diarias import RotinasDiarias
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
@@ -55,6 +56,27 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             pasta_estado / "healthchecks_backup.json" if pasta_estado else None
         )
         self._proximo_backup_externo = 0.0
+        self._rotinas_diarias = RotinasDiarias(
+            pasta_estado / "rotinas_diarias_estado.json" if pasta_estado else None
+        )
+
+    def _rotinas_diarias_se_devido(self):
+        """ESPN e relatorio OWNER, isolados de odds, CLV e Telegram polling."""
+        try:
+            total = self._rotinas_diarias.liquidar_se_devido(self.previsoes)
+            if total:
+                logging.info("LIQUIDACAO_AUTO | %s previsao(oes) com resultado ESPN final", total)
+        except Exception:
+            # Nao registar dados da resposta ESPN ou credenciais.
+            logging.warning("LIQUIDACAO_AUTO | tentativa indisponivel; motor e CLV intactos")
+        if self.owner_id and self.chat_id:
+            try:
+                if self._rotinas_diarias.enviar_relatorio_se_devido(
+                    self.previsoes, lambda mensagem: self.enviar_mensagem(self.chat_id, mensagem)
+                ):
+                    logging.info("RELATORIO_AUTO | resumo diario OWNER enviado")
+            except Exception:
+                logging.warning("RELATORIO_AUTO | entrega indisponivel; nenhuma odd alterada")
 
     def _ping_externo_se_devido(self):
         """So e chamado depois de polling Telegram e tarefas sem excecao."""
@@ -1436,7 +1458,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             return
 
         if comando in {"/backup_status", "/monitor_status", "/odds_rastreio",
-                       "/backup_externo_status", "/vigilancia_externa_status"}:
+                       "/backup_externo_status", "/vigilancia_externa_status",
+                       "/rotinas_status"}:
             if not owner_admin:
                 return
             try:
@@ -1448,6 +1471,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     resposta = self._backup_externo.relatorio()
                 elif comando == "/vigilancia_externa_status":
                     resposta = self._vigilancia_externa.relatorio()
+                elif comando == "/rotinas_status":
+                    resposta = self._rotinas_diarias.relatorio_estado(self.previsoes)
                 else:
                     resposta = self._rastreio_odds.relatorio()
             except (OSError, ValueError, TypeError, KeyError, RuntimeError, ArithmeticError):
