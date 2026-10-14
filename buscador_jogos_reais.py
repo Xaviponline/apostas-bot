@@ -61,6 +61,7 @@ class BuscadorJogosReais:
         ("french-ligue-1", "French Ligue 1"),
         ("french-ligue-2", "French Ligue 2"),
         ("portuguese-primeira-liga", "Portuguese Primeira Liga"),
+        ("portuguese-taca-de-portugal", "Portuguese Taca de Portugal"),
         ("dutch-eredivisie", "Eredivisie"),
         ("dutch-keuken-kampioen-divisie", "Keuken Kampioen Divisie"),
         ("belgian-pro-league", "Belgian Pro League"),
