@@ -78,7 +78,7 @@ class RegressaoLigasRegularesTests(unittest.TestCase):
             }
             for i in range(40)
         ]
-        jogo = {"league_code": "eng.2", "casa_id": 101, "fora_id": 202}
+        jogo = {"league_code": "eng.2", "liga": "English League Championship", "casa_id": 101, "fora_id": 202}
         original = EstatisticasESPN().analisar_jogo(jogo, partidas)
         hibrido = EstatisticasHibridasCompeticoes().analisar_jogo(jogo, partidas)
         self.assertIsNotNone(original)
