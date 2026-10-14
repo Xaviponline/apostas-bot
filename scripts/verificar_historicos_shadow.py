@@ -22,7 +22,7 @@ def main():
             diag = stats.diagnostico_base.get(codigo, {})
             total = len(historico)
             fonte = diag.get("fonte", "desconhecida")
-            if fonte != "sofascore" or total < stats.MIN_JOGOS_BASE:
+            if fonte not in ("espn_anual", "sofascore") or total < stats.MIN_JOGOS_BASE:
                 raise ValueError("fonte ou amostra insuficiente")
             if any(
                 item.get("liga_codigo") != codigo or
@@ -32,8 +32,8 @@ def main():
                 raise ValueError("dados fora da competição ou do corte temporal")
             print(
                 f"OK {codigo}: fonte={fonte}; jogos={total}; "
-                f"torneio_id={diag.get('torneio_id')}; "
-                f"temporada_id={diag.get('temporada_id')}"
+                f"anos_espn={diag.get('anos_consultados', [])}; "
+                f"blocos={diag.get('blocos', 0)}"
             )
         except Exception:
             # Logs deliberadamente sem payload, URL, tokens ou traceback.
@@ -50,7 +50,7 @@ def main():
             falhas += 1
     if falhas:
         raise SystemExit(1)
-    print("SMOKE READ-ONLY: duas provas com histórico real válido; "
+    print("SMOKE READ-ONLY: duas provas com histórico real validado; "
           "isto NÃO prova que jogos específicos serão analisados.")
 
 
