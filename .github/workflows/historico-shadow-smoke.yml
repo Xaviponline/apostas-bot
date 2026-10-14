@@ -9,6 +9,10 @@ on:
       - "buscador_jogos_reais.py"
       - "scripts/verificar_historicos_shadow.py"
       - "scripts/comparar_cobertura_shadow.py"
+      - "scripts/comparar_top5_universo_shadow.py"
+      - "estatisticas_espn_resiliente.py"
+      - "tests/test_forma_calendario_espn_shadow.py"
+      - "tests/test_shadow_selecoes_regressao.py"
       - ".github/workflows/historico-shadow-smoke.yml"
 
 permissions:
@@ -32,3 +36,6 @@ jobs:
       - name: Replay de cobertura real em memória (sem picks / sem gravações)
         if: always()
         run: python -m scripts.comparar_cobertura_shadow
+      - name: Universo Top5 das ligas reconhecidas (sem odds / sem gravações)
+        if: always()
+        run: python -m scripts.comparar_top5_universo_shadow
