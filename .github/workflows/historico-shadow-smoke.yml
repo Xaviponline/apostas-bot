@@ -10,6 +10,7 @@ on:
       - "scripts/verificar_historicos_shadow.py"
       - "scripts/sondar_espn_shadow.py"
       - "scripts/comparar_cobertura_shadow.py"
+      - "scripts/sondar_forma_espn_shadow.py"
       - ".github/workflows/historico-shadow-smoke.yml"
 
 permissions:
@@ -36,3 +37,6 @@ jobs:
       - name: Replay de cobertura real em memória (sem picks / sem gravações)
         if: always()
         run: python -m scripts.comparar_cobertura_shadow
+      - name: Diagnóstico de forma por equipa ESPN (sem picks)
+        if: always()
+        run: python -m scripts.sondar_forma_espn_shadow
