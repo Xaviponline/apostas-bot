@@ -1,0 +1,99 @@
+name: SHADOW - Confirmar fontes históricas UEFA/Taça
+on:
+  pull_request:
+    paths:
+      - "estatisticas_hibridas_competicoes.py"
+      - ".github/workflows/shadow-fontes-uefa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  confirmar-publico:
+    if: github.event_name == 'pull_request' && github.head_ref == 'fix/shadow-cobertura-uefa-taca-20261014'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Verificar torneio epoca e resultados reais SofaScore (sem odds nem Railway)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import urllib.request
+          from urllib.error import HTTPError, URLError
+          from datetime import datetime, timezone
+
+          BASE = "https://www.sofascore.com/api/v1"
+          TORNEIOS = {"uefa.champions": 7, "por.taca.portugal": 336}
+          def obter(caminho):
+              req = urllib.request.Request(
+                  BASE + caminho,
+                  headers={
+                      "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+                      "Accept": "application/json",
+                      "Referer": "https://www.sofascore.com/",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=12) as resp:
+                  if resp.status != 200:
+                      raise RuntimeError("HTTP " + str(resp.status))
+                  return json.load(resp)
+
+          falhas = []
+          for codigo, tournament_id in TORNEIOS.items():
+              try:
+                  dados = obter(f"/unique-tournament/{tournament_id}/seasons")
+                  epocas = [
+                      int(s["id"]) for s in dados.get("seasons", [])
+                      if str(s.get("year") or "") == "26/27"
+                  ]
+                  if len(epocas) != 1:
+                      raise RuntimeError("Época 26/27 não é única")
+                  season_id = epocas[0]
+                  resultados = 0
+                  paginas = 0
+                  ids = set()
+                  limite = 8
+                  for pagina in range(limite):
+                      payload = obter(
+                          f"/unique-tournament/{tournament_id}/season/{season_id}/events/last/{pagina}"
+                      )
+                      eventos = payload.get("events")
+                      if not isinstance(eventos, list):
+                          raise RuntimeError("Resposta sem lista events")
+                      paginas += 1
+                      for e in eventos:
+                          status = e.get("status") or {}
+                          if status.get("code") != 100 and status.get("type") not in (
+                              "finished", "afterextra", "afterpenalties", "ended"
+                          ):
+                              continue
+                          score_casa = e.get("homeScore") or {}
+                          score_fora = e.get("awayScore") or {}
+                          # Mesma regra do coletor: exigir resultados normaltime reais.
+                          if not isinstance(score_casa.get("normaltime"), (int, float)):
+                              continue
+                          if not isinstance(score_fora.get("normaltime"), (int, float)):
+                              continue
+                          if e.get("startTimestamp", 0) >= datetime.now(timezone.utc).timestamp():
+                              continue
+                          ids.add(e.get("id"))
+                      resultados = len(ids)
+                      if resultados >= 10 or not payload.get("hasNextPage"):
+                          break
+                  print(
+                      f"{codigo}: torneio={tournament_id}, epoca=26/27, "
+                      f"pagina(s)={paginas}, resultados_finais_verificados={resultados}",
+                      flush=True,
+                  )
+                  if resultados < 10:
+                      raise RuntimeError(f"amostra real insuficiente: {resultados}/10")
+              except Exception as exc:
+                  # Sem URL privada, token, headers ou payload nos logs.
+                  falhas.append(codigo)
+                  print(f"{codigo}: indisponível ({type(exc).__name__})", flush=True)
+          if falhas:
+              raise SystemExit("Sem validação externa completa: " + ", ".join(falhas))
+          print("VALIDADO: dados reais suficientes em ambos os torneios; nenhuma alteração produção.")
+          PY
