@@ -8,9 +8,59 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
 import re
+import requests
 
 from buscador_jogos_reais import BuscadorJogosReais
 from estatisticas_forma_web import EstatisticasFormaWeb
+
+
+def sondar_espn():
+    """Verifica apenas as rotas diarias: sem snapshots nem pedidos por intervalo."""
+    saida = []
+    for codigo in ("uefa.champions", "por.taca.portugal"):
+        registo = {"competicao": codigo, "fonte": "ESPN"}
+        try:
+            r = requests.get(
+                f"https://site.api.espn.com/apis/site/v2/sports/soccer/{codigo}/scoreboard",
+                params={"dates": "20261014"},
+                timeout=(4, 9),
+            )
+            registo["http_status"] = int(r.status_code)
+            if r.status_code == 200:
+                eventos = r.json().get("events", [])
+                registo["jogos_agendados"] = len(eventos) if isinstance(eventos, list) else 0
+                # Testar uma rota de equipa como possivel via historica, em read-only.
+                team_id = None
+                for e in eventos[:5] if isinstance(eventos, list) else []:
+                    for c in (e.get("competitions") or [{}])[0].get("competitors", []):
+                        try:
+                            team_id = int((c.get("team") or {}).get("id"))
+                        except (ValueError, TypeError):
+                            continue
+                        if team_id:
+                            break
+                    if team_id:
+                        break
+                if team_id:
+                    rr = requests.get(
+                        f"https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/{team_id}/schedule",
+                        params={"season": 2026},
+                        timeout=(4, 9),
+                    )
+                    registo["equipa_schedule_http"] = int(rr.status_code)
+                    if rr.status_code == 200:
+                        ee = rr.json().get("events", [])
+                        registo["calendario_equipa_eventos"] = len(ee) if isinstance(ee, list) else 0
+                        estat = EstatisticasFormaWeb()
+                        registo["base_mesma_prova"] = sum(
+                            1 for x in ee
+                            if estat._codigo_competicao_evento(x) == codigo
+                            and estat._normalizar_resultado_forma(x) is not None
+                        ) if isinstance(ee, list) else 0
+        except (requests.RequestException, ValueError, TypeError, KeyError):
+            registo["erro_categoria"] = "inacessivel"
+        saida.append(registo)
+    print("SHADOW_ESPN_ALTERNATIVA=" + json.dumps(saida, ensure_ascii=False, sort_keys=True))
 
 
 def executar():
@@ -51,6 +101,7 @@ def executar():
         resultados.append(registo)
         tudo_ok &= registo["valido"]
     print("SHADOW_FONTE_HISTORICA=" + json.dumps(resultados, ensure_ascii=False, sort_keys=True))
+    sondar_espn()
     return 0 if tudo_ok else 1
 
 
