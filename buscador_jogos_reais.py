@@ -42,6 +42,7 @@ class BuscadorJogosReais:
     ESPN_SLUG_NOMES = (
         # Específicos primeiro para evitar que LaLiga 2 seja confundida com LaLiga.
         ("spanish-laliga-2", "Spanish LALIGA 2"),
+        ("portuguese-taca-de-portugal", "Portuguese Taca de Portugal"),
         ("english-league-championship", "English League Championship"),
         ("english-league-one", "English League One"),
         ("english-league-two", "English League Two"),
@@ -157,6 +158,16 @@ class BuscadorJogosReais:
         nome_slug = cls._nome_liga_por_slug(slug)
         if nome_slug:
             return nome_slug
+
+        # Alguns eventos da rota global mostram apenas "Group Stage"/"League
+        # Phase" em league.name e season.slug. Quando league.slug identifica
+        # inequivocamente uma prova ja suportada, usar o slug de origem.
+        # Nunca adivinhar a partir de "Group Stage" isolado.
+        for bloco in (evento.get("league"), competicao.get("league")):
+            if isinstance(bloco, dict):
+                nome_slug_liga = cls._nome_liga_por_slug(bloco.get("slug"))
+                if nome_slug_liga:
+                    return nome_slug_liga
 
         candidatos_liga = [
             (evento.get("league") or {}).get("name")

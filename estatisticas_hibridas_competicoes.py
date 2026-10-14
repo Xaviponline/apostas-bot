@@ -23,6 +23,11 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "uefa.europa",
         "uefa.nations",
     }
+    # ESPN aceita datas YYYYMM para estas provas, mas rejeita YYYYMMDD-YYYYMMDD.
+    # Consulta mensal nao modifica selecoes existentes nem odds.
+    ESPN_HISTORICO_MENSAL = {"uefa.champions", "por.taca.portugal"}
+    MAX_MESES_HISTORICO = 14
+    LIMITE_EVENTOS_MES = 500
     # IDs públicos e estáveis das provas no SofaScore. Evita depender da agenda
     # diária, que em produção devolveu HTTP 404 mesmo com as provas existentes.
     SOFA_TOURNAMENT_IDS = {
@@ -30,7 +35,12 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "eng.league_cup": 21,
         "uefa.europa": 679,
         "uefa.nations": 10783,
+        "uefa.champions": 7,
+        "por.taca.portugal": 336,
     }
+    # Estas competicoes sao novas na via SofaScore. Exigir que o evento
+    # confirme a identidade do torneio para nao contaminar medias.
+    SOFA_TORNEIOS_VERIFICAR = {"uefa.champions", "por.taca.portugal"}
     SOFA_ANO_CALENDARIO = {"arg.copa"}
     SOFA_EPOCA_ANTERIOR_BIENAL = {"uefa.nations"}
     SOFA_WWW_BASE = "https://www.sofascore.com/api/v1"
@@ -187,6 +197,13 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         try:
             if not isinstance(evento, dict):
                 return None
+            if liga_codigo in self.SOFA_TORNEIOS_VERIFICAR:
+                torneio = evento.get("tournament") or {}
+                unico = torneio.get("uniqueTournament") if isinstance(torneio, dict) else None
+                if not isinstance(unico, dict):
+                    return None
+                if int(unico.get("id", -1)) != int(self.SOFA_TOURNAMENT_IDS[liga_codigo]):
+                    return None
             status = evento.get("status") or {}
             tipo = str(status.get("type") or "").lower()
             codigo_status = status.get("code")
@@ -277,7 +294,83 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
             self._cache[chave] = (monotonic(), resultados)
         return resultados
 
+    def _fetch_base_espn_mensal(self, liga_codigo, data_ref=None):
+        """Fonte mensal ESPN verificada em shadow; so jogos finais antes da analise.
+
+        Evita ranges rejeitados com HTTP 400. Falha fechado perante HTTP, payload
+        invalido ou paginacao possivelmente truncada. Nao cria snapshots.
+        """
+        agora = self._data_ref(data_ref)
+        chave = ("espn_mensal", liga_codigo, agora.date().isoformat())
+        with self._lock:
+            cached = self._cache.get(chave)
+            if cached and monotonic() - cached[0] < self.cache_segundos:
+                self.diagnostico_base[liga_codigo] = {
+                    "fonte": "cache_espn_mensal", "jogos": len(cached[1]),
+                }
+                return cached[1]
+
+        ano, mes = agora.year, agora.month
+        meses = 0
+        por_id = {}
+        for _ in range(self.MAX_MESES_HISTORICO):
+            mes_iso = f"{ano:04d}{mes:02d}"
+            r = self.session.get(
+                f"{self.BASE}/{liga_codigo}/scoreboard",
+                params={"dates": mes_iso, "limit": self.LIMITE_EVENTOS_MES},
+                timeout=(5, 25),
+            )
+            r.raise_for_status()
+            dados = r.json()
+            eventos = dados.get("events") if isinstance(dados, dict) else None
+            if not isinstance(eventos, list):
+                raise ValueError("ESPN mensal: lista de eventos invalida")
+            # Se a resposta atingir o teto, podemos estar a omitir jogos:
+            # nunca aceitar a base silenciosamente truncada.
+            if len(eventos) >= self.LIMITE_EVENTOS_MES:
+                raise ValueError("ESPN mensal: possivel truncamento")
+            meses += 1
+            for event_id, item in self._normalizar_eventos(eventos, liga_codigo).items():
+                if float(item["timestamp"]) < agora.timestamp():
+                    por_id[event_id] = item
+            if len(por_id) >= self.ALVO_JOGOS_BASE:
+                break
+            mes = mes - 1 if mes > 1 else 12
+            if mes == 12:
+                ano -= 1
+
+        resultados = sorted(
+            por_id.values(), key=lambda x: x["timestamp"], reverse=True,
+        )
+        self.diagnostico_base[liga_codigo] = {
+            "fonte": "espn_mensal", "jogos": len(resultados), "meses": meses,
+        }
+        if len(resultados) < self.MIN_JOGOS_BASE:
+            raise ValueError(
+                f"ESPN mensal: base insuficiente ({len(resultados)}/{self.MIN_JOGOS_BASE})"
+            )
+        with self._lock:
+            self._cache[chave] = (monotonic(), resultados)
+        return resultados
+
     def _fetch_liga(self, liga_codigo, data_ref=None):
+        if liga_codigo in self.ESPN_HISTORICO_MENSAL:
+            try:
+                return self._fetch_base_espn_mensal(liga_codigo, data_ref)
+            except (requests.RequestException, ValueError, TypeError, RuntimeError) as erro_espn:
+                try:
+                    return self._fetch_base_sofa(liga_codigo, data_ref)
+                except (requests.RequestException, ValueError, TypeError, RuntimeError) as erro_sofa:
+                    self.diagnostico_base[liga_codigo] = {
+                        "fonte": "espn_mensal_e_sofa_indisponiveis",
+                        "jogos": 0,
+                        "motivo": (
+                            f"ESPN: {self._motivo_seguro(erro_espn)}; "
+                            f"Sofa: {self._motivo_seguro_sofa(erro_sofa)}"
+                        ),
+                    }
+                    raise erro_sofa
+
         if liga_codigo in self.ESPN_HISTORICO_BLOQUEADO:
             try:
                 return self._fetch_base_sofa(liga_codigo, data_ref)
