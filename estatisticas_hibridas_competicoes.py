@@ -281,25 +281,29 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
             self._cache[chave] = (monotonic(), resultados)
         return resultados
 
+    def _fetch_base_sofa_com_diagnostico(self, liga_codigo, data_ref=None):
+        """Recusa fonte/epoca invalidas e assinala a falha real no painel."""
+        try:
+            return self._fetch_base_sofa(liga_codigo, data_ref)
+        except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
+            self.diagnostico_base[liga_codigo] = {
+                "fonte": "sofascore_indisponivel",
+                "jogos": 0,
+                "motivo": self._motivo_seguro_sofa(exc),
+            }
+            raise
+
     def _fetch_liga(self, liga_codigo, data_ref=None):
         if liga_codigo in self.ESPN_HISTORICO_BLOQUEADO:
-            try:
-                return self._fetch_base_sofa(liga_codigo, data_ref)
-            except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
-                self.diagnostico_base[liga_codigo] = {
-                    "fonte": "sofascore_indisponivel",
-                    "jogos": 0,
-                    "motivo": self._motivo_seguro_sofa(exc),
-                }
-                raise
+            return self._fetch_base_sofa_com_diagnostico(liga_codigo, data_ref)
 
         try:
             historico = super()._fetch_liga(liga_codigo, data_ref)
         except (requests.RequestException, ValueError, TypeError, RuntimeError):
             if liga_codigo not in self.FORMA_MULTICOMPETICAO:
                 raise
-            return self._fetch_base_sofa(liga_codigo, data_ref)
+            return self._fetch_base_sofa_com_diagnostico(liga_codigo, data_ref)
 
         if liga_codigo in self.FORMA_MULTICOMPETICAO and len(historico) < self.MIN_JOGOS_BASE:
-            return self._fetch_base_sofa(liga_codigo, data_ref)
+            return self._fetch_base_sofa_com_diagnostico(liga_codigo, data_ref)
         return historico
