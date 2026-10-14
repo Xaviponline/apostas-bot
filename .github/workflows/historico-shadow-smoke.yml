@@ -1,4 +1,4 @@
-name: SofaScore historical smoke - SHADOW read only
+name: Historical coverage replay - SHADOW read only
 
 on:
   pull_request:
@@ -8,16 +8,14 @@ on:
       - "estatisticas_espn_competicoes.py"
       - "buscador_jogos_reais.py"
       - "scripts/verificar_historicos_shadow.py"
-      - "scripts/sondar_espn_shadow.py"
       - "scripts/comparar_cobertura_shadow.py"
-      - "scripts/sondar_forma_espn_shadow.py"
       - ".github/workflows/historico-shadow-smoke.yml"
 
 permissions:
   contents: read
 
 jobs:
-  sofa-live-smoke:
+  historico-replay-shadow:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -31,12 +29,6 @@ jobs:
           python -m pip install -r requirements.txt
       - name: Smoke histórico real read-only (sem modelo / Railway)
         run: python -m scripts.verificar_historicos_shadow
-      - name: Sondagem ESPN por dia e intervalo (diagnóstico apenas)
-        if: always()
-        run: python -m scripts.sondar_espn_shadow
       - name: Replay de cobertura real em memória (sem picks / sem gravações)
         if: always()
         run: python -m scripts.comparar_cobertura_shadow
-      - name: Diagnóstico de forma por equipa ESPN (sem picks)
-        if: always()
-        run: python -m scripts.sondar_forma_espn_shadow
