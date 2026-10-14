@@ -30,6 +30,12 @@ class EstatisticasESPNCompeticoes(EstatisticasESPNEnriquecidas):
     MIN_JOGOS_BASE = 10
     ALVO_JOGOS_BASE = 24
     TENTATIVAS_BLOCO = 2
+    # Nestas duas provas foram observados 31 blocos HTTP 400 consecutivos.
+    # Se uma consulta volta a ser explicitamente recusada com 400/403,
+    # nao repetir a mesma rota durante 420 dias; o fallback SofaScore
+    # da camada hibrida valida epoca/amostra antes de aceitar historico.
+    BLOQUEIO_RAPIDO_HTTP = {"uefa.champions", "por.taca.portugal"}
+    CODIGOS_BLOQUEIO_HTTP = {400, 403}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -56,6 +62,7 @@ class EstatisticasESPNCompeticoes(EstatisticasESPNEnriquecidas):
             blocos_total += 1
             eventos = None
             ultimo_erro = None
+            bloqueio_espn = False
 
             for _ in range(self.TENTATIVAS_BLOCO):
                 try:
@@ -66,6 +73,14 @@ class EstatisticasESPNCompeticoes(EstatisticasESPNEnriquecidas):
                     break
                 except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
                     ultimo_erro = exc
+                    resposta = getattr(exc, "response", None)
+                    status = getattr(resposta, "status_code", None)
+                    if (
+                        liga_codigo in self.BLOQUEIO_RAPIDO_HTTP
+                        and status in self.CODIGOS_BLOQUEIO_HTTP
+                    ):
+                        bloqueio_espn = True
+                        break
 
             if ultimo_erro is not None:
                 falhas.append(ultimo_erro)
@@ -73,7 +88,7 @@ class EstatisticasESPNCompeticoes(EstatisticasESPNEnriquecidas):
                 blocos_ok += 1
                 por_id.update(self._normalizar_eventos(eventos or [], liga_codigo))
 
-            if len(por_id) >= self.ALVO_JOGOS_BASE:
+            if bloqueio_espn or len(por_id) >= self.ALVO_JOGOS_BASE:
                 break
             cursor_fim = cursor_inicio - timedelta(days=1)
 
