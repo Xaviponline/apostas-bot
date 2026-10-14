@@ -18,27 +18,37 @@ jobs:
       - name: Verificar torneio epoca e resultados reais SofaScore (sem odds nem Railway)
         shell: bash
         run: |
+          python3 -m pip -q install curl_cffi==0.16.3
           python3 - <<'PY'
           import json
-          import urllib.request
-          from urllib.error import HTTPError, URLError
+          from curl_cffi import requests
           from datetime import datetime, timezone
 
-          BASE = "https://www.sofascore.com/api/v1"
           TORNEIOS = {"uefa.champions": 7, "por.taca.portugal": 336}
+          SITES = ("https://api.sofascore.com/api/v1", "https://www.sofascore.com/api/v1")
+          sessao = requests.Session()
+          try:
+              sessao.get("https://www.sofascore.com/", impersonate="chrome", timeout=8)
+          except Exception:
+              pass
           def obter(caminho):
-              req = urllib.request.Request(
-                  BASE + caminho,
-                  headers={
-                      "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-                      "Accept": "application/json",
-                      "Referer": "https://www.sofascore.com/",
-                  },
-              )
-              with urllib.request.urlopen(req, timeout=12) as resp:
-                  if resp.status != 200:
-                      raise RuntimeError("HTTP " + str(resp.status))
-                  return json.load(resp)
+              estados = []
+              for base in SITES:
+                  try:
+                      resposta = sessao.get(
+                          base + caminho, impersonate="chrome", timeout=12,
+                          headers={
+                              "Accept": "application/json, text/plain, */*",
+                              "Origin": "https://www.sofascore.com",
+                              "Referer": "https://www.sofascore.com/",
+                          },
+                      )
+                      if resposta.status_code == 200:
+                          return resposta.json()
+                      estados.append(str(resposta.status_code))
+                  except Exception:
+                      estados.append("network")
+              raise RuntimeError("HTTP status tentados=" + ",".join(estados))
 
           falhas = []
           for codigo, tournament_id in TORNEIOS.items():
@@ -92,7 +102,8 @@ jobs:
               except Exception as exc:
                   # Sem URL privada, token, headers ou payload nos logs.
                   falhas.append(codigo)
-                  print(f"{codigo}: indisponível ({type(exc).__name__})", flush=True)
+                  detalhe = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+                  print(f"{codigo}: indisponível ({detalhe})", flush=True)
           if falhas:
               raise SystemExit("Sem validação externa completa: " + ", ".join(falhas))
           print("VALIDADO: dados reais suficientes em ambos os torneios; nenhuma alteração produção.")
