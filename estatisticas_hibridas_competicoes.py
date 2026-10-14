@@ -22,6 +22,10 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "eng.league_cup",
         "uefa.europa",
         "uefa.nations",
+        # Endpoints historicos ESPN confirmados HTTP 400 em 14/10/2026.
+        # Usar fonte alternativa sem relaxar requisitos ou criar snapshots.
+        "uefa.champions",
+        "por.taca.portugal",
     }
     # IDs públicos e estáveis das provas no SofaScore. Evita depender da agenda
     # diária, que em produção devolveu HTTP 404 mesmo com as provas existentes.
@@ -30,7 +34,12 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "eng.league_cup": 21,
         "uefa.europa": 679,
         "uefa.nations": 10783,
+        "uefa.champions": 7,
+        "por.taca.portugal": 336,
     }
+    # Estas competicoes sao novas na via SofaScore. Exigir que o evento
+    # confirme a identidade do torneio para nao contaminar medias.
+    SOFA_TORNEIOS_VERIFICAR = {"uefa.champions", "por.taca.portugal"}
     SOFA_ANO_CALENDARIO = {"arg.copa"}
     SOFA_EPOCA_ANTERIOR_BIENAL = {"uefa.nations"}
     SOFA_WWW_BASE = "https://www.sofascore.com/api/v1"
@@ -187,6 +196,13 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         try:
             if not isinstance(evento, dict):
                 return None
+            if liga_codigo in self.SOFA_TORNEIOS_VERIFICAR:
+                torneio = evento.get("tournament") or {}
+                unico = torneio.get("uniqueTournament") if isinstance(torneio, dict) else None
+                if not isinstance(unico, dict):
+                    return None
+                if int(unico.get("id", -1)) != int(self.SOFA_TOURNAMENT_IDS[liga_codigo]):
+                    return None
             status = evento.get("status") or {}
             tipo = str(status.get("type") or "").lower()
             codigo_status = status.get("code")
