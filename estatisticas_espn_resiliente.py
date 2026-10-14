@@ -203,6 +203,58 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
             self._cache[chave] = (monotonic(), resultados)
         return resultados
 
+    @staticmethod
+    def _adaptar_evento_forma_equipa(evento):
+        """Adapta o esquema ESPN /teams/{id}/schedule ao normalizador existente.
+
+        A rota devolve status em competitions[0].status e score como objeto
+        {value: 2.0, displayValue: "2"}. Não supõe jogos finalizados e rejeita
+        golos não inteiros, em falta ou contraditórios. Não altera o payload
+        original nem modifica regras de qualidade/probabilidades.
+        """
+        if not isinstance(evento, dict):
+            return None
+        competicoes = evento.get("competitions") or []
+        if not isinstance(competicoes, list) or not competicoes:
+            return None
+        comp = competicoes[0]
+        if not isinstance(comp, dict):
+            return None
+        rivais = comp.get("competitors")
+        if not isinstance(rivais, list) or len(rivais) < 2:
+            return None
+
+        adaptados = []
+        for rival in rivais:
+            if not isinstance(rival, dict):
+                return None
+            score = rival.get("score")
+            if isinstance(score, dict):
+                valor = score.get("value")
+                if type(valor) not in (int, float):
+                    return None
+                numerico = float(valor)
+                if not (0 <= numerico <= 100 and numerico.is_integer()):
+                    return None
+                exibicao = score.get("displayValue")
+                if exibicao is not None:
+                    verificacao = EstatisticasESPN._numero_score(exibicao)
+                    if verificacao is not None and verificacao != int(numerico):
+                        return None
+                score = int(numerico)
+            adaptados.append({**rival, "score": score})
+
+        status = evento.get("status")
+        if not isinstance(status, dict) or not isinstance(status.get("type"), dict):
+            status = comp.get("status")
+        if not isinstance(status, dict) or not isinstance(status.get("type"), dict):
+            return None
+        return {
+            **evento,
+            "status": status,
+            "competitions": [{**comp, "competitors": adaptados}, *competicoes[1:]],
+        }
+
     def _fetch_forma_global(self, team_id, data_ref=None):
         """Últimos resultados oficiais da equipa em todas as competições ESPN."""
         agora = data_ref or datetime.now(ZoneInfo("Europe/Lisbon"))
@@ -227,7 +279,10 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
         for evento in eventos:
             if not self._evento_oficial(evento):
                 continue
-            item = self._normalizar_resultado(evento, "all")
+            adaptado = self._adaptar_evento_forma_equipa(evento)
+            if adaptado is None:
+                continue
+            item = self._normalizar_resultado(adaptado, "all")
             if item is None:
                 continue
             # Nunca usar um resultado posterior ao momento da análise.
