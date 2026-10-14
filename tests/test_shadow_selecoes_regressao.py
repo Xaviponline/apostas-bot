@@ -45,7 +45,7 @@ class ReplaySelecoesShadowTests(unittest.TestCase):
     def test_top5_e_limite_locais_usam_mesma_ordenacao_da_cobertura(self):
         entradas = [
             ("uefa.champions", analise("uefa.champions", p))
-            for p in [0.75, 0.76, 0.74, 0.73, 0.72, 0.71, 0.70]
+            for p in [0.75, 0.749, 0.74, 0.73, 0.72, 0.71, 0.70]
         ]
         resumo = avaliar_filtros_shadow(entradas)
         self.assertEqual(resumo["total_elegiveis"], 7)
