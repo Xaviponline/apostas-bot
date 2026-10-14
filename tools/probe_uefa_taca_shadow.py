@@ -12,6 +12,7 @@ import requests
 
 from buscador_jogos_reais import BuscadorJogosReais
 from estatisticas_forma_web import EstatisticasFormaWeb
+from analisador_inteligente import AnalisadorInteligente
 
 
 def sondar_espn():
@@ -85,6 +86,52 @@ def sondar_espn():
     print("SHADOW_ESPN_ALTERNATIVA=" + json.dumps(saida, ensure_ascii=False, sort_keys=True))
 
 
+def comparar_analise_em_memoria():
+    """Executa analise somente em objetos efemeros: NAO chama .registar()."""
+    data_ref = datetime(2026, 10, 14, 12, 0, tzinfo=ZoneInfo("Europe/Lisbon"))
+    codigos = ("uefa.champions", "por.taca.portugal")
+    jogos = []
+    diagnostico = {}
+    for codigo in codigos:
+        try:
+            resposta = requests.get(
+                f"https://site.api.espn.com/apis/site/v2/sports/soccer/{codigo}/scoreboard",
+                params={"dates": "20261014"}, timeout=(4, 9),
+            )
+            resposta.raise_for_status()
+            eventos = resposta.json().get("events") or []
+            for evento in eventos:
+                jogo = BuscadorJogosReais._normalizar_evento_espn(evento)
+                if jogo is None:
+                    continue
+                jogo["league_code"] = codigo  # origem: endpoint especifico ESPN
+                if jogo.get("timestamp") and jogo["timestamp"] > data_ref.timestamp():
+                    jogos.append(jogo)
+        except (requests.RequestException, ValueError, TypeError, KeyError):
+            diagnostico[codigo] = {"erro": "consulta_fixture"}
+    estatisticas = EstatisticasFormaWeb(sofa_client=BuscadorJogosReais(enabled=True))
+    historicos = estatisticas.carregar_historicos(jogos, data_ref=data_ref)
+    analisador = AnalisadorInteligente(estatisticas=estatisticas)
+    for codigo in codigos:
+        alvo = [j for j in jogos if j.get("league_code") == codigo]
+        com_dados = 0
+        selecoes = 0
+        for jogo in alvo:
+            analise = estatisticas.analisar_jogo(jogo, historicos.get(codigo) or [])
+            if analise is not None:
+                com_dados += 1
+                if analisador._melhor_selecao(analise) is not None:
+                    selecoes += 1
+        diagnostico[codigo] = {
+            "jogos_futuros": len(alvo),
+            "base_historica": len(historicos.get(codigo) or []),
+            "analisaveis": com_dados,
+            "passam_filtros_v12": selecoes,
+            "modo": "apenas_em_memoria",
+        }
+    print("SHADOW_COBERTURA_COMPARADA=" + json.dumps(diagnostico, ensure_ascii=False, sort_keys=True))
+
+
 def executar():
     data_ref = datetime(2026, 10, 14, 12, 0, tzinfo=ZoneInfo("Europe/Lisbon"))
     stats = EstatisticasFormaWeb(sofa_client=BuscadorJogosReais(enabled=True))
@@ -124,6 +171,7 @@ def executar():
         tudo_ok &= registo["valido"]
     print("SHADOW_FONTE_HISTORICA=" + json.dumps(resultados, ensure_ascii=False, sort_keys=True))
     sondar_espn()
+    comparar_analise_em_memoria()
     return 0 if tudo_ok else 1
 
 
