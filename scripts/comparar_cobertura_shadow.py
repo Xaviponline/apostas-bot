@@ -39,12 +39,25 @@ def main():
         dados = sum(
             stats.analisar_jogo(j, partidas) is not None for j in candidatos
         )
+        formas_casa = [
+            len(stats._ultimos_time(
+                stats._formas_globais.get(j.get("casa_id")) or [],
+                j["casa_id"], limite=8
+            )) for j in candidatos
+        ]
+        formas_fora = [
+            len(stats._ultimos_time(
+                stats._formas_globais.get(j.get("fora_id")) or [],
+                j["fora_id"], limite=8
+            )) for j in candidatos
+        ]
         diag = stats.diagnostico_base.get(codigo) or {}
         print(
             f"REPLAY_SHADOW {codigo}: encontrados={encontrados}; "
             f"futuros_12h={futuros}; base={len(partidas)}; "
             f"analisados={dados}; fonte={diag.get('fonte', 'indisponivel')}; "
-            f"erros_forma={len(stats.ultimo_erros_forma)}"
+            f"erros_forma={len(stats.ultimo_erros_forma)}; "
+            f"forma_casa={formas_casa}; forma_fora={formas_fora}"
         )
     print(
         "REPLAY_SHADOW não publica picks, não executa filtros VALUE/Top5 "
