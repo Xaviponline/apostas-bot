@@ -26,6 +26,10 @@ def main():
                 ("season2026", {"season": "2026"}),
                 ("dates2026", {"dates": "2026"}),
                 ("dates202610", {"dates": "202610"}),
+                ("season2025", {"season": "2025"}),
+                ("season2024", {"season": "2024"}),
+                ("limit500", {"limit": "500"}),
+                ("season2025limit500", {"season": "2025", "limit": "500"}),
             ):
                 try:
                     url = f"{stats.BASE}/{rota}/teams/{team_id}/schedule"
