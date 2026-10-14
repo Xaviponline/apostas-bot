@@ -21,3 +21,10 @@ jobs:
           python -m pip install -r requirements.txt
       - name: Run bot unit tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
+      # Sonda live limitada apenas a este PR de investigacao em SHADOW.
+      # Uma falha de fonte externa nao invalida os testes deterministas.
+      - name: Probe SofaScore historico SHADOW (somente leitura)
+        if: github.event_name == 'pull_request' && github.head_ref == 'test/uefa-taca-historical-coverage-20261014'
+        continue-on-error: true
+        timeout-minutes: 4
+        run: python -m tools.probe_uefa_taca_shadow
