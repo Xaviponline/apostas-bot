@@ -1,11 +1,12 @@
 """Histórico híbrido para taças/UEFA quando a ESPN bloqueia a rota histórica.
 
-A descoberta dos jogos do dia continua na camada existente. Para competições
-cujo endpoint histórico ESPN foi confirmado a devolver 400/403, esta camada
-usa SofaScore apenas para obter a base de golos da própria competição.
+A descoberta dos jogos do dia continua na camada existente. UCL e Taça PT
+usam primeiro o parâmetro anual ESPN, testado em shadow quando intervalos
+de 14 dias devolvem HTTP 400. As bases mantêm a janela e os blocos de 14 dias.
+SofaScore fica como fallback, sem dados sintéticos nem mudanças no modelo.
 O modelo, os filtros e a forma recente das equipas não são alterados.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 from time import monotonic
 from zoneinfo import ZoneInfo
@@ -17,6 +18,10 @@ from estatisticas_espn_competicoes import EstatisticasESPNCompeticoes
 
 
 class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
+    # Confirmado em runner isolado 14/10/2026: dates=YYYY => HTTP 200,
+    # dates=YYYYMMDD-YYYYMMDD => HTTP 400; não tratar o ano como histórico
+    # completo sem aplicar o mesmo corte temporal e blocos do coletor antigo.
+    ESPN_HISTORICO_ANUAL = {"uefa.champions", "por.taca.portugal"}
     ESPN_HISTORICO_BLOQUEADO = {
         "arg.copa",
         "eng.league_cup",
@@ -281,7 +286,107 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
             self._cache[chave] = (monotonic(), resultados)
         return resultados
 
+    def _fetch_base_espn_anual(self, liga_codigo, data_ref=None):
+        """ESPN dates=YYYY, sem ranges, preservando janela e blocos originais.
+
+        Filtra jogos *finalizados* anteriores ao dia da análise. Só recolhe
+        anos anteriores se o ano atual não atingir o alvo de amostra.
+        Nunca devolve uma base com menos de MIN_JOGOS_BASE jogos.
+        """
+        agora = self._data_ref(data_ref)
+        fim = agora.date() - timedelta(days=1)
+        inicio = fim - timedelta(days=self.DIAS_BASE_COMPETICAO)
+        chave = ("base_espn_anual", liga_codigo, inicio.isoformat(), fim.isoformat())
+
+        with self._lock:
+            cached = self._cache.get(chave)
+            if cached and monotonic() - cached[0] < self.cache_segundos:
+                self.diagnostico_base[liga_codigo] = {
+                    "fonte": "cache_espn_anual", "jogos": len(cached[1])
+                }
+                return cached[1]
+
+        por_id = {}
+        anos_consultados = []
+        for ano in range(fim.year, inicio.year - 1, -1):
+            resposta = self.session.get(
+                f"{self.BASE}/{liga_codigo}/scoreboard",
+                params={"dates": str(ano), "limit": 500},
+                timeout=(5, 25),
+            )
+            resposta.raise_for_status()
+            payload = resposta.json()
+            eventos = payload.get("events") if isinstance(payload, dict) else None
+            if not isinstance(eventos, list):
+                raise ValueError("Histórico ESPN anual inválido.")
+            # Um ano truncado originaria médias enganadoras: falhar fechado.
+            if len(eventos) >= 500:
+                raise ValueError("Histórico ESPN anual no limite de paginação.")
+            anos_consultados.append(ano)
+            for item in self._normalizar_eventos(eventos, liga_codigo).values():
+                ts = item.get("timestamp")
+                if not isinstance(ts, (int, float)):
+                    continue
+                dia = datetime.fromtimestamp(ts, ZoneInfo("Europe/Lisbon")).date()
+                if inicio <= dia <= fim:
+                    por_id[item["id"]] = item
+            if len(por_id) >= self.ALVO_JOGOS_BASE:
+                break
+
+        # Emular a recolha original: avançar do presente para trás em
+        # blocos de 14 dias e parar após atingir ALVO_JOGOS_BASE.
+        resultados = []
+        cursor_fim = fim
+        blocos = 0
+        por_dia = {}
+        for item in por_id.values():
+            dia = datetime.fromtimestamp(
+                item["timestamp"], ZoneInfo("Europe/Lisbon")
+            ).date()
+            por_dia.setdefault(dia, []).append(item)
+
+        while cursor_fim >= inicio and len(resultados) < self.ALVO_JOGOS_BASE:
+            cursor_inicio = max(
+                inicio, cursor_fim - timedelta(days=self.DIAS_BLOCO_BASE - 1)
+            )
+            blocos += 1
+            dia = cursor_inicio
+            while dia <= cursor_fim:
+                resultados.extend(por_dia.get(dia, []))
+                dia += timedelta(days=1)
+            cursor_fim = cursor_inicio - timedelta(days=1)
+
+        resultados.sort(key=lambda x: x["timestamp"], reverse=True)
+        self.diagnostico_base[liga_codigo] = {
+            "fonte": "espn_anual",
+            "jogos": len(resultados),
+            "anos_consultados": anos_consultados,
+            "blocos": blocos,
+        }
+        if len(resultados) < self.MIN_JOGOS_BASE:
+            raise ValueError(
+                f"base ESPN anual insuficiente: {len(resultados)}/{self.MIN_JOGOS_BASE}"
+            )
+        with self._lock:
+            self._cache[chave] = (monotonic(), resultados)
+        return resultados
+
     def _fetch_liga(self, liga_codigo, data_ref=None):
+        if liga_codigo in self.ESPN_HISTORICO_ANUAL:
+            try:
+                return self._fetch_base_espn_anual(liga_codigo, data_ref)
+            except (requests.RequestException, ValueError, TypeError, RuntimeError):
+                # Recurso já existente: se a fonte principal falhar, tenta
+                # SofaScore, que também exige a amostra mínima real.
+                try:
+                    return self._fetch_base_sofa(liga_codigo, data_ref)
+                except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
+                    self.diagnostico_base[liga_codigo] = {
+                        "fonte": "ambas_fontes_indisponiveis",
+                        "jogos": 0,
+                        "motivo": self._motivo_seguro_sofa(exc),
+                    }
+                    raise
         if liga_codigo in self.ESPN_HISTORICO_BLOQUEADO:
             try:
                 return self._fetch_base_sofa(liga_codigo, data_ref)
