@@ -157,6 +157,13 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
                     nomes.append(nome)
 
         for slug in slugs:
+            # Alguns calendarios ESPN usam o codigo nativo no campo slug
+            # (ex.: por.taca.portugal) e outros usam um slug descritivo.
+            # So aceitar correspondencia EXATA a codigos conhecidos; nunca
+            # adivinhar que um generico "Group Stage" e Champions/Taca.
+            codigo = cls.resolver_liga({"league_code": slug})
+            if codigo:
+                return codigo
             codigo = cls.resolver_liga({"season_slug": slug})
             if codigo:
                 return codigo
