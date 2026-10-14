@@ -55,8 +55,9 @@ class LiquidacaoAutomaticaTests(unittest.TestCase):
     def test_antes_de_tres_horas_nao_aciona_espn(self):
         with tempfile.TemporaryDirectory() as td:
             p = FakePrevisoes()
+            p.dados["previsoes"][0]["timestamp_jogo"] = datetime(2026, 10, 14, 0, 0, tzinfo=TZ).timestamp()
             r = RotinasDiarias(Path(td) / "rotinas.json")
-            self.assertEqual(r.liquidar_se_devido(p, agora(h=0, m=48)), 0)
+            self.assertEqual(r.liquidar_se_devido(p, agora(h=1)), 0)
             p.atualizar_pendentes.assert_not_called()
 
     def test_janela_madrugada_e_sem_odds(self):
