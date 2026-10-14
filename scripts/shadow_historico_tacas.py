@@ -5,6 +5,7 @@ Nao altera filtros, modelo ou programa de producao.
 """
 import sys
 import re
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -55,6 +56,29 @@ def main():
                 print("SHADOW | historico insuficiente; nenhuma entrada comercial autorizada")
         except Exception as exc:
             sem_validacao += 1
+            if codigo == "por.taca.portugal":
+                slugs = Counter()
+                estados = Counter()
+                for tid in sorted(fonte._equipas_contexto_liga.get(codigo) or []):
+                    for season in (2025, 2026):
+                        try:
+                            jogos = fonte._eventos_equipa_temporada(tid, season)
+                        except Exception:
+                            continue
+                        for evento in jogos:
+                            season_meta = evento.get("season") or {}
+                            league_meta = evento.get("league") or {}
+                            slug = (
+                                str(season_meta.get("slug") or "").strip()
+                                or str(league_meta.get("slug") or "").strip()
+                                or "[sem_slug]"
+                            )
+                            slug = re.sub(r"[^a-zA-Z0-9_./-]", "", slug)[:70]
+                            slugs[slug] += 1
+                            estado = fonte._status_forma(evento)
+                            estados[str(estado.get("state") or "?")[:20]] += 1
+                print(f"SHADOW | Taca | metadados de calendario: {slugs.most_common(7)}")
+                print(f"SHADOW | Taca | estados retornados: {estados.most_common(4)}")
             # So um motivo curto: remover URLs e sequencias longas do provider.
             diag = fonte.diagnostico_base.get(codigo) or {}
             motivo = str(diag.get("motivo") or "sem detalhe")
