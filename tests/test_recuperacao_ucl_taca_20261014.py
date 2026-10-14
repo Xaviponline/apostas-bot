@@ -57,8 +57,11 @@ class RecuperacaoHistoricoTests(unittest.TestCase):
         ):
             with self.subTest(codigo=codigo):
                 class Probe(EstatisticasHibridasCompeticoes):
+                    def _fetch_base_espn_anual(self, *args, **kwargs):
+                        raise requests.Timeout("ESPN anual indisponível no fixture")
+
                     def _recolher_base_tolerante(self, *args, **kwargs):
-                        raise AssertionError("ESPN não deve ser consultada")
+                        raise AssertionError("ESPN por intervalos não deve ser consultada")
 
                 sofa = SofaHistoricoFake(torneo)
                 stats = Probe(sofa_client=sofa)
@@ -75,19 +78,23 @@ class RecuperacaoHistoricoTests(unittest.TestCase):
     def test_escassez_de_jogos_nao_e_promovida_a_historico_valido(self):
         for codigo, torneo in (("uefa.champions", 7), ("por.taca.portugal", 336)):
             with self.subTest(codigo=codigo):
-                stats = EstatisticasHibridasCompeticoes(
-                    sofa_client=SofaHistoricoFake(torneo, total=9)
-                )
+                class Probe(EstatisticasHibridasCompeticoes):
+                    def _fetch_base_espn_anual(self, *args, **kwargs):
+                        raise requests.Timeout("simulado")
+
+                stats = Probe(sofa_client=SofaHistoricoFake(torneo, total=9))
                 with self.assertRaisesRegex(ValueError, "base insuficiente"):
                     stats._fetch_liga(codigo, REF)
                 self.assertEqual(
-                    stats.diagnostico_base[codigo]["fonte"], "sofascore_indisponivel"
+                    stats.diagnostico_base[codigo]["fonte"], "ambas_fontes_indisponiveis"
                 )
 
     def test_epoca_desconhecida_nao_gera_historico(self):
-        stats = EstatisticasHibridasCompeticoes(
-            sofa_client=SofaHistoricoFake(336, year="25/26")
-        )
+        class Probe(EstatisticasHibridasCompeticoes):
+            def _fetch_base_espn_anual(self, *args, **kwargs):
+                raise requests.Timeout("simulado")
+
+        stats = Probe(sofa_client=SofaHistoricoFake(336, year="25/26"))
         with self.assertRaisesRegex(ValueError, "época 26/27 não encontrada"):
             stats._fetch_liga("por.taca.portugal", REF)
 
