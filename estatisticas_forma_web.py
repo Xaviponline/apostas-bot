@@ -157,6 +157,13 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
                     nomes.append(nome)
 
         for slug in slugs:
+            # Alguns calendarios ESPN usam o codigo nativo no campo slug
+            # (ex.: por.taca.portugal) e outros usam um slug descritivo.
+            # So aceitar correspondencia EXATA a codigos conhecidos; nunca
+            # adivinhar que um generico "Group Stage" e Champions/Taca.
+            codigo = cls.resolver_liga({"league_code": slug})
+            if codigo:
+                return codigo
             codigo = cls.resolver_liga({"season_slug": slug})
             if codigo:
                 return codigo
@@ -275,10 +282,132 @@ class EstatisticasFormaWeb(EstatisticasHibridasCompeticoes):
             self._cache[chave] = (monotonic(), resultados)
         return resultados
 
+    HISTORICO_CLUBES_POR_EQUIPAS = frozenset({"uefa.champions", "por.taca.portugal"})
+    MAX_EQUIPAS_BASE_CLUBES = 20
+
+    def _fetch_base_clubes_por_equipas(self, liga_codigo, data_ref=None):
+        """Base estritamente da propria competicao a partir de equipas ESPN.
+
+        Fallback apenas para as duas provas bloqueadas. Duas epocas completas
+        possíveis dentro da janela original de 420 dias. Nunca mistura ligas,
+        jogos futuros, amigaveis ou eventos sem competicao confirmada.
+        """
+        if liga_codigo not in self.HISTORICO_CLUBES_POR_EQUIPAS:
+            raise ValueError("Competicao sem rota historica por equipas")
+        agora = data_ref or datetime.now(ZoneInfo("Europe/Lisbon"))
+        if agora.tzinfo is None or agora.utcoffset() is None:
+            raise ValueError("Referencia temporal sem fuso horario")
+        agora = agora.astimezone(ZoneInfo("Europe/Lisbon"))
+
+        equipas = sorted(self._equipas_contexto_liga.get(liga_codigo) or [])
+        if len(equipas) < 2:
+            raise ValueError("Equipas insuficientes para historico")
+        equipas = equipas[:self.MAX_EQUIPAS_BASE_CLUBES]
+        epoca_inicio = agora.year if agora.month >= 7 else agora.year - 1
+        epocas = (epoca_inicio, epoca_inicio - 1)
+        limite_inferior = agora.timestamp() - self.DIAS_BASE_COMPETICAO * 86400
+        chave = ("base_clubes_espn", liga_codigo, epocas, tuple(equipas), agora.date().isoformat())
+
+        with self._lock:
+            cached = self._cache.get(chave)
+            if cached and monotonic() - cached[0] < self.cache_segundos:
+                self.diagnostico_base[liga_codigo] = {
+                    "fonte": "cache_espn_equipas_clubes",
+                    "jogos": len(cached[1]),
+                    "equipas": len(equipas),
+                }
+                return cached[1]
+
+        por_id = {}
+        conflitos = set()
+        consultas_ok = 0
+        primeiro_erro = None
+        with ThreadPoolExecutor(max_workers=min(6, len(equipas))) as executor:
+            futuros = {
+                executor.submit(self._eventos_equipa_temporada, team_id, epoca): (team_id, epoca)
+                for epoca in epocas for team_id in equipas
+            }
+            for futuro in as_completed(futuros):
+                try:
+                    eventos = futuro.result()
+                except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
+                    primeiro_erro = primeiro_erro or exc
+                    continue
+                consultas_ok += 1
+                for evento in eventos:
+                    if not self._evento_oficial(evento):
+                        continue
+                    if self._codigo_competicao_evento(evento) != liga_codigo:
+                        continue
+                    item = self._normalizar_resultado_forma(evento)
+                    if item is None or not (limite_inferior <= float(item["timestamp"]) < agora.timestamp()):
+                        continue
+                    item["liga_codigo"] = liga_codigo
+                    eid = item["id"]
+                    if eid in conflitos:
+                        continue
+                    anterior = por_id.get(eid)
+                    if anterior is not None and any(
+                        anterior[k] != item[k]
+                        for k in ("timestamp", "casa_id", "fora_id", "golos_casa", "golos_fora")
+                    ):
+                        por_id.pop(eid, None)
+                        conflitos.add(eid)
+                        continue
+                    por_id[eid] = item
+
+        resultados = sorted(por_id.values(), key=lambda x: x["timestamp"], reverse=True)
+        if len(resultados) < self.MIN_JOGOS_BASE:
+            self.diagnostico_base[liga_codigo] = {
+                "fonte": "espn_equipas_clubes_insuficiente",
+                "jogos": len(resultados),
+                "equipas": len(equipas),
+                "epocas": list(epocas),
+                "consultas_ok": consultas_ok,
+                "consultas_total": len(equipas) * len(epocas),
+            }
+            if not consultas_ok and primeiro_erro is not None:
+                raise primeiro_erro
+            raise ValueError(
+                f"base ESPN equipas insuficiente: {len(resultados)}/{self.MIN_JOGOS_BASE}"
+            )
+        self.diagnostico_base[liga_codigo] = {
+            "fonte": "espn_equipas_clubes",
+            "jogos": len(resultados),
+            "equipas": len(equipas),
+            "epocas": list(epocas),
+            "consultas_ok": consultas_ok,
+            "consultas_total": len(equipas) * len(epocas),
+            "conflitos": len(conflitos),
+        }
+        with self._lock:
+            self._cache[chave] = (monotonic(), resultados)
+        return resultados
+
     def _fetch_liga(self, liga_codigo, data_ref=None):
         try:
             return super()._fetch_liga(liga_codigo, data_ref)
         except (requests.RequestException, RuntimeError, ValueError, TypeError) as erro_primario:
+            if liga_codigo in self.HISTORICO_CLUBES_POR_EQUIPAS:
+                try:
+                    return self._fetch_base_clubes_por_equipas(liga_codigo, data_ref)
+                except (requests.RequestException, RuntimeError, ValueError, TypeError) as erro_fallback:
+                    diag = dict(self.diagnostico_base.get(liga_codigo) or {})
+                    detalhe_espn = self._motivo_seguro(erro_fallback)
+                    if diag.get("fonte") == "espn_equipas_clubes_insuficiente":
+                        detalhe_espn = (
+                            f"{diag.get('jogos', 0)}/{self.MIN_JOGOS_BASE} resultados; "
+                            f"{diag.get('consultas_ok', 0)}/{diag.get('consultas_total', 0)} calendarios validos"
+                        )
+                    self.diagnostico_base[liga_codigo] = {
+                        "fonte": "sofa_e_espn_equipas_indisponiveis",
+                        "jogos": 0,
+                        "motivo": (
+                            f"SofaScore: {self._motivo_seguro_sofa(erro_primario)}; "
+                            f"ESPN equipas: {detalhe_espn}"
+                        ),
+                    }
+                    raise erro_fallback
             if liga_codigo != "uefa.nations":
                 raise
 
