@@ -154,7 +154,7 @@ class RotinasDiarias:
         clv_str = cls._formatar_roi(clv_media) if m["clv_amostras"] else "ainda sem fechos"
         linhas = [
             "📨 RESUMO DIARIO — OWNER",
-            f"📅 Jogos de {dt.strftime('%d/%m/%Y')} (ontem: {ontem})",
+            f"📅 Relatorio de {dt.strftime('%d/%m/%Y')} | Jogos de {ontem}",
             "",
             "📊 RESULTADOS DE ONTEM — TODAS AS PREVISOES",
             f"• Registadas: {len(anteriores)}",
