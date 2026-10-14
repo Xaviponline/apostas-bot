@@ -38,9 +38,14 @@ def main():
         except Exception:
             # Logs deliberadamente sem payload, URL, tokens ou traceback.
             diag = stats.diagnostico_base.get(codigo, {})
+            detalhe = str(diag.get("motivo") or "indisponível")
+            # Nesta integração as causas são mensagens HTTP/validação, sem
+            # parâmetros privados. Não imprimir erro bruto nem traceback.
+            if any(x in detalhe.casefold() for x in ("http://", "https://", "token", "authorization")):
+                detalhe = "erro ocultado por segurança"
             print(
                 f"FALHA {codigo}: fonte={diag.get('fonte', 'indisponivel')}; "
-                "histórico não validado; não promover a produção"
+                f"motivo={detalhe[:120]}; histórico não validado; não promover"
             )
             falhas += 1
     if falhas:
