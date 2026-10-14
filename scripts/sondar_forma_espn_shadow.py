@@ -65,6 +65,15 @@ def main():
                     score_tip = sorted(
                         {str(type(r.get("score")).__name__) for r in rivais if isinstance(r, dict)}
                     )
+                    score_campos = [
+                        sorted(r.get("score")) if isinstance(r, dict) and isinstance(r.get("score"), dict) else []
+                        for r in rivais
+                    ]
+                    score_valores = [
+                        {k: r["score"].get(k) for k in ("value", "displayValue", "winner")
+                         if k in r["score"]}
+                        for r in rivais if isinstance(r, dict) and isinstance(r.get("score"), dict)
+                    ]
                     print(
                         f"FORMA_PROBE {liga} rota={rota} param={rotulo}: "
                         f"HTTP={r.status_code} eventos={total} "
@@ -73,7 +82,8 @@ def main():
                         f"status_tipo={marca}; "
                         f"comp_keys={sorted(comp)[:10]}; "
                         f"comp_status={str(tipos_comp)[:120]}; "
-                        f"score_tipos={score_tip}"
+                        f"score_tipos={score_tip}; score_keys={score_campos}; "
+                        f"score_valores={score_valores}"
                     )
                 except (requests.RequestException, ValueError, TypeError):
                     print(f"FORMA_PROBE {liga} rota={rota} param={rotulo}: indisponível")
