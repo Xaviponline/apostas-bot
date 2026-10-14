@@ -58,6 +58,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /monitor_status — Heartbeat e tarefas automaticas em atraso (admin)
 /backup_externo_status — Ultima copia cifrada e verificada fora do Railway (admin)
 /vigilancia_externa_status — Estado local dos pings Healthchecks.io (admin)
+/rotinas_status — Liquidacao ESPN automatica e resumo matinal OWNER (admin)
 /odds_rastreio — Referencias observadas de fixture/mercado/selecao (admin)
 /add_aposta "Jogo" "Mercado" ODD VALOR — Registar uma aposta já feita
 /resultados — Histórico e contas
@@ -634,6 +635,9 @@ class BotPremiumReal:
                 self._capturar_odds_se_devida()
                 self._capturar_clv_se_devido()
                 self._capturar_clv_tardio_se_devido()
+                rotina = getattr(self, "_rotinas_diarias_se_devido", None)
+                if callable(rotina):
+                    rotina()
                 # Monitor offsite independente: apenas apos polling bem-sucedido.
                 heartbeat_externo = getattr(self, "_ping_externo_se_devido", None)
                 if callable(heartbeat_externo):
