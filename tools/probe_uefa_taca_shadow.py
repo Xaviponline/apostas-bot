@@ -7,6 +7,7 @@ Executar apenas no CI de PR de testes; nunca no arranque de producao.
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
+import re
 
 from buscador_jogos_reais import BuscadorJogosReais
 from estatisticas_forma_web import EstatisticasFormaWeb
@@ -34,6 +35,19 @@ def executar():
             registo["valido"] = False
             registo["erro_tipo"] = type(exc).__name__
             registo["fonte"] = (stats.diagnostico_base.get(codigo) or {}).get("fonte")
+            motivo = str((stats.diagnostico_base.get(codigo) or {}).get("motivo") or "")
+            # Categorias estritas: nenhum URL, resposta bruta ou identificador privado.
+            registo["http_status"] = re.findall(r"(?:API|WWW) HTTP [0-9]{3}", motivo)
+            if "base insuficiente" in motivo:
+                registo["motivo_categoria"] = "amostra_insuficiente"
+            elif "ambígua" in motivo:
+                registo["motivo_categoria"] = "epoca_ambigua"
+            elif "não encontrada" in motivo:
+                registo["motivo_categoria"] = "epoca_nao_encontrada"
+            elif "HTTP" in motivo:
+                registo["motivo_categoria"] = "http_indisponivel"
+            else:
+                registo["motivo_categoria"] = "desconhecido"
         resultados.append(registo)
         tudo_ok &= registo["valido"]
     print("SHADOW_FONTE_HISTORICA=" + json.dumps(resultados, ensure_ascii=False, sort_keys=True))
