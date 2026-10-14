@@ -46,6 +46,8 @@ class EstatisticasESPNCompeticoes(EstatisticasESPNEnriquecidas):
         falhas = []
         blocos_total = 0
         blocos_ok = 0
+        http_400_consecutivos = 0
+        http_400_interrompido = False
         cursor_fim = fim
 
         while cursor_fim >= inicio:
@@ -66,13 +68,29 @@ class EstatisticasESPNCompeticoes(EstatisticasESPNEnriquecidas):
                     break
                 except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
                     ultimo_erro = exc
+                    # Um HTTP 400 é uma rejeição do pedido: repetir o mesmo
+                    # intervalo não traz dados novos. Outros erros continuam
+                    # sujeitos à política de tentativas existente.
+                    if self._motivo_seguro(exc) == "HTTP 400":
+                        break
 
             if ultimo_erro is not None:
                 falhas.append(ultimo_erro)
+                if self._motivo_seguro(ultimo_erro) == "HTTP 400" and blocos_ok == 0:
+                    http_400_consecutivos += 1
+                else:
+                    http_400_consecutivos = 0
             else:
                 blocos_ok += 1
+                http_400_consecutivos = 0
                 por_id.update(self._normalizar_eventos(eventos or [], liga_codigo))
 
+            # Duas janelas consecutivas rejeitadas com 400, sem um único
+            # bloco válido, indicam rota/consulta incompatível. Não insistir
+            # nos restantes ~30 blocos nem inventar um histórico parcial.
+            if http_400_consecutivos >= 2:
+                http_400_interrompido = True
+                break
             if len(por_id) >= self.ALVO_JOGOS_BASE:
                 break
             cursor_fim = cursor_inicio - timedelta(days=1)
@@ -84,6 +102,7 @@ class EstatisticasESPNCompeticoes(EstatisticasESPNEnriquecidas):
             "blocos_falha": len(falhas),
             "jogos": len(por_id),
             "motivos": motivos,
+            "http_400_interrompido": http_400_interrompido,
         }
         return por_id, diagnostico, (falhas[0] if falhas else None)
 

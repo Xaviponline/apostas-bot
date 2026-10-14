@@ -61,6 +61,7 @@ class BuscadorJogosReais:
         ("french-ligue-1", "French Ligue 1"),
         ("french-ligue-2", "French Ligue 2"),
         ("portuguese-primeira-liga", "Portuguese Primeira Liga"),
+        ("portuguese-taca-de-portugal", "Portuguese Taca de Portugal"),
         ("dutch-eredivisie", "Eredivisie"),
         ("dutch-keuken-kampioen-divisie", "Keuken Kampioen Divisie"),
         ("belgian-pro-league", "Belgian Pro League"),
@@ -129,13 +130,36 @@ class BuscadorJogosReais:
         except ValueError:
             return None
 
-    @staticmethod
-    def _season_slug_espn(evento):
-        season = evento.get("season") or {}
-        if not isinstance(season, dict):
-            return ""
-        slug = season.get("slug")
-        return str(slug or "").strip().lower()
+    @classmethod
+    def _season_slug_espn(cls, evento):
+        """Identifica a prova apenas por slugs explícitos e já reconhecidos.
+
+        O /all pode indicar "Group Stage" no nome e omitir o slug da
+        temporada. Nesses casos, a liga do evento/competição pode conter
+        o slug da prova; nomes genéricos, por si só, não são adivinhados.
+        """
+        season = evento.get("season")
+        slug_epoca = (
+            str(season.get("slug") or "").strip().lower()
+            if isinstance(season, dict) else ""
+        )
+        if cls._nome_liga_por_slug(slug_epoca):
+            return slug_epoca
+
+        competicoes = evento.get("competitions")
+        primeira = (
+            competicoes[0]
+            if isinstance(competicoes, list) and competicoes
+            and isinstance(competicoes[0], dict)
+            else {}
+        )
+        for liga in (evento.get("league"), primeira.get("league")):
+            if not isinstance(liga, dict):
+                continue
+            candidato = str(liga.get("slug") or "").strip().lower()
+            if cls._nome_liga_por_slug(candidato):
+                return candidato
+        return slug_epoca
 
     @classmethod
     def _nome_liga_por_slug(cls, slug):
