@@ -41,7 +41,7 @@ def main():
             # So um motivo curto: remover URLs e sequencias longas do provider.
             diag = fonte.diagnostico_base.get(codigo) or {}
             motivo = str(diag.get("motivo") or "sem detalhe")
-            motivo = re.sub(r"https?://[^\\s]+", "[URL]", motivo)[:160]
+            motivo = re.sub(r"https?://[^\s]+", "[URL]", motivo)[:160]
             print(
                 f"SHADOW | {nome} | SEM VALIDACAO REAL | "
                 f"fonte={diag.get('fonte','indisponivel')} | "
