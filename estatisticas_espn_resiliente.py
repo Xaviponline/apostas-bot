@@ -24,6 +24,8 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
     DIAS_POR_BLOCO = 14
     TRABALHADORES_DIARIOS = 4
     TRABALHADORES_FORMAS = 6
+    # Novas leituras do calendário: apenas estas duas provas neste PR.
+    FORMA_ESQUEMA_CORRIGIDO = frozenset({"uefa.champions", "por.taca.portugal"})
 
     # Competições em que a forma apenas dentro da própria prova costuma ser
     # curta (taças nacionais e UEFA). A base estatística da competição não é
@@ -51,7 +53,9 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._cache_forma_global = {}
+        self._cache_forma_global_legado = {}
         self._formas_globais = {}
+        self._formas_globais_legado = {}
         self.ultimo_erros_forma = {}
 
     def _consultar_intervalo(self, liga_codigo, inicio, fim):
@@ -239,7 +243,7 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
                 exibicao = score.get("displayValue")
                 if exibicao is not None:
                     verificacao = EstatisticasESPN._numero_score(exibicao)
-                    if verificacao is not None and verificacao != int(numerico):
+                    if verificacao is None or verificacao != int(numerico):
                         return None
                 score = int(numerico)
             adaptados.append({**rival, "score": score})
@@ -276,9 +280,21 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
             raise ValueError("Calendário global ESPN inválido.")
 
         por_id = {}
+        por_id_legado = {}
         for evento in eventos:
             if not self._evento_oficial(evento):
                 continue
+
+            # Primeiro o esquema aceite na main. Guardá-lo em separado impede
+            # que este PR altere as outras taças/UEFA, mesmo quando partilham
+            # equipas com a Champions ou com a Taça de Portugal.
+            original = self._normalizar_resultado(evento, "all")
+            if original is not None:
+                if float(original["timestamp"]) < agora.timestamp():
+                    por_id_legado[original["id"]] = original
+                    por_id[original["id"]] = original
+                continue
+
             adaptado = self._adaptar_evento_forma_equipa(evento)
             if adaptado is None:
                 continue
@@ -293,8 +309,12 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
         resultados = sorted(
             por_id.values(), key=lambda x: x["timestamp"], reverse=True
         )[:20]
+        resultados_legado = sorted(
+            por_id_legado.values(), key=lambda x: x["timestamp"], reverse=True
+        )[:20]
         with self._lock:
             self._cache_forma_global[chave] = (monotonic(), resultados)
+            self._cache_forma_global_legado[chave] = resultados_legado
         return resultados
 
     def _precarregar_formas_globais(self, jogos, data_ref=None):
@@ -311,9 +331,15 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
                     ids.add(team_id)
 
         self._formas_globais = {}
+        self._formas_globais_legado = {}
         self.ultimo_erros_forma = {}
         if not ids:
             return
+
+        referencia = data_ref or datetime.now(ZoneInfo("Europe/Lisbon"))
+        if referencia.tzinfo is None:
+            referencia = referencia.replace(tzinfo=ZoneInfo("Europe/Lisbon"))
+        dia_chave = referencia.date().isoformat()
 
         with ThreadPoolExecutor(max_workers=min(self.TRABALHADORES_FORMAS, len(ids))) as executor:
             futuros = {
@@ -324,6 +350,14 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
                 team_id = futuros[futuro]
                 try:
                     self._formas_globais[team_id] = futuro.result()
+                    chave = (int(team_id), dia_chave)
+                    with self._lock:
+                        legado = self._cache_forma_global_legado.get(chave)
+                    # Subclasses antigas de testes podem substituir a consulta
+                    # sem cache legado: preservar o contrato de então.
+                    self._formas_globais_legado[team_id] = (
+                        self._formas_globais[team_id] if legado is None else legado
+                    )
                 except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
                     self.ultimo_erros_forma[team_id] = self._motivo_seguro(exc)
 
@@ -339,6 +373,7 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
         if not codigos:
             self.ultimo_erros = {}
             self._formas_globais = {}
+            self._formas_globais_legado = {}
             self.ultimo_erros_forma = {}
             return {}
 
@@ -369,8 +404,16 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
         if len(partidas) < 10:
             return None
 
-        partidas_casa = self._formas_globais.get(casa_id) or []
-        partidas_fora = self._formas_globais.get(fora_id) or []
+        # Para todas as outras taças, manter exatamente a forma que a main
+        # conseguiria normalizar. A recuperação dos esquemas aninhados só
+        # beneficia as duas provas explícitas da auditoria.
+        formas = (
+            self._formas_globais
+            if codigo in self.FORMA_ESQUEMA_CORRIGIDO
+            else (self._formas_globais_legado or self._formas_globais)
+        )
+        partidas_casa = formas.get(casa_id) or []
+        partidas_fora = formas.get(fora_id) or []
         casa_all = self._ultimos_time(partidas_casa, casa_id, limite=8)
         fora_all = self._ultimos_time(partidas_fora, fora_id, limite=8)
         if len(casa_all) < 4 or len(fora_all) < 4:
