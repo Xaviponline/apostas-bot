@@ -188,6 +188,19 @@ class FormaWebTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "insuficiente"):
             stats._fetch_base_nations_por_equipas(self.REF)
 
+    def test_codigo_competicao_aceita_slug_espn_exato_sem_adivinhar_fase(self):
+        cup = SessaoHistoricoNationsFake._evento(
+            1, "por.taca.portugal", "Group Stage"
+        )
+        self.assertEqual(
+            EstatisticasFormaWeb._codigo_competicao_evento(cup),
+            "por.taca.portugal",
+        )
+        fase = SessaoHistoricoNationsFake._evento(
+            2, "group-stage", "Group Stage"
+        )
+        self.assertIsNone(EstatisticasFormaWeb._codigo_competicao_evento(fase))
+
     def test_codigo_competicao_evento_nao_confunde_amigavel(self):
         nations = SessaoHistoricoNationsFake._evento(1)
         friendly = SessaoHistoricoNationsFake._evento(
