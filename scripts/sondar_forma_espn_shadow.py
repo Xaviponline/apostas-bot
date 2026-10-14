@@ -45,10 +45,24 @@ def main():
                         stats._normalizar_resultado(e, rota) is not None
                         for e in (resultado or []) if isinstance(e, dict)
                     )
+                    datas = sorted(
+                        str(e.get("date") or "")[:10]
+                        for e in (resultado or []) if isinstance(e, dict) and e.get("date")
+                    )
+                    primeira = resultado[0] if isinstance(resultado, list) and resultado else {}
+                    comp = (primeira.get("competitions") or [None])[0]
+                    comp = comp if isinstance(comp, dict) else {}
+                    marca = (
+                        str((primeira.get("status") or {}).get("type") or "")[:80]
+                        if isinstance(primeira.get("status"), dict) else "ausente"
+                    )
                     print(
                         f"FORMA_PROBE {liga} rota={rota} param={rotulo}: "
                         f"HTTP={r.status_code} eventos={total} "
-                        f"concluidos={concluidos} normalizados={validos}"
+                        f"concluidos={concluidos} normalizados={validos}; "
+                        f"datas={(datas[0] + '..' + datas[-1]) if datas else '-'}; "
+                        f"status_tipo={marca}; "
+                        f"comp_keys={sorted(comp)[:10]}"
                     )
                 except (requests.RequestException, ValueError, TypeError):
                     print(f"FORMA_PROBE {liga} rota={rota} param={rotulo}: indisponível")
