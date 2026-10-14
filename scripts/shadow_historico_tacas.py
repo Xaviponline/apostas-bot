@@ -11,11 +11,13 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from estatisticas_forma_web import EstatisticasFormaWeb
+from main_enriquecido import BuscadorJogosEnriquecido
 
 
 def main():
     agora = datetime(2026, 10, 14, 12, 0, tzinfo=ZoneInfo("Europe/Lisbon"))
     fonte = EstatisticasFormaWeb()
+    buscador = BuscadorJogosEnriquecido()
     casos = [
         ("uefa.champions", "Liga dos Campeoes", 9),
         ("por.taca.portugal", "Taca de Portugal", 1),
@@ -25,6 +27,21 @@ def main():
     sem_validacao = 0
     for codigo, nome, cobertos in casos:
         try:
+            try:
+                eventos = buscador._get_espn(codigo, "20261014")
+                ident = set()
+                for evento in eventos:
+                    jogo = buscador._normalizar_evento_com_codigo(evento, codigo)
+                    if not jogo:
+                        continue
+                    for campo in ("casa_id", "fora_id"):
+                        tid = jogo.get(campo)
+                        if isinstance(tid, int) and tid > 0:
+                            ident.add(tid)
+                fonte._equipas_contexto_liga[codigo] = ident
+                print(f"SHADOW | {nome} | IDs ESPN de equipas = {len(ident)}")
+            except Exception:
+                print(f"SHADOW | {nome} | calendario ESPN indisponivel; sem IDs validados")
             base = fonte._fetch_liga(codigo, agora)
             diag = fonte.diagnostico_base.get(codigo) or {}
             quantidade = len(base)
