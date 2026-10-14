@@ -20,6 +20,8 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
     ESPN_HISTORICO_BLOQUEADO = {
         "arg.copa",
         "eng.league_cup",
+        "por.taca.portugal",
+        "uefa.champions",
         "uefa.europa",
         "uefa.nations",
     }
@@ -28,6 +30,8 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
     SOFA_TOURNAMENT_IDS = {
         "arg.copa": 1024,
         "eng.league_cup": 21,
+        "por.taca.portugal": 336,
+        "uefa.champions": 7,
         "uefa.europa": 679,
         "uefa.nations": 10783,
     }
