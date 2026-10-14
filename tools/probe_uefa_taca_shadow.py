@@ -59,6 +59,28 @@ def sondar_espn():
                         ) if isinstance(ee, list) else 0
         except (requests.RequestException, ValueError, TypeError, KeyError):
             registo["erro_categoria"] = "inacessivel"
+        # Comparar formatos da mesma API: sem valor de aposta, so metadados.
+        variantes = (
+            ("daily_limit500", {"dates": "20261014", "limit": 500}),
+            ("range_sem_limit", {"dates": "20261001-20261014"}),
+            ("month", {"dates": "202610"}),
+            ("year", {"dates": "2026"}),
+        )
+        registo["formatos"] = {}
+        for rotulo, params in variantes:
+            try:
+                rr = requests.get(
+                    f"https://site.api.espn.com/apis/site/v2/sports/soccer/{codigo}/scoreboard",
+                    params=params,
+                    timeout=(4, 9),
+                )
+                detalhe = {"http": int(rr.status_code)}
+                if rr.status_code == 200:
+                    eventos = rr.json().get("events", [])
+                    detalhe["eventos"] = len(eventos) if isinstance(eventos, list) else 0
+                registo["formatos"][rotulo] = detalhe
+            except (requests.RequestException, ValueError, TypeError):
+                registo["formatos"][rotulo] = {"erro": "ligacao_ou_formato"}
         saida.append(registo)
     print("SHADOW_ESPN_ALTERNATIVA=" + json.dumps(saida, ensure_ascii=False, sort_keys=True))
 
