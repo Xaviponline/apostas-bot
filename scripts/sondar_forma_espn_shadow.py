@@ -56,13 +56,24 @@ def main():
                         str((primeira.get("status") or {}).get("type") or "")[:80]
                         if isinstance(primeira.get("status"), dict) else "ausente"
                     )
+                    comp_status = comp.get("status") or {}
+                    tipos_comp = (
+                        comp_status.get("type") if isinstance(comp_status, dict)
+                        else {}
+                    ) or {}
+                    rivais = comp.get("competitors") or []
+                    score_tip = sorted(
+                        {str(type(r.get("score")).__name__) for r in rivais if isinstance(r, dict)}
+                    )
                     print(
                         f"FORMA_PROBE {liga} rota={rota} param={rotulo}: "
                         f"HTTP={r.status_code} eventos={total} "
                         f"concluidos={concluidos} normalizados={validos}; "
                         f"datas={(datas[0] + '..' + datas[-1]) if datas else '-'}; "
                         f"status_tipo={marca}; "
-                        f"comp_keys={sorted(comp)[:10]}"
+                        f"comp_keys={sorted(comp)[:10]}; "
+                        f"comp_status={str(tipos_comp)[:120]}; "
+                        f"score_tipos={score_tip}"
                     )
                 except (requests.RequestException, ValueError, TypeError):
                     print(f"FORMA_PROBE {liga} rota={rota} param={rotulo}: indisponível")
