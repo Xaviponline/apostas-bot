@@ -276,6 +276,7 @@ class AnalisadorInteligente:
                     [
                         f"#{numero} {risco}",
                         f"   ⚽ {j.get('casa')} vs {j.get('fora')}",
+                        f"   🕒 Início: {hora} (Portugal)" if hora != "--:--" else "   🕒 Início: hora indisponível",
                         f"   🏆 {bandeira} {liga}",
                         f"   💰 {s['mercado']}",
                         f"   🏅 Ranking modelo: #{s['ranking_modelo']}" if s.get("ranking_modelo") else "   🏅 Ranking modelo: histórico",
