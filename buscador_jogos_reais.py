@@ -42,6 +42,7 @@ class BuscadorJogosReais:
     ESPN_SLUG_NOMES = (
         # Específicos primeiro para evitar que LaLiga 2 seja confundida com LaLiga.
         ("spanish-laliga-2", "Spanish LALIGA 2"),
+        ("portuguese-taca-de-portugal", "Portuguese Taca de Portugal"),
         ("english-league-championship", "English League Championship"),
         ("english-league-one", "English League One"),
         ("english-league-two", "English League Two"),
