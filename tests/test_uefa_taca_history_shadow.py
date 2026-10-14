@@ -105,7 +105,6 @@ class CoberturaUEFATacaShadowTests(unittest.TestCase):
         por_id, diag, erro = stats._recolher_base_tolerante(
             "eng.fa", REFERENCIA.date().replace(day=1), REFERENCIA.date().replace(day=14)
         )
-        self.assertEqual(len(stats.consultas_espn), 1)
         self.assertEqual(diag["blocos_falha"], 1)
         # eng.fa fora da lista especial: fez duas tentativas do mesmo bloco.
         self.assertEqual(len(stats.consultas_espn), 2)
