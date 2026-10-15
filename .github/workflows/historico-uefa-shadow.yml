@@ -1,0 +1,27 @@
+name: UEFA Europa Conference history - SHADOW
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "estatisticas_hibridas_competicoes.py"
+      - "estatisticas_espn_resiliente.py"
+      - "tests/test_historico_uefa_20261015.py"
+      - "scripts/verificar_europa_conferencia_shadow.py"
+      - ".github/workflows/historico-uefa-shadow.yml"
+permissions:
+  contents: read
+jobs:
+  historico-uefa-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Replay UEFA 15/10 read-only - exigir histórico real e dados
+        run: python -m scripts.verificar_europa_conferencia_shadow
