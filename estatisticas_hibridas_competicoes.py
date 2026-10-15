@@ -1,7 +1,8 @@
 """Histórico híbrido para taças/UEFA quando a ESPN bloqueia a rota histórica.
 
-A descoberta dos jogos do dia continua na camada existente. UCL e Taça PT
-usam primeiro o parâmetro anual ESPN, testado em shadow quando intervalos
+A descoberta dos jogos do dia continua na camada existente. UCL, Taça PT,
+Liga Europa e Liga Conferência usam primeiro o parâmetro anual ESPN,
+testado em shadow para UCL/Taça PT quando intervalos
 de 14 dias devolvem HTTP 400. As bases mantêm a janela e os blocos de 14 dias.
 SofaScore fica como fallback, sem dados sintéticos nem mudanças no modelo.
 O modelo, os filtros e a forma recente das equipas não são alterados.
@@ -21,7 +22,10 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
     # Confirmado em runner isolado 14/10/2026: dates=YYYY => HTTP 200,
     # dates=YYYYMMDD-YYYYMMDD => HTTP 400; não tratar o ano como histórico
     # completo sem aplicar o mesmo corte temporal e blocos do coletor antigo.
-    ESPN_HISTORICO_ANUAL = {"uefa.champions", "por.taca.portugal"}
+    ESPN_HISTORICO_ANUAL = {
+        "uefa.champions", "por.taca.portugal",
+        "uefa.europa", "uefa.europa.conf",
+    }
     ESPN_HISTORICO_BLOQUEADO = {
         "arg.copa",
         "eng.league_cup",
