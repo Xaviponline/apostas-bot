@@ -464,7 +464,7 @@ class AuditoriaOdds:
                     event_id = evento.get("id")
                     if event_id in (None, "") or str(event_id) in ids_presentes:
                         continue
-                    eventos.append(evento)
+                    eventos.append({**evento, "_origem_descoberta_complementar": True})
                     ids_presentes.add(str(event_id))
 
         indice = {}
@@ -502,6 +502,20 @@ class AuditoriaOdds:
 
             evento = candidatos[0]
             alertas_contexto = self._alertas_contexto(jogo, evento)
+            if evento.get("_origem_descoberta_complementar"):
+                # Novo fixture: exige validação temporal real; nunca associar
+                # apenas nomes sem confirmar a hora da previsão congelada.
+                ts_fonte = self._timestamp_iso(evento.get("data"))
+                try:
+                    ts_modelo = float(jogo.get("timestamp"))
+                except (TypeError, ValueError):
+                    ts_modelo = None
+                if (
+                    ts_fonte is None or ts_modelo is None
+                    or abs(ts_modelo - ts_fonte) > self.TOLERANCIA_HORA_EVENTO_SEG
+                ):
+                    self._registar_diagnostico(selecao, "horario_recuperacao_nao_validado")
+                    continue
             if alertas_contexto:
                 selecao["_odds_alertas"] = alertas_contexto
                 logging.warning(
