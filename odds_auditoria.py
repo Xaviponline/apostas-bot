@@ -52,6 +52,8 @@ class AuditoriaOdds:
         texto = unicodedata.normalize("NFKD", str(texto or ""))
         texto = "".join(c for c in texto if not unicodedata.combining(c))
         texto = texto.casefold()
+        # Letras que NFKD não decompõe: preservar a transliteração da equipa.
+        texto = texto.replace("æ", "ae").replace("œ", "oe").replace("ø", "o").replace("ł", "l")
         texto = re.sub(r"[^a-z0-9]+", " ", texto)
         tokens = [t for t in texto.split() if t not in cls.TOKENS_CLUBE]
         return " ".join(tokens).strip()
