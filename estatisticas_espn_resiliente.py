@@ -24,11 +24,8 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
     DIAS_POR_BLOCO = 14
     TRABALHADORES_DIARIOS = 4
     TRABALHADORES_FORMAS = 6
-    # Esquema ESPN /teams schedule: corrigir transporte apenas nestas quatro provas.
-    FORMA_ESQUEMA_CORRIGIDO = frozenset({
-        "uefa.champions", "por.taca.portugal",
-        "uefa.europa", "uefa.europa.conf",
-    })
+    # Novas leituras do calendário: apenas estas duas provas neste PR.
+    FORMA_ESQUEMA_CORRIGIDO = frozenset({"uefa.champions", "por.taca.portugal"})
 
     # Competições em que a forma apenas dentro da própria prova costuma ser
     # curta (taças nacionais e UEFA). A base estatística da competição não é
@@ -407,8 +404,9 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
         if len(partidas) < 10:
             return None
 
-        # Para as outras taças, manter a forma que a main normaliza.
-        # A adaptação do esquema aninhado só beneficia as quatro provas auditadas.
+        # Para todas as outras taças, manter exatamente a forma que a main
+        # conseguiria normalizar. A recuperação dos esquemas aninhados só
+        # beneficia as duas provas explícitas da auditoria.
         formas = (
             self._formas_globais
             if codigo in self.FORMA_ESQUEMA_CORRIGIDO
