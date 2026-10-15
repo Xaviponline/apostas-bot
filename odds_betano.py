@@ -33,6 +33,8 @@ class OddsBetano:
     PAPI_BATCH_INTERVALO = 1.05
     PAPI_ACCOUNT_INTERVALO = 1.05
     PAPI_EVENTOS_CACHE_SEG = 3 * 60 * 60
+    # Uma única descoberta alternativa por janela, incluindo respostas vazias/falhas.
+    PAPI_EVENTOS_COMPLEMENTARES_CACHE_SEG = 2 * 60 * 60
     PAPI_MAX_TENTATIVAS_429 = 3
 
     def __init__(self, api_key=None, session=None, papi_key=None, provider=None):
@@ -50,6 +52,8 @@ class OddsBetano:
         self._papi_proximo_pedido = {}
         self._eventos_cache = None
         self._eventos_cache_expira = 0.0
+        self._eventos_complementares_cache = None
+        self._eventos_complementares_expira = 0.0
         self._operacao_odds = 'MANUAL'
         pasta_quota = Path(os.getenv('DATA_DIR', '/data'))
         self._quota_local = GestorQuotaOdds(pasta_quota / 'odds_pedidos.json')
@@ -269,7 +273,7 @@ class OddsBetano:
         except (TypeError, ValueError):
             return False
 
-    def _eventos_papi(self):
+    def _eventos_papi(self, sem_status=False):
         inicio, fim = self._janela_hoje_utc()
         # A descoberta dos jogos não deve depender de a Betano ter o mercado
         # aberto exatamente neste instante. Primeiro listamos todos os fixtures
@@ -281,13 +285,15 @@ class OddsBetano:
             "statusId": 0,
             "language": "en",
         }
+        if sem_status:
+            params.pop("statusId", None)
         dados = self._get_papi("/fixtures", params)
         if not isinstance(dados, list):
             raise ValueError("Resposta de fixtures OddsPapi inválida.")
 
         total_status0 = len(dados)
-        usou_fallback = False
-        if not dados:
+        usou_fallback = bool(sem_status)
+        if not dados and not sem_status:
             # O estado dos fixtures mudou de semântica entre versões/documentação
             # da fonte. Sem resultados com statusId=0, repetimos sem esse filtro
             # e fazemos a proteção pré-jogo pelo startTime no nosso lado.
@@ -322,12 +328,41 @@ class OddsBetano:
             except (KeyError, TypeError, ValueError):
                 continue
 
-        self.ultimo_diagnostico_eventos = (
-            f"status0={total_status0}; fallback={int(usou_fallback)}; "
+        diagnostico = (
+            f"status0={total_status0 if not sem_status else '-'}; fallback={int(usou_fallback)}; "
             f"sem_status={len(dados) if usou_fallback else '-'}; futuros={len(eventos)}"
         )
-        logging.info("ODDS_DISCOVERY | %s", self.ultimo_diagnostico_eventos)
+        if sem_status:
+            logging.info("ODDS_DISCOVERY_COMPLEMENTAR | %s", diagnostico)
+        else:
+            self.ultimo_diagnostico_eventos = diagnostico
+            logging.info("ODDS_DISCOVERY | %s", diagnostico)
         return eventos
+
+    def eventos_complementares(self):
+        """Descoberta pré-jogo sem statusId; apenas para fixtures não associados.
+
+        Não altera a descoberta normal nem atribui odds. O cache negativo e o
+        cooldown evitam pedidos adicionais em cada ronda automática/manual.
+        """
+        if not self.configurada or self.provider != "oddspapi":
+            return []
+        agora = monotonic()
+        if (
+            self._eventos_complementares_cache is not None
+            and agora < self._eventos_complementares_expira
+        ):
+            return list(self._eventos_complementares_cache)
+        # Limitar também os retries após erro; nunca expor credenciais nos logs.
+        self._eventos_complementares_cache = []
+        self._eventos_complementares_expira = agora + self.PAPI_EVENTOS_COMPLEMENTARES_CACHE_SEG
+        try:
+            eventos = self._eventos_papi(sem_status=True)
+        except (requests.RequestException, ValueError, TypeError, RuntimeError) as exc:
+            logging.info("ODDS_DISCOVERY_COMPLEMENTAR | falha=%s", self._motivo_excecao(exc))
+            return []
+        self._eventos_complementares_cache = list(eventos)
+        return list(eventos)
 
     def _eventos_legacy(self):
         inicio, fim = self._janela_hoje_utc()
