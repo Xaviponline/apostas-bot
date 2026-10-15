@@ -94,6 +94,7 @@ class HistoricoEuropaConferenciaTests(unittest.TestCase):
         self.assertIn("por.taca.portugal", stats.ESPN_HISTORICO_ANUAL)
         for codigo in CODIGOS:
             self.assertIn(codigo, stats.ESPN_HISTORICO_ANUAL)
+            self.assertIn(codigo, stats.FORMA_ESQUEMA_CORRIGIDO)
         self.assertNotIn("eng.3", stats.ESPN_HISTORICO_ANUAL)
 
 
