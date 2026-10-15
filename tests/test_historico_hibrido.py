@@ -104,10 +104,12 @@ class SofaApiFalhaFake:
 class HistoricoHibridoTests(unittest.TestCase):
     REF = datetime(2026, 9, 16, 12, tzinfo=ZoneInfo("Europe/Lisbon"))
 
-    def test_codigo_bloqueado_usa_sofascore_sem_tentar_espn(self):
+    def test_europa_recorre_sofa_quando_espn_anual_falha(self):
         class Probe(EstatisticasHibridasCompeticoes):
+            def _fetch_base_espn_anual(self, *args, **kwargs):
+                raise RuntimeError("ESPN anual simuladamente indisponível")
             def _recolher_base_tolerante(self, *args, **kwargs):
-                raise AssertionError("ESPN não deve ser chamada para código confirmado bloqueado")
+                raise AssertionError("ESPN por intervalos não deve ser chamada")
 
         sofa = SofaFake()
         stats = Probe(sofa_client=sofa)
@@ -184,12 +186,16 @@ class HistoricoHibridoTests(unittest.TestCase):
             stats._descobrir_competicao_sofa("uefa.europa", self.REF)
 
     def test_base_sofascore_insuficiente_e_rejeitada(self):
+        class Probe(EstatisticasHibridasCompeticoes):
+            def _fetch_base_espn_anual(self, *args, **kwargs):
+                raise RuntimeError("ESPN anual simuladamente indisponível")
+
         sofa = SofaFake(total=9)
-        stats = EstatisticasHibridasCompeticoes(sofa_client=sofa)
+        stats = Probe(sofa_client=sofa)
         with self.assertRaises(ValueError):
             stats._fetch_liga("uefa.europa", self.REF)
         diag = stats.diagnostico_base["uefa.europa"]
-        self.assertEqual(diag["fonte"], "sofascore_indisponivel")
+        self.assertEqual(diag["fonte"], "ambas_fontes_indisponiveis")
         self.assertIn("base insuficiente", diag["motivo"])
 
     def test_liga_normal_nao_usa_sofascore(self):
