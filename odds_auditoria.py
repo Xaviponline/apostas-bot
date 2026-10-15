@@ -28,6 +28,16 @@ class AuditoriaOdds:
         "atletico go": "atletico go",
         "america mineiro": "america mg",
         "america mg": "america mg",
+        # Equivalências específicas, nunca aproximação fuzzy entre clubes.
+        "heart of midlothian": "hearts",
+        "hearts": "hearts",
+        "union st gilloise": "union saint gilloise",
+        "union saint gilloise": "union saint gilloise",
+        "csu craiova": "cs universitatea craiova",
+        "universitatea craiova": "cs universitatea craiova",
+        "cs universitatea craiova": "cs universitatea craiova",
+        "red star belgrade": "crvena zvezda",
+        "crvena zvezda": "crvena zvezda",
     }
 
     # Só usamos a hora para desempatar candidatos que já passaram a validação
@@ -418,12 +428,42 @@ class AuditoriaOdds:
         if not saida or not self.fonte or not getattr(self.fonte, "configurada", False):
             return saida
 
-        eventos = self.fonte.eventos_hoje()
+        eventos = list(self.fonte.eventos_hoje() or [])
         diagnostico_descoberta = ""
         if not eventos:
             diagnostico_descoberta = str(
                 getattr(self.fonte, "ultimo_diagnostico_eventos", "") or ""
             ).strip()
+
+        # Só em auditoria/recuperação explícita (não no /analisa normal):
+        # consultar no máximo uma lista complementar pré-jogo, quando faltam
+        # correspondências. A fonte aplica cache/cooldown para poupar quota.
+        if fallback_individual_ausentes:
+            ausentes = any(
+                not self._candidatos_evento(
+                    eventos, (s.get("jogo") or {}).get("casa"),
+                    (s.get("jogo") or {}).get("fora")
+                )
+                for s in saida
+            )
+            complementar = getattr(self.fonte, "eventos_complementares", None)
+            if ausentes and callable(complementar):
+                try:
+                    extras = complementar() or []
+                except (RuntimeError, ValueError, TypeError, OSError):
+                    extras = []
+                ids_presentes = {
+                    str(e.get("id")) for e in eventos
+                    if isinstance(e, dict) and e.get("id") not in (None, "")
+                }
+                for evento in extras:
+                    if not isinstance(evento, dict):
+                        continue
+                    event_id = evento.get("id")
+                    if event_id in (None, "") or str(event_id) in ids_presentes:
+                        continue
+                    eventos.append(evento)
+                    ids_presentes.add(str(event_id))
 
         indice = {}
         for evento in eventos or []:
