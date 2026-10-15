@@ -6,7 +6,7 @@ snapshots ou Railway. Não regista previsões; não altera nenhuma fonte.
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from estatisticas_hibridas_competicoes import EstatisticasHibridasCompeticoes
+from estatisticas_forma_web import EstatisticasFormaWeb
 from main_enriquecido import BuscadorJogosEnriquecido
 
 CODIGOS = ("uefa.europa", "uefa.europa.conf")
@@ -33,7 +33,7 @@ def main():
             raise SystemExit(1)
         jogos.extend(futuros)
 
-    stats = EstatisticasHibridasCompeticoes()
+    stats = EstatisticasFormaWeb()
     bases = stats.carregar_historicos(jogos, data_ref=REF)
     falhas = 0
     for codigo in CODIGOS:
@@ -53,7 +53,7 @@ def main():
             if base and stats.analisar_jogo(jogo, base) is not None:
                 analisados += 1
         print(
-            f"BASE_SHADOW {codigo}: fonte={diagnostico.get('fonte','indisponivel')}; "
+            f"BASE_PRODUCAO_SHADOW {codigo}: fonte={diagnostico.get('fonte','indisponivel')}; "
             f"historico={len(base)}; jogos={len(competicao)}; "
             f"com_dados={analisados}; forma_erros={len(stats.ultimo_erros_forma)}; "
             f"historico_erro={stats.ultimo_erros.get(codigo, '-')}"
@@ -63,7 +63,7 @@ def main():
     if falhas:
         print("SHADOW FALHOU: não promover para produção; sem previsões inventadas")
         raise SystemExit(1)
-    print("SHADOW OK: base + análise com dados reais; não implica VALUE nem picks")
+    print("SHADOW PRODUCAO OK: mesma classe do Railway, histórico e forma com dados reais; sem VALUE nem picks")
 
 
 if __name__ == "__main__":
