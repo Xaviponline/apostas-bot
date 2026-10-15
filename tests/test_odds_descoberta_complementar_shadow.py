@@ -1,5 +1,6 @@
 """Regressões offline: melhorar descoberta sem inventar odds ou alterar V1."""
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import requests
@@ -8,9 +9,12 @@ from odds_auditoria import AuditoriaOdds
 from odds_betano import OddsBetano
 
 
-def selecao(casa, fora, mercado="Vitória Casa"):
+def selecao(casa, fora, mercado="Vitória Casa", timestamp=None):
+    jogo = {"id": "modelo-1", "casa": casa, "fora": fora}
+    if timestamp is not None:
+        jogo["timestamp"] = timestamp
     return {
-        "jogo": {"id": "modelo-1", "casa": casa, "fora": fora},
+        "jogo": jogo,
         "mercado": mercado,
         "probabilidade": 0.63,
     }
@@ -63,8 +67,10 @@ class RecuperacaoOddsTests(unittest.TestCase):
     def test_recupera_evento_nomes_equivalentes_so_com_fallback_explicito(self):
         fonte = FonteComplementar(extras=[{
             "id": "hearts-1", "casa": "Hearts FC", "fora": "FC Nordsjaelland",
+            "data": "2099-10-15T17:45:00Z",
         }])
-        entrada = [selecao("Heart of Midlothian", "FC Nordsjælland")]
+        hora = datetime(2099, 10, 15, 17, 45, tzinfo=timezone.utc).timestamp()
+        entrada = [selecao("Heart of Midlothian", "FC Nordsjælland", timestamp=hora)]
         normal = AuditoriaOdds(fonte).enriquecer(entrada)
         self.assertEqual(normal[0]["_odds_diag"], "evento_nao_encontrado")
         self.assertEqual(fonte.chamadas_complementares, 0)
@@ -76,6 +82,30 @@ class RecuperacaoOddsTests(unittest.TestCase):
         self.assertEqual(recuperado[0]["odds_event_id"], "hearts-1")
         self.assertEqual(fonte.chamadas_complementares, 1)
         self.assertNotIn("odd_real", entrada[0])
+
+    def test_bloqueia_evento_complementar_com_horario_divergente(self):
+        fonte = FonteComplementar(extras=[{
+            "id": "h1", "casa": "Hearts", "fora": "Nordsjaelland",
+            "data": "2099-10-15T17:45:00Z",
+        }])
+        hora = datetime(2099, 10, 15, 20, 0, tzinfo=timezone.utc).timestamp()
+        resultado = AuditoriaOdds(fonte).enriquecer(
+            [selecao("Hearts", "Nordsjaelland", timestamp=hora)],
+            fallback_individual_ausentes=True,
+        )
+        self.assertEqual(resultado[0]["_odds_diag"], "horario_recuperacao_nao_validado")
+        self.assertEqual(fonte.chamadas_odds, [])
+
+    def test_bloqueia_evento_complementar_sem_horario(self):
+        fonte = FonteComplementar(extras=[{
+            "id": "h1", "casa": "Hearts", "fora": "Nordsjaelland",
+        }])
+        resultado = AuditoriaOdds(fonte).enriquecer(
+            [selecao("Hearts", "Nordsjaelland")],
+            fallback_individual_ausentes=True,
+        )
+        self.assertEqual(resultado[0]["_odds_diag"], "horario_recuperacao_nao_validado")
+        self.assertEqual(fonte.chamadas_odds, [])
 
     def test_evento_de_equipa_diferente_nao_recebe_odd(self):
         fonte = FonteComplementar(extras=[{
