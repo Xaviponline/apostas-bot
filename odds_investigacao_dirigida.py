@@ -88,7 +88,7 @@ def investigar_fixture_por_equipa(previsoes, odds, argumento, permissao_quota, a
     total_nome_compativel = 0
     total_exato = 0
     total_exato_dia = 0
-    origem_id = "cache da lista geral"
+    origem_id = "lista geral consultada nesta ronda" if pesquisa_geral else "cache da lista geral"
     for e in cache:
         if not isinstance(e, dict):
             continue
@@ -113,7 +113,7 @@ def investigar_fixture_por_equipa(previsoes, odds, argumento, permissao_quota, a
             f"🔎 INVESTIGAÇÃO DIRIGIDA — #{ranking}\n"
             f"• Nomes compatíveis na listagem: {total_nome_compativel}; "
             f"nomes exatos: {total_exato}; exatos na data: {total_exato_dia}.\n"
-            "⚪ IDs diferentes para o mesmo nome; pesquisa bloqueada por ambiguidade.\n"
+            "⚪ mais do que um ID de equipa; pesquisa bloqueada por ambiguidade.\n"
             "🔒 Zero odds e snapshots alterados."
         )
     if not ids:
@@ -151,7 +151,7 @@ def investigar_fixture_por_equipa(previsoes, odds, argumento, permissao_quota, a
     participante = next(iter(ids))
     # Se o catálogo exigiu um pedido, confirmar novamente a reserva CLV
     # antes do segundo pedido de quota (/fixtures).
-    if origem_id != "cache da lista geral" and not permissao_quota("ODDS_AUTO", 25):
+    if origem_id == "catálogo de participantes (nome exato)" and not permissao_quota("ODDS_AUTO", 25):
         return "⛔ Pesquisa de fixtures suspensa após catálogo pela reserva CLV."
 
     inicio = agora.replace(hour=0, minute=0, second=0, microsecond=0)
