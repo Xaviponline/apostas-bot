@@ -622,6 +622,11 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         )
         return "\n".join(linhas)
 
+    def _executar_v13_robustez(self):
+        """Leitura estatística da MESMA coorte fixa, sem recalcular seleções."""
+        from v13_robustez_shadow import relatorio_robustez_v13
+        return relatorio_robustez_v13(self.previsoes.metricas_v13_comercial())
+
     def _executar_v13_comercial(self):
         m = self.previsoes.metricas_v13_comercial()
         linhas = [
@@ -1684,6 +1689,19 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível executar a Shadow Top 5. "
                     "O histórico e a V1.2 não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/v13_robustez":
+            if not owner_admin:
+                return
+            try:
+                resposta = self._executar_v13_robustez()
+            except (ValueError, TypeError, KeyError, ArithmeticError, OSError):
+                resposta = (
+                    "⚠️ Auditoria V1.3 Robustez indisponível. "
+                    "Sem alterações às previsões, odds, gate ou histórico."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
