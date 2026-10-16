@@ -3,6 +3,7 @@ import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from main_sofascore import BotPremiumReal
 from previsoes_premium import RegistoPrevisoes
@@ -62,7 +63,12 @@ class OddsQuotaFake(OddsFake):
 
 class OddsAutoCaptureTests(unittest.TestCase):
     def _snapshot(self, reg, inicio_seg=3600):
-        ts = time.time() + inicio_seg
+        agora_pt = datetime.now(ZoneInfo("Europe/Lisbon"))
+        meia_noite = (agora_pt + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        seg = min(inicio_seg, max(1, (meia_noite - agora_pt).total_seconds() - 5))
+        ts = time.time() + seg
         reg.registar(
             [
                 {
