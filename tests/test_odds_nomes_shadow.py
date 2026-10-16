@@ -136,6 +136,34 @@ class NomesShadowTests(unittest.TestCase):
         self.assertIn("cache", mensagens[1][1])
         self.assertEqual(len(fonte.calls), 1)
 
+    def test_alerta_homonimos_e_escaloes_so_no_relatorio(self):
+        dados = [previsao()]
+        originais = copy.deepcopy(dados)
+        fonte = FonteFake({
+            "1969": "AA Ponte Preta SP",
+            "210352": "AA Ponte Preta SP",
+            "1133305": "Ponte Preta AL",
+            "1276210": "Atletico Cg GO U20",
+            "1386954": "Atletico Itumbiara GO",
+        })
+        texto = diagnosticar_nomes(dados, fonte, "3", lambda *a: True, agora=AGORA)
+        self.assertIn("Nome repetido com IDs distintos: AA Ponte Preta SP — 1969, 210352", texto)
+        self.assertIn("candidato(s) Sub-20/U20", texto)
+        self.assertEqual(texto.count("Nenhum nome canónico exato"), 2)
+        self.assertIn("Atletico Itumbiara GO — ID 1386954", texto)
+        self.assertEqual(dados, originais)
+        self.assertEqual([call[0] for call in fonte.calls], ["/participants"])
+
+    def test_aviso_homonimos_nao_aparece_com_ids_unicos(self):
+        fonte = FonteFake({"1969": "Ponte Preta", "300": "Atletico GO"})
+        texto = diagnosticar_nomes(
+            [previsao()], fonte, "3", lambda *a: True, agora=AGORA
+        )
+        self.assertNotIn("Nome repetido com IDs distintos", texto)
+        self.assertNotIn("candidato(s) Sub-20/U20", texto)
+        self.assertNotIn("Nenhum nome canónico exato", texto)
+        self.assertEqual(len(fonte.calls), 1)
+
     def test_so_owner_e_cache_na_mesma_sessao(self):
         agora = datetime.now(PT)
         fonte = FonteFake()

@@ -4,6 +4,7 @@ Reutiliza normalização atual apenas para APRESENTAR hipóteses, não para
 identificar fixtures. OWNER-only é imposto pelo handler do Telegram.
 """
 from contextlib import nullcontext
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -28,6 +29,14 @@ def _nome_curto(valor):
     nome = " ".join(str(valor or "").split())
     nome = "".join(c for c in nome if c.isprintable())
     return nome[:72]
+
+
+def _escalao_ou_variante(nome):
+    """Sinalizador visual; não decide a identidade de uma equipa."""
+    return bool(re.search(
+        r"(?<![a-z0-9])(?:u[- ]?\d{2}|sub[- ]?\d{2}|under[- ]?\d{2}|women|feminina|feminino)(?![a-z0-9])",
+        _nome_curto(nome), re.IGNORECASE,
+    ))
 
 
 def diagnosticar_nomes(previsoes, odds, argumento, permite_quota, agora=None):
@@ -102,6 +111,28 @@ def diagnosticar_nomes(previsoes, odds, argumento, permite_quota, agora=None):
                 linhas.append(f"• [{categoria}] {nome} — ID {ident}")
             if len(entradas) > MAX_CANDIDATOS:
                 linhas.append(f"… mais {len(entradas) - MAX_CANDIDATOS} nomes {categoria.lower()} não apresentados.")
+
+        # Avisos estritamente visuais sobre os nomes já mostrados.
+        # Nenhum ID é escolhido, persistido ou enviado a /fixtures.
+        if not exatos:
+            linhas.append("⚠️ Nenhum nome canónico exato: identidade não confirmada.")
+        apresentados = exatos[:MAX_CANDIDATOS] + parciais[:MAX_CANDIDATOS]
+        por_nome = {}
+        for ident, nome in apresentados:
+            por_nome.setdefault(nome.casefold(), []).append(ident)
+        avisos_repetidos = 0
+        for ids_nome in por_nome.values():
+            if len(ids_nome) > 1:
+                nome = next(nome for ident, nome in apresentados if ident == ids_nome[0])
+                linhas.append(
+                    f"⚠️ Nome repetido com IDs distintos: {nome} — "
+                    + ", ".join(str(ident) for ident in ids_nome)
+                )
+                avisos_repetidos += 1
+                if avisos_repetidos >= 3:
+                    break
+        if any(_escalao_ou_variante(nome) for ident, nome in apresentados):
+            linhas.append("⚠️ Há candidato(s) Sub-20/U20 ou feminino(s): não assumir equipa sénior.")
     linhas.extend([
         "",
         "⚠️ Nomes semelhantes podem ser equipas diferentes (B, Sub-20, femininas, etc.).",
