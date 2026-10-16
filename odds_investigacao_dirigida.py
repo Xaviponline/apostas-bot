@@ -105,7 +105,7 @@ def investigar_fixture_por_equipa(previsoes, odds, argumento, permissao_quota, a
         )
         return (
             f"🔎 INVESTIGAÇÃO DIRIGIDA — #{ranking}\n"
-            f"• Ponte Preta/mandante visto em {total_equipa} evento(s) da listagem.\n"
+            f"• {_limpo(p.get('casa'))} (casa) visto em {total_equipa} evento(s) da listagem.\n"
             f"⚪ {motivo}; sem consulta dirigida para evitar associação arriscada.\n"
             f"🔒 Zero odds e snapshots alterados."
         )
