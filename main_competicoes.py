@@ -31,6 +31,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
     def __init__(self, *args, acessos=None, research_lab=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.acessos = acessos or GestorAcessosPremium()
+        # Limite por processo: o OWNER não repete pesquisas pagas por ranking/dia.
+        self._investigacoes_dirigidas_cache = {}
         self.research_lab = research_lab or ResearchLabClient()
         caminho_previsoes = getattr(self.previsoes, 'path', None)
         marcador = Path(caminho_previsoes).with_name('clv_avisos.json') if caminho_previsoes else None
@@ -926,6 +928,40 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             rastreio, argumento=argumentos, agora=datetime.now(TZ_PORTUGAL),
         )
 
+    def _executar_odds_investigar(self, argumentos=""):
+        """Pesquisa explícita OWNER com no máximo uma query dirigida por ranking/dia."""
+        from odds_investigacao_dirigida import investigar_fixture_por_equipa
+        arg = str(argumentos or "").strip()
+        if not arg.isascii() or not arg.isdecimal() or not 1 <= len(arg) <= 3:
+            return "Formato: /odds_investigar 3 (ranking de hoje; OWNER)."
+        dia = datetime.now(TZ_PORTUGAL).strftime("%Y-%m-%d")
+        chave = (dia, int(arg))
+        cache = getattr(self, "_investigacoes_dirigidas_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._investigacoes_dirigidas_cache = cache
+        if chave in cache:
+            return (
+                "♻️ Relatório da primeira consulta deste processo (sem novos pedidos).\n\n"
+                + cache[chave]
+            )
+        # Guardar resultado, inclusive erros, para nunca desencadear repetições
+        # involuntárias por reenvio do mesmo comando.
+        try:
+            resposta = investigar_fixture_por_equipa(
+                self.previsoes.dados.get("previsoes", []),
+                self.odds, arg, self._quota_permite_captura,
+                agora=datetime.now(TZ_PORTUGAL),
+            )
+        except (requests.RequestException, RuntimeError, OSError, ValueError,
+                TypeError, KeyError, ArithmeticError):
+            resposta = (
+                "⚠️ Pesquisa dirigida temporariamente indisponível. "
+                "Sem odds consultadas, sem alteração ao modelo ou snapshots."
+            )
+        cache[chave] = resposta
+        return resposta
+
     def _executar_odds_cobertura(self):
         """Relatorio offline; nunca consulta OddsPapi nem modifica previsoes."""
         from odds_cobertura import ObservatorioCobertura
@@ -1729,6 +1765,13 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     "🧠 ESTUDO DE JOGO — indisponível. "
                     "Sem alterações à V1.2, SEL1, V1.3, odds ou snapshots."
                 )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/odds_investigar":
+            if not owner_admin:
+                return
+            resposta = self._executar_odds_investigar(argumentos)
             self.enviar_mensagem(chat_id, resposta)
             return
 
