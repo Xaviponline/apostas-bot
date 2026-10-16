@@ -32,6 +32,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /v13_shadow — Comparar calibração Shadow com a V1.2 fora da amostra (admin)
 /v13_top5 — Testar prospetivamente apenas os ranks #1–5 sem alterar a V1.2 (admin)
 /v13_comercial — Gate prospetivo Top5 + VALUE, ROI e CLV (admin)
+/v13_robustez — Incerteza e concentração de risco da coorte V1.3 (admin; sem API)
 /lab_export — Enviar cópia sanitizada dos snapshots para o Research Lab (admin)
 /lab_status — Champion vs Challengers, drift e MLflow (admin)
 /lab_drift — Diagnóstico detalhado de drift por variável, mercado e liga (admin)
