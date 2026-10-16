@@ -478,6 +478,9 @@ class AuditoriaOdds:
 
         resolvidas = []
         eventos_resolvidos = {}
+        # Apenas telemetria em memória: não acrescenta campos aos snapshots.
+        origem_fixture_por_selecao = {}
+        cotacoes_encontradas = set()
         for selecao in saida:
             jogo = selecao.get("jogo") or {}
             candidatos = self._candidatos_evento(
@@ -530,6 +533,9 @@ class AuditoriaOdds:
                 continue
             chave_evento = str(event_id)
             eventos_resolvidos[chave_evento] = evento
+            origem_fixture_por_selecao[id(selecao)] = (
+                'complementar' if evento.get('_origem_descoberta_complementar') else 'primaria'
+            )
             resolvidas.append((selecao, jogo, event_id, chave_evento))
 
         cache_odds = {}
@@ -589,6 +595,7 @@ class AuditoriaOdds:
                 self._registar_diagnostico(selecao, "probabilidade_invalida")
                 continue
             selecao["odd_real"] = round(odd_real, 4)
+            cotacoes_encontradas.add(id(selecao))
             selecao["ev_real"] = round((prob * odd_real) - 1.0, 6)
             selecao["odds_fonte"] = str((dados or {}).get("fonte") or self.fonte.nome_fonte)
             selecao["odds_event_id"] = str(event_id)
@@ -598,5 +605,24 @@ class AuditoriaOdds:
             selecao["_rastreio_odds"] = self._referencias_cotacao(
                 dados, str(selecao.get("mercado") or ""), odd_real, atualizada_em
             )
+
+        # Registo agregado sem nomes de clubes nem odds: compara a cobertura
+        # normal com a recuperação na mesma ronda, sem consultar a API de novo.
+        primary = sum(v == 'primaria' for v in origem_fixture_por_selecao.values())
+        recovered = sum(v == 'complementar' for v in origem_fixture_por_selecao.values())
+        primary_quoted = sum(
+            origem_fixture_por_selecao.get(k) == 'primaria' for k in cotacoes_encontradas
+        )
+        recovered_quoted = sum(
+            origem_fixture_por_selecao.get(k) == 'complementar' for k in cotacoes_encontradas
+        )
+        logging.info(
+            'ODDS_COBERTURA | modo=%s | selecoes=%s | fixtures_primarios=%s | '
+            'fixtures_complementares=%s | odds_primarias=%s | odds_complementares=%s | '
+            'sem_fixture_validado=%s | sem_cotacao=%s',
+            'recuperacao' if fallback_individual_ausentes else 'normal',
+            len(saida), primary, recovered, primary_quoted, recovered_quoted,
+            len(saida) - primary - recovered, len(saida) - len(cotacoes_encontradas),
+        )
         return saida
 
