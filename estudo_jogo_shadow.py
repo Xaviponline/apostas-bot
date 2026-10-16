@@ -101,11 +101,34 @@ def _sinais(previsao, diag):
                 elif total >= linha + 0.30:
                     cautelas.append("Total esperado de golos fica acima da linha por pelo menos 0,30.")
 
+    # Contraste descritivo, não é um reajuste à probabilidade V1.2.
+    media_liga_casa = _numero(diag.get("media_liga_casa"))
+    media_liga_fora = _numero(diag.get("media_liga_fora"))
+    baseline = (
+        media_liga_casa + media_liga_fora
+        if media_liga_casa is not None and media_liga_fora is not None
+        else None
+    )
+    if total is not None and baseline is not None and baseline > 0:
+        desvio = (total / baseline) - 1.0
+        if desvio >= 0.25:
+            cautelas.append(
+                f"Golos esperados {_fmt(desvio * 100, 1)}% acima da média da liga "
+                f"({_fmt(total)} vs {_fmt(baseline)}); validar robustez da projeção."
+            )
+        elif desvio <= -0.25:
+            cautelas.append(
+                f"Golos esperados {_fmt(abs(desvio) * 100, 1)}% abaixo da média da liga "
+                f"({_fmt(total)} vs {_fmt(baseline)}); validar robustez da projeção."
+            )
+
     local_casa = _inteiro(diag.get("amostra_casa_local"))
     local_fora = _inteiro(diag.get("amostra_fora_local"))
     liga = _inteiro(diag.get("amostra_liga"))
     if local_casa is not None and local_fora is not None and min(local_casa, local_fora) < 3:
         cautelas.append("Amostra específica casa/fora inferior a 3 jogos para pelo menos uma equipa.")
+    elif local_casa is not None and local_fora is not None and min(local_casa, local_fora) == 3:
+        cautelas.append("Só 3 jogos em casa/fora para pelo menos uma equipa: estimativa local pouco robusta.")
     if liga is not None and liga < 20:
         cautelas.append("A base da liga tem menos de 20 jogos.")
     prob = _numero(previsao.get("probabilidade"))
