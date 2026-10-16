@@ -99,7 +99,7 @@ class EstudoFormaEspnTests(unittest.TestCase):
         self.assertEqual(len(s.calls), 2)
         self.assertEqual(s.calls[0][1]["dates"], "20301016")
         self.assertEqual(s.calls[1][1]["dates"], "2030")
-        self.assertIn("08/08/2030 a 15/10/2030", texto)
+        self.assertIn("07/08/2030 a 15/10/2030", texto)
         self.assertTrue(all(x[0].endswith("/fra.1/scoreboard") for x in s.calls))
         self.assertTrue(all(x[2] == (4, 12) for x in s.calls))
         self.assertEqual(p, original)
