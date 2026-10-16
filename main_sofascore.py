@@ -54,7 +54,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /odds_cobertura — Cobertura observada Betano por liga/mercado, sem API (admin)
 /odds_falhas [RANKING] — Diagnóstico passivo por jogo, sem pedidos API (admin)
 /odds_investigar RANKING — Diagnóstico dirigido por equipa, com 1 consulta fixtures (admin)
-/odds_nomes RANKING — Listar nomes/IDs candidatos no catálogo OddsPapi, 1 consulta (admin)
+/odds_nomes [AAAA-MM-DD] RANKING — Nomes/IDs OddsPapi, 1 consulta (admin; aceita data anterior)
 /odds_verificacao — Alertas de odds/EV anómalos e contexto do fixture (admin)
 /quota_plano — Consumo local por operação e prioridade para CLV (admin)
 /backup_status — Ultima copia local e integridade SHA-256 (admin)
