@@ -97,6 +97,45 @@ class NomesShadowTests(unittest.TestCase):
         self.assertIn("repetido", t)
         self.assertEqual(fonte.calls, [])
 
+    def test_dia_historico_permite_so_catalogo_sem_odd(self):
+        fonte = FonteFake()
+        p = previsao()
+        entrada = [p]
+        antes = copy.deepcopy(entrada)
+        futuro = AGORA + timedelta(days=1)
+        t = diagnosticar_nomes(
+            entrada, fonte, "2030-10-16 3", lambda *a: True, agora=futuro
+        )
+        self.assertIn("2030-10-16 | #3", t)
+        self.assertIn("Ponte Preta Sub-20", t)
+        self.assertEqual(entrada, antes)
+        self.assertEqual([x[0] for x in fonte.calls], ["/participants"])
+        self.assertIn("inexistente", diagnosticar_nomes(
+            entrada, fonte, "3", lambda *a: True, agora=futuro
+        ))
+        self.assertEqual(len(fonte.calls), 1)
+
+    def test_comando_historico_so_owner_e_cache_por_data(self):
+        agora = datetime.now(PT)
+        ontem = agora - timedelta(days=1)
+        fonte = FonteFake()
+        bot = BotPremiumDiarioCompeticoes.__new__(BotPremiumDiarioCompeticoes)
+        bot.owner_id, bot.chat_id, bot.username = 51, 51, None
+        bot.previsoes = SimpleNamespace(dados={"previsoes": [previsao(ontem)]})
+        bot.odds = fonte
+        bot._quota_permite_captura = lambda *a: True
+        bot._nomes_odds_cache = {}
+        mensagens = []
+        bot.enviar_mensagem = lambda chat, texto: mensagens.append((chat, texto))
+        cmd = "/odds_nomes " + ontem.date().isoformat() + " 3"
+        bot.processar_comando(13, cmd, user_id=13)
+        bot.processar_comando(51, cmd, user_id=51)
+        bot.processar_comando(51, cmd, user_id=51)
+        self.assertEqual(len(mensagens), 2)
+        self.assertIn(ontem.date().isoformat() + " | #3", mensagens[0][1])
+        self.assertIn("cache", mensagens[1][1])
+        self.assertEqual(len(fonte.calls), 1)
+
     def test_so_owner_e_cache_na_mesma_sessao(self):
         agora = datetime.now(PT)
         fonte = FonteFake()
