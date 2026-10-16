@@ -888,12 +888,30 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             return str(valor)
 
     def _executar_estudo_jogo(self, argumentos=""):
-        """Estudo SHADOW apenas a partir de previsões congeladas; zero HTTP."""
+        """Relatório offline normal; 'N forma' consulta até 2 rotas ESPN."""
         from estudo_jogo_shadow import gerar_estudo_jogo
-        return gerar_estudo_jogo(
-            self.previsoes.dados.get("previsoes", []), argumentos,
-            agora=datetime.now(TZ_PORTUGAL),
-        )
+        agora = datetime.now(TZ_PORTUGAL)
+        previsoes = self.previsoes.dados.get("previsoes", [])
+        partes = str(argumentos or "").strip().split()
+        if len(partes) == 2 and partes[1].lower() == "forma":
+            ranking_str = partes[0]
+            if not ranking_str.isascii() or not ranking_str.isdecimal():
+                return "Formato: /estudo_jogo 1 forma (ranking do dia)."
+            ranking = int(ranking_str)
+            hoje = agora.strftime("%Y-%m-%d")
+            correspondentes = [
+                p for p in previsoes
+                if isinstance(p, dict)
+                and p.get("data_jogo") == hoje
+                and str(p.get("modelo_versao") or "") == "V1.2"
+                and p.get("ranking_modelo") == ranking
+            ]
+            if len(correspondentes) != 1:
+                return "⚪ Ranking inexistente ou ambíguo. Consulta /estudo_jogo."
+            from estudo_forma_espn import contexto_espn
+            return contexto_espn(correspondentes[0])
+
+        return gerar_estudo_jogo(previsoes, argumentos, agora=agora)
 
     def _executar_odds_cobertura(self):
         """Relatorio offline; nunca consulta OddsPapi nem modifica previsoes."""
