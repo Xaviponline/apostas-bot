@@ -28,6 +28,16 @@ class AuditoriaOdds:
         "atletico go": "atletico go",
         "america mineiro": "america mg",
         "america mg": "america mg",
+        # Equivalências específicas, nunca aproximação fuzzy entre clubes.
+        "heart of midlothian": "hearts",
+        "hearts": "hearts",
+        "union st gilloise": "union saint gilloise",
+        "union saint gilloise": "union saint gilloise",
+        "csu craiova": "cs universitatea craiova",
+        "universitatea craiova": "cs universitatea craiova",
+        "cs universitatea craiova": "cs universitatea craiova",
+        "red star belgrade": "crvena zvezda",
+        "crvena zvezda": "crvena zvezda",
     }
 
     # Só usamos a hora para desempatar candidatos que já passaram a validação
@@ -42,6 +52,8 @@ class AuditoriaOdds:
         texto = unicodedata.normalize("NFKD", str(texto or ""))
         texto = "".join(c for c in texto if not unicodedata.combining(c))
         texto = texto.casefold()
+        # Letras que NFKD não decompõe: preservar a transliteração da equipa.
+        texto = texto.replace("æ", "ae").replace("œ", "oe").replace("ø", "o").replace("ł", "l")
         texto = re.sub(r"[^a-z0-9]+", " ", texto)
         tokens = [t for t in texto.split() if t not in cls.TOKENS_CLUBE]
         return " ".join(tokens).strip()
@@ -418,12 +430,42 @@ class AuditoriaOdds:
         if not saida or not self.fonte or not getattr(self.fonte, "configurada", False):
             return saida
 
-        eventos = self.fonte.eventos_hoje()
+        eventos = list(self.fonte.eventos_hoje() or [])
         diagnostico_descoberta = ""
         if not eventos:
             diagnostico_descoberta = str(
                 getattr(self.fonte, "ultimo_diagnostico_eventos", "") or ""
             ).strip()
+
+        # Só em auditoria/recuperação explícita (não no /analisa normal):
+        # consultar no máximo uma lista complementar pré-jogo, quando faltam
+        # correspondências. A fonte aplica cache/cooldown para poupar quota.
+        if fallback_individual_ausentes:
+            ausentes = any(
+                not self._candidatos_evento(
+                    eventos, (s.get("jogo") or {}).get("casa"),
+                    (s.get("jogo") or {}).get("fora")
+                )
+                for s in saida
+            )
+            complementar = getattr(self.fonte, "eventos_complementares", None)
+            if ausentes and callable(complementar):
+                try:
+                    extras = complementar() or []
+                except (RuntimeError, ValueError, TypeError, OSError):
+                    extras = []
+                ids_presentes = {
+                    str(e.get("id")) for e in eventos
+                    if isinstance(e, dict) and e.get("id") not in (None, "")
+                }
+                for evento in extras:
+                    if not isinstance(evento, dict):
+                        continue
+                    event_id = evento.get("id")
+                    if event_id in (None, "") or str(event_id) in ids_presentes:
+                        continue
+                    eventos.append({**evento, "_origem_descoberta_complementar": True})
+                    ids_presentes.add(str(event_id))
 
         indice = {}
         for evento in eventos or []:
@@ -460,6 +502,20 @@ class AuditoriaOdds:
 
             evento = candidatos[0]
             alertas_contexto = self._alertas_contexto(jogo, evento)
+            if evento.get("_origem_descoberta_complementar"):
+                # Novo fixture: exige validação temporal real; nunca associar
+                # apenas nomes sem confirmar a hora da previsão congelada.
+                ts_fonte = self._timestamp_iso(evento.get("data"))
+                try:
+                    ts_modelo = float(jogo.get("timestamp"))
+                except (TypeError, ValueError):
+                    ts_modelo = None
+                if (
+                    ts_fonte is None or ts_modelo is None
+                    or abs(ts_modelo - ts_fonte) > self.TOLERANCIA_HORA_EVENTO_SEG
+                ):
+                    self._registar_diagnostico(selecao, "horario_recuperacao_nao_validado")
+                    continue
             if alertas_contexto:
                 selecao["_odds_alertas"] = alertas_contexto
                 logging.warning(
