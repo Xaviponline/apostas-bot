@@ -31,6 +31,8 @@ class OddsBetano:
     PAPI_ODDS_INTERVALO = 1.05
     PAPI_FIXTURES_INTERVALO = 1.05
     PAPI_BATCH_INTERVALO = 1.05
+    # Em HTTP 400, limitar a recuperação recursiva para proteger quota/CLV.
+    PAPI_BATCH_400_MAX_EXTRA_PEDIDOS = 6
     PAPI_ACCOUNT_INTERVALO = 1.05
     PAPI_EVENTOS_CACHE_SEG = 3 * 60 * 60
     # Uma única descoberta alternativa por janela, incluindo respostas vazias/falhas.
@@ -592,38 +594,56 @@ class OddsBetano:
                 if status != 400 or len(torneios) < 2:
                     raise
 
-                # O erro 400 pode depender de um subconjunto de torneios.
-                # No máximo 2 pedidos adicionais, apenas neste erro e sem
-                # alterar as regras de valor nem consultar resultados.
+                # Um só tournamentId inválido pode contaminar um lote inteiro.
+                # Subdividir apenas os grupos que continuam a devolver HTTP 400,
+                # com um teto rígido de pedidos adicionais por chamada.
                 meio = max(len(torneios) // 2, 1)
-                grupos = (torneios[:meio], torneios[meio:])
+                pendentes = [torneios[:meio], torneios[meio:]]
                 itens = []
                 grupos_sucesso = 0
-                for grupo in grupos:
+                pedidos_extra = 0
+                while pendentes and pedidos_extra < self.PAPI_BATCH_400_MAX_EXTRA_PEDIDOS:
+                    grupo = pendentes.pop(0)
                     parametros_grupo = dict(params)
                     parametros_grupo["tournamentIds"] = ",".join(str(t) for t in grupo)
+                    pedidos_extra += 1
                     try:
                         itens_grupo = self._itens_resposta_odds_lote(
                             self._get_papi("/odds-by-tournaments", parametros_grupo)
                         )
                         itens.extend(itens_grupo)
                         grupos_sucesso += 1
+                        for tid in grupo:
+                            falhas_por_torneio.pop(tid, None)
                     except (OddsPapiQuotaEsgotada, OddsPapiRateLimit):
-                        # Sem tentativas adicionais quando se esgota quota/limite.
+                        # Respeitar imediatamente quota e rate limit.
                         raise
+                    except requests.HTTPError as erro:
+                        status_grupo = getattr(getattr(erro, "response", None), "status_code", None)
+                        motivo_grupo = self._motivo_excecao(erro)
+                        falhas_por_torneio.update({tid: motivo_grupo for tid in grupo})
+                        logging.info(
+                            "ODDS_BATCH | grupo_falhou=%s | torneios=%s",
+                            motivo_grupo, len(grupo),
+                        )
+                        if status_grupo == 400 and len(grupo) > 1:
+                            metade_grupo = len(grupo) // 2
+                            pendentes.extend((grupo[:metade_grupo], grupo[metade_grupo:]))
                     except (requests.RequestException, ValueError, TypeError, RuntimeError) as erro:
                         motivo_grupo = self._motivo_excecao(erro)
                         falhas_por_torneio.update({tid: motivo_grupo for tid in grupo})
                         logging.info(
                             "ODDS_BATCH | grupo_falhou=%s | torneios=%s",
-                            motivo_grupo,
-                            len(grupo),
+                            motivo_grupo, len(grupo),
                         )
+                # Grupos por tentar herdam o diagnóstico do grupo-pai.
                 if not grupos_sucesso:
                     raise
                 logging.info(
-                    "ODDS_BATCH | recuperacao_http_400 | grupos_ok=%s/2",
-                    grupos_sucesso,
+                    "ODDS_BATCH | recuperacao_http_400 | grupos_ok=%s | "
+                    "pedidos_extra=%s/%s | grupos_pendentes=%s",
+                    grupos_sucesso, pedidos_extra,
+                    self.PAPI_BATCH_400_MAX_EXTRA_PEDIDOS, len(pendentes),
                 )
 
             saida = {}

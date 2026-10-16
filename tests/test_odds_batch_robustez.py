@@ -198,6 +198,51 @@ class OddsBatchRobustezTests(unittest.TestCase):
         )
         self.assertEqual(sessao.chamadas, ["11"])
 
+    def test_bissecao_recupera_torneios_bons_de_um_subgrupo_400(self):
+        # O lote original e metade 11,22 falham; 11 isolado funciona,
+        # apenas o torneio 22 continua com erro HTTP 400.
+        sessao = SessaoLote400(falhas={"11,22,33,44", "11,22", "22"})
+        fonte = self._fonte_lote(sessao)
+        dados = fonte.odds_eventos_em_lote([
+            {"id": "f11", "tournament_id": 11},
+            {"id": "f22", "tournament_id": 22},
+            {"id": "f33", "tournament_id": 33},
+            {"id": "f44", "tournament_id": 44},
+        ])
+        self.assertEqual(sessao.chamadas, ["11,22,33,44", "11,22", "33,44", "11", "22"])
+        for fixture in ("f11", "f33", "f44"):
+            self.assertEqual(dados[fixture]["id"], fixture)
+            self.assertEqual(fonte.diagnostico_evento(fixture), "")
+        self.assertIsNone(dados["f22"])
+        self.assertEqual(fonte.diagnostico_evento("f22"), "odds_http_400")
+
+    def test_bissecao_limita_pedidos_mesmo_se_todos_torneios_falham(self):
+        class SessaoSempre400:
+            def __init__(self):
+                self.chamadas = []
+
+            def get(self, url, params=None, **kwargs):
+                self.chamadas.append(str((params or {}).get("tournamentIds")))
+                return HTTPFalhaResponse(400)
+
+        sessao = SessaoSempre400()
+        fonte = self._fonte_lote(sessao)
+        eventos = [
+            {"id": f"f{i}", "tournament_id": i}
+            for i in range(1, 17)
+        ]
+        dados = fonte.odds_eventos_em_lote(eventos)
+
+        self.assertEqual(
+            len(sessao.chamadas),
+            1 + fonte.PAPI_BATCH_400_MAX_EXTRA_PEDIDOS,
+        )
+        self.assertTrue(all(v is None for v in dados.values()))
+        self.assertTrue(all(
+            fonte.diagnostico_evento(e["id"]) == "odds_http_400"
+            for e in eventos
+        ))
+
     def test_lote_401_nao_repetir_nem_dividir(self):
         class Sessao401(SessaoLote400):
             def get(self, url, params=None, **kwargs):
