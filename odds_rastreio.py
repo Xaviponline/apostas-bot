@@ -30,6 +30,23 @@ class RastreioOdds:
             # integral da API, credenciais ou identificadores de clientes.
             if not meta and not diag:
                 continue
+            pistas = s.get("_odds_descoberta")
+            pistas = pistas if isinstance(pistas, dict) and pistas.get("versao") == 1 else {}
+            resumo_pistas = {}
+            if pistas:
+                resumo_pistas = {"versao": 1}
+                for campo in ("primarios_vistos", "complementares_vistos"):
+                    numero = pistas.get(campo)
+                    resumo_pistas[campo] = (
+                        min(max(numero, 0), 10000)
+                        if isinstance(numero, int) and not isinstance(numero, bool)
+                        else 0
+                    )
+                for campo in (
+                    "complementar_consultada", "casa_primaria", "fora_primaria",
+                    "casa_complementar", "fora_complementar", "par_invertido",
+                ):
+                    resumo_pistas[campo] = pistas.get(campo) is True
             item = {
                 "observado_em": agora,
                 "operacao": str(operacao or "ODDS")[:32],
@@ -52,6 +69,7 @@ class RastreioOdds:
                 "market_updated_at": str(meta.get("market_updated_at") or "")[:64],
                 "resultado_associacao": str(meta.get("association") or "")[:64],
                 "alertas_contexto": list(s.get("_odds_alertas") or [])[:6],
+                "descoberta_passiva": resumo_pistas,
             }
             linhas.append((json.dumps(item, ensure_ascii=False, sort_keys=True)+"\n").encode("utf-8"))
         if not linhas:

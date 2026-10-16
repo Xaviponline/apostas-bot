@@ -261,6 +261,38 @@ def gerar_painel_falhas(previsoes, path, argumento="", agora=None):
             linhas.append(f"• Etapa: {fase}.")
         if quotes:
             linhas.append(f"• Odd observada em rastreio: {_fmt(quotes[-1])} (histórica, não cotação atual).")
+        pistas = ultimo.get("descoberta_passiva")
+        if isinstance(pistas, dict) and pistas.get("versao") == 1:
+            linhas.extend([
+                "",
+                "🧭 PISTAS DA DESCOBERTA — SEM ASSOCIAR EVENTOS",
+                f"• Eventos na listagem principal: {pistas.get('primarios_vistos', 0)}.",
+                "• Consulta complementar: " +
+                    ("efetuada" if pistas.get("complementar_consultada") is True else "não efetuada"),
+                f"• Eventos adicionais integrados: {pistas.get('complementares_vistos', 0)}.",
+            ])
+            for origem, sufixo in (("principal", "primaria"), ("complementar", "complementar")):
+                casa_vista = pistas.get("casa_" + sufixo) is True
+                fora_vista = pistas.get("fora_" + sufixo) is True
+                linhas.append(
+                    f"• Nomes individuais na lista {origem}: "
+                    f"casa {'sim' if casa_vista else 'não'} | "
+                    f"fora {'sim' if fora_vista else 'não'}."
+                )
+            if pistas.get("par_invertido") is True:
+                linhas.append(
+                    "⚠️ Nomes compatíveis em ordem invertida numa lista; "
+                    "não confirma o mesmo fixture."
+                )
+            linhas.append(
+                "ℹ️ Presença de nomes individuais não comprova evento, mercado "
+                "ou horário; são apenas pistas."
+            )
+        elif codigo == "evento_nao_encontrado":
+            linhas.append(
+                "• Pistas adicionais de descoberta ainda não guardadas neste registo; "
+                "não é possível reconstituir o passado."
+            )
         fixture = str(ultimo.get("fixture_id_fonte") or "")[:64]
         if fixture:
             linhas.append(f"• Fixture identificado na fonte: {fixture}.")
