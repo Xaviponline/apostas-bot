@@ -115,6 +115,13 @@ class EstudoFormaEspnTests(unittest.TestCase):
         self.assertIn("horário do fixture não validados", texto)
         self.assertEqual(len(s.calls), 1)
 
+    def test_payload_competidor_corrompido_nao_produz_associacao(self):
+        fixture = event(1000, "2030-10-16", finished=False)
+        fixture["competitions"][0]["competitors"] = [None, {}]
+        sessao = Sessao(fixture=[fixture])
+        self.assertIn("Equipas ou horário", contexto_espn(snapshot(), session=sessao))
+        self.assertEqual(len(sessao.calls), 1)
+
     def test_liga_invalida_e_criacao_ausente_falham_sem_rede(self):
         p = snapshot()
         p["diagnostico_modelo"]["liga_codigo"] = "fra.1/../../leak"
