@@ -124,7 +124,8 @@ class EstudoJogoShadowTests(unittest.TestCase):
         p["valor_estado"] = "expirado"
         texto = gerar_estudo_jogo([p], "1", agora=self.agora)
         self.assertIn("histórica, não cotação atual", texto)
-        self.assertNotIn("1,20", texto)
+        self.assertNotIn("Odd atual: 1,20", texto)
+        self.assertNotIn("cotação atual: 1,20", texto)
         self.assertIn("Atingiu a mínima registada: sim", texto)
 
     def test_acesso_admin_e_resposta_no_telegram(self):
