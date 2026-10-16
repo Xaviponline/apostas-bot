@@ -916,6 +916,16 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
 
         return gerar_estudo_jogo(previsoes, argumentos, agora=agora)
 
+    def _executar_odds_falhas(self, argumentos=""):
+        """Painel local por ranking; não acede a OddsPapi nem modifica dados."""
+        from odds_falhas_shadow import gerar_painel_falhas
+        path = getattr(self.previsoes, "path", None)
+        rastreio = Path(path).with_name("odds_rastreio.jsonl") if path else None
+        return gerar_painel_falhas(
+            self.previsoes.dados.get("previsoes", []),
+            rastreio, argumento=argumentos, agora=datetime.now(TZ_PORTUGAL),
+        )
+
     def _executar_odds_cobertura(self):
         """Relatorio offline; nunca consulta OddsPapi nem modifica previsoes."""
         from odds_cobertura import ObservatorioCobertura
@@ -1718,6 +1728,19 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "🧠 ESTUDO DE JOGO — indisponível. "
                     "Sem alterações à V1.2, SEL1, V1.3, odds ou snapshots."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/odds_falhas":
+            if not owner_admin:
+                return
+            try:
+                resposta = self._executar_odds_falhas(argumentos)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "🔎 FALHAS DE ODDS — rastreio local indisponível. "
+                    "Zero consultas externas; snapshots e modelo intactos."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
