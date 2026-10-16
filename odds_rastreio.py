@@ -47,6 +47,24 @@ class RastreioOdds:
                     "casa_complementar", "fora_complementar", "par_invertido",
                 ):
                     resumo_pistas[campo] = pistas.get(campo) is True
+                if pistas.get("saf_testado") is True:
+                    resumo_pistas["saf_testado"] = True
+                    for campo in (
+                        "saf_casa_primaria", "saf_fora_primaria",
+                        "saf_casa_complementar", "saf_fora_complementar",
+                    ):
+                        resumo_pistas[campo] = pistas.get(campo) is True
+                    for campo in (
+                        "saf_par_primario", "saf_par_complementar",
+                        "saf_par_hora_compativel", "saf_par_hora_divergente",
+                        "saf_par_hora_desconhecida",
+                    ):
+                        numero = pistas.get(campo)
+                        resumo_pistas[campo] = (
+                            min(max(numero, 0), 99)
+                            if isinstance(numero, int) and not isinstance(numero, bool)
+                            else 0
+                        )
             item = {
                 "observado_em": agora,
                 "operacao": str(operacao or "ODDS")[:32],
