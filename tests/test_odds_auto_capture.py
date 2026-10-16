@@ -67,7 +67,12 @@ class OddsAutoCaptureTests(unittest.TestCase):
         meia_noite = (agora_pt + timedelta(days=1)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        seg = min(inicio_seg, max(1, (meia_noite - agora_pt).total_seconds() - 5))
+        # Dentro da janela, o jogo de teste deve continuar no dia local;
+        # fora da janela (7 h), manter a distância para testar a exclusão.
+        seg = (
+            min(inicio_seg, max(1, (meia_noite - agora_pt).total_seconds() - 5))
+            if inicio_seg <= 4 * 3600 else inicio_seg
+        )
         ts = time.time() + seg
         reg.registar(
             [
