@@ -103,6 +103,32 @@ class EstudoJogoShadowTests(unittest.TestCase):
         self.assertNotIn("casa 1,90", texto)
         self.assertIn("telemetria estatística suficiente", texto)
 
+    def test_amostra_curta_e_desvio_de_golos_reais_sinalizam_cautela(self):
+        p = snapshot()
+        p["diagnostico_modelo"].update({
+            "lambda_casa": 2.02,
+            "lambda_fora": 1.90,
+            "media_liga_casa": 1.67,
+            "media_liga_fora": 1.24,
+            "amostra_casa_local": 3,
+            "amostra_fora_local": 3,
+        })
+        antes = copy.deepcopy(p)
+        texto = gerar_estudo_jogo([p], "1", agora=self.agora)
+        self.assertIn("34,7% acima da média da liga", texto)
+        self.assertIn("3,92 vs 2,91", texto)
+        self.assertIn("Só 3 jogos em casa/fora", texto)
+        self.assertIn("Probabilidade V1.2: 67,5%", texto)
+        self.assertEqual(p, antes)
+
+    def test_desvio_sem_baseline_nunca_e_inventado(self):
+        p = snapshot()
+        p["diagnostico_modelo"].pop("media_liga_casa")
+        p["diagnostico_modelo"].pop("media_liga_fora")
+        texto = gerar_estudo_jogo([p], "1", agora=self.agora)
+        self.assertNotIn("acima da média da liga", texto)
+        self.assertNotIn("abaixo da média da liga", texto)
+
     def test_ausencia_de_odds_nao_produz_valor(self):
         p = snapshot()
         del p["odd_real"]
