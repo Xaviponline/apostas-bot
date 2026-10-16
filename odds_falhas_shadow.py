@@ -284,6 +284,33 @@ def gerar_painel_falhas(previsoes, path, argumento="", agora=None):
                     "⚠️ Nomes compatíveis em ordem invertida numa lista; "
                     "não confirma o mesmo fixture."
                 )
+            if pistas.get("saf_testado") is True:
+                linhas.append("🔬 SAF (sufixo exato) — observação passiva:")
+                for origem, sufixo in (("principal", "primaria"), ("complementar", "complementar")):
+                    casa_saf = pistas.get("saf_casa_" + sufixo) is True
+                    fora_saf = pistas.get("saf_fora_" + sufixo) is True
+                    linhas.append(
+                        f"• Variante SAF na lista {origem}: "
+                        f"casa {'sim' if casa_saf else 'não'} | "
+                        f"fora {'sim' if fora_saf else 'não'}."
+                    )
+                n_principal = pistas.get("saf_par_primario", 0)
+                n_extra = pistas.get("saf_par_complementar", 0)
+                linhas.append(
+                    f"• Possíveis pares com variante SAF: principal {n_principal}, "
+                    f"complementar {n_extra} (sem associação)."
+                )
+                if n_principal or n_extra:
+                    linhas.append(
+                        "• Horário dos possíveis pares: "
+                        f"compatível {pistas.get('saf_par_hora_compativel', 0)}, "
+                        f"divergente {pistas.get('saf_par_hora_divergente', 0)}, "
+                        f"indisponível {pistas.get('saf_par_hora_desconhecida', 0)}."
+                    )
+                linhas.append(
+                    "⚠️ SAF é só uma hipótese de nomenclatura; "
+                    "não confirma fixture, odds ou oferta Betano."
+                )
             linhas.append(
                 "ℹ️ Presença de nomes individuais não comprova evento, mercado "
                 "ou horário; são apenas pistas."
