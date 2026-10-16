@@ -176,7 +176,8 @@ def gerar_estudo_jogo(previsoes, argumento="", agora=None):
         linhas.extend([
             "",
             "Para abrir: /estudo_jogo 1 (substitui 1 pelo ranking).",
-            "⚠️ Só estatísticas registadas; não recalcula nem recomenda apostas.",
+            "Contexto recente ESPN: /estudo_jogo 1 forma (até 2 pedidos públicos).",
+            "⚠️ Estudo base offline; forma é consulta opcional, sem odds nem novas picks.",
         ])
         return "\n".join(linhas)
 
