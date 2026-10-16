@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from main_sofascore import BotPremiumReal
@@ -38,7 +38,10 @@ class LocalDateTests(unittest.TestCase):
 
     def test_recolha_repete_uma_vez_quando_primeira_lista_vem_vazia(self):
         agora = datetime.now(ZoneInfo("Europe/Lisbon"))
-        jogo = {"id": 99, "timestamp": agora.timestamp() + 3600}
+        meia_noite = (agora + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        # Nunca projetar um fixture de teste para o dia seguinte.
+        segundos = min(3600, max(1, (meia_noite - agora).total_seconds() - 5))
+        jogo = {"id": 99, "timestamp": agora.timestamp() + segundos}
         buscador = BuscadorRetryFake(jogo)
         bot = object.__new__(BotPremiumReal)
         bot.buscador = buscador

@@ -3,6 +3,8 @@ import time
 import unittest
 import requests
 from pathlib import Path
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from main_sofascore import BotPremiumReal
 from odds_betano import OddsBetano
@@ -261,7 +263,12 @@ class OddsBatchRobustezTests(unittest.TestCase):
     def test_captura_automatica_faz_fallback_so_nas_cinco_top5(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
-            inicio = time.time() + 3600
+            agora_pt = datetime.now(ZoneInfo("Europe/Lisbon"))
+            meia_noite = (agora_pt + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            segundos = min(3600, max(1, (meia_noite - agora_pt).total_seconds() - 5))
+            inicio = time.time() + segundos
 
             # Insere deliberadamente por ordem inversa para provar que o
             # fallback é priorizado por ranking, não por ordem física.

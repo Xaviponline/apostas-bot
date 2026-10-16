@@ -33,6 +33,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         self.acessos = acessos or GestorAcessosPremium()
         # Limite por processo: o OWNER não repete pesquisas pagas por ranking/dia.
         self._investigacoes_dirigidas_cache = {}
+        self._nomes_odds_cache = {}
         self.research_lab = research_lab or ResearchLabClient()
         caminho_previsoes = getattr(self.previsoes, 'path', None)
         marcador = Path(caminho_previsoes).with_name('clv_avisos.json') if caminho_previsoes else None
@@ -928,6 +929,35 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             rastreio, argumento=argumentos, agora=datetime.now(TZ_PORTUGAL),
         )
 
+    def _executar_odds_nomes(self, argumentos=""):
+        """Diagnóstico de catálogo OWNER, uma consulta por ranking/dia/processo."""
+        from odds_nomes_shadow import diagnosticar_nomes
+        arg = str(argumentos or "").strip()
+        if not arg.isascii() or not arg.isdecimal() or not 1 <= len(arg) <= 3 or int(arg) < 1:
+            return "Formato: /odds_nomes 3 (ranking do dia; OWNER)."
+        dia = datetime.now(TZ_PORTUGAL).strftime("%Y-%m-%d")
+        chave = (dia, int(arg))
+        cache = getattr(self, "_nomes_odds_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._nomes_odds_cache = cache
+        if chave in cache:
+            return "♻️ Resultado em cache — zero pedidos adicionais.\n\n" + cache[chave]
+        try:
+            resposta = diagnosticar_nomes(
+                self.previsoes.dados.get("previsoes", []),
+                self.odds, arg, self._quota_permite_captura,
+                agora=datetime.now(TZ_PORTUGAL),
+            )
+        except (requests.RequestException, RuntimeError, OSError, ValueError,
+                TypeError, KeyError, ArithmeticError):
+            resposta = (
+                "⚠️ Diagnóstico de nomes indisponível. "
+                "Nenhuma odd consultada nem snapshot ou modelo alterado."
+            )
+        cache[chave] = resposta
+        return resposta
+
     def _executar_odds_investigar(self, argumentos=""):
         """Pesquisa explícita OWNER com no máximo uma query dirigida por ranking/dia."""
         from odds_investigacao_dirigida import investigar_fixture_por_equipa
@@ -1766,6 +1796,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     "Sem alterações à V1.2, SEL1, V1.3, odds ou snapshots."
                 )
             self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/odds_nomes":
+            if not owner_admin:
+                return
+            self.enviar_mensagem(chat_id, self._executar_odds_nomes(argumentos))
             return
 
         if comando == "/odds_investigar":
