@@ -30,6 +30,7 @@ class OddsBetano:
     # Para /odds, ~1 pedido/segundo evita rajadas de 429.
     PAPI_ODDS_INTERVALO = 1.05
     PAPI_FIXTURES_INTERVALO = 1.05
+    PAPI_PARTICIPANTES_INTERVALO = 1.05
     PAPI_BATCH_INTERVALO = 1.05
     # Em HTTP 400, limitar a recuperação recursiva para proteger quota/CLV.
     PAPI_BATCH_400_MAX_EXTRA_PEDIDOS = 6
@@ -180,6 +181,8 @@ class OddsBetano:
             return self.PAPI_ODDS_INTERVALO
         if path == "/fixtures":
             return self.PAPI_FIXTURES_INTERVALO
+        if path == "/participants":
+            return self.PAPI_PARTICIPANTES_INTERVALO
         if path == "/odds-by-tournaments":
             return self.PAPI_BATCH_INTERVALO
         if path == "/account":
