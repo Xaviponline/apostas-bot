@@ -177,6 +177,7 @@ def gerar_estudo_jogo(previsoes, argumento="", agora=None):
             "",
             "Para abrir: /estudo_jogo 1 (substitui 1 pelo ranking).",
             "Contexto recente ESPN: /estudo_jogo 1 forma (até 2 pedidos públicos).",
+            "Estudo integrado: /estudo_jogo 1 completo (até 2 pedidos ESPN).",
             "⚠️ Estudo base offline; forma é consulta opcional, sem odds nem novas picks.",
         ])
         return "\n".join(linhas)
