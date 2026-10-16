@@ -63,7 +63,7 @@ def relatorio_robustez_v13(metricas):
         if lucro is None:
             raise ValueError("P/L liquidado inválido")
         data = str(item.get("data_jogo") or "")
-        if not re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", data):
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", data):
             datas_invalidas += 1
         entradas.append((data, str(item.get("mercado") or "Não indicado"), lucro))
 
@@ -72,7 +72,7 @@ def relatorio_robustez_v13(metricas):
     dias = defaultdict(lambda: [0.0, 0])
     mercados = Counter()
     for data, mercado, pnl in entradas:
-        if re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", data):
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", data):
             dias[data][0] += pnl
             dias[data][1] += 1
         mercados[mercado] += 1
