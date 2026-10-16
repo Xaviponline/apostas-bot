@@ -31,10 +31,10 @@ def _nome_curto(valor):
     return nome[:72]
 
 
-def _escalão_ou_variante(nome):
+def _escalao_ou_variante(nome):
     """Sinalizador visual; não decide a identidade de uma equipa."""
     return bool(re.search(
-        r"(?<![a-z0-9])(?:u[- ]?\\d{2}|sub[- ]?\\d{2}|under[- ]?\\d{2}|women|feminina|feminino)(?![a-z0-9])",
+        r"(?<![a-z0-9])(?:u[- ]?\d{2}|sub[- ]?\d{2}|under[- ]?\d{2}|women|feminina|feminino)(?![a-z0-9])",
         _nome_curto(nome), re.IGNORECASE,
     ))
 
@@ -131,7 +131,7 @@ def diagnosticar_nomes(previsoes, odds, argumento, permite_quota, agora=None):
                 avisos_repetidos += 1
                 if avisos_repetidos >= 3:
                     break
-        if any(_escalão_ou_variante(nome) for ident, nome in apresentados):
+        if any(_escalao_ou_variante(nome) for ident, nome in apresentados):
             linhas.append("⚠️ Há candidato(s) Sub-20/U20 ou feminino(s): não assumir equipa sénior.")
     linhas.extend([
         "",
