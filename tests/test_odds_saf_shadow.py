@@ -121,7 +121,7 @@ class SAFShadowTests(unittest.TestCase):
 
     def test_saf_par_horario_divergente_nao_associa(self):
         fonte = FonteMock([
-            evento("saf-hora", "Ponte Preta", "Atletico GO SAF", "2030-10-16T20:00:00Z")
+            evento("saf-hora", "Ponte Preta", "Atlético Goianiense SAF", "2030-10-16T20:00:00Z")
         ])
         s = AuditoriaOdds(fonte).enriquecer([selecao()])[0]
         pistas = s["_odds_descoberta"]
@@ -132,7 +132,7 @@ class SAFShadowTests(unittest.TestCase):
         self.assertEqual(fonte.contagem_odds, 0)
 
     def test_saf_par_hora_indisponivel_nao_associa(self):
-        fonte = FonteMock([evento("saf-empty", "Ponte Preta", "Atletico GO SAF", "")])
+        fonte = FonteMock([evento("saf-empty", "Ponte Preta", "Atlético Goianiense SAF", "")])
         s = AuditoriaOdds(fonte).enriquecer([selecao()])[0]
         self.assertEqual(s["_odds_descoberta"]["saf_par_hora_desconhecida"], 1)
         self.assertEqual(fonte.contagem_odds, 0)
@@ -140,7 +140,7 @@ class SAFShadowTests(unittest.TestCase):
     def test_saf_nao_e_fuzzy_nem_qualquer_sufixo(self):
         for nome in (
             "Atlético Goianiense SAF Sub-20", "Athletico Goianiense SAF",
-            "Atlético Mineiro SAF", "Goianiense SAF", "Atlético Goianiense SC",
+            "Atlético Mineiro SAF", "Goianiense SAF", "Atlético Goianiense Ltda",
         ):
             with self.subTest(nome=nome):
                 fonte = FonteMock([evento("outro", "Ponte Preta", nome)])
