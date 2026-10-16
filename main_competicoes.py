@@ -933,10 +933,22 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         """Diagnóstico de catálogo OWNER, uma consulta por ranking/dia/processo."""
         from odds_nomes_shadow import diagnosticar_nomes
         arg = str(argumentos or "").strip()
-        if not arg.isascii() or not arg.isdecimal() or not 1 <= len(arg) <= 3 or int(arg) < 1:
-            return "Formato: /odds_nomes 3 (ranking do dia; OWNER)."
+        partes = arg.split()
+        formato = "Formato: /odds_nomes 3 ou /odds_nomes 2026-10-16 3 (OWNER)."
+        if not arg.isascii() or len(partes) not in (1, 2):
+            return formato
         dia = datetime.now(TZ_PORTUGAL).strftime("%Y-%m-%d")
-        chave = (dia, int(arg))
+        if len(partes) == 2:
+            try:
+                dia = datetime.strptime(partes[0], "%Y-%m-%d").date().isoformat()
+            except ValueError:
+                return formato
+            if dia != partes[0]:
+                return formato
+        ranking_txt = partes[-1]
+        if not ranking_txt.isdecimal() or not 1 <= len(ranking_txt) <= 3 or int(ranking_txt) < 1:
+            return formato
+        chave = (dia, int(ranking_txt))
         cache = getattr(self, "_nomes_odds_cache", None)
         if not isinstance(cache, dict):
             cache = {}
