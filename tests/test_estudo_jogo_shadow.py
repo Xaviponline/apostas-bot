@@ -73,6 +73,7 @@ class EstudoJogoShadowTests(unittest.TestCase):
         self.assertIn("Over 2.5 Golos", texto)
         self.assertIn("67,5%", texto)
         self.assertIn("71,9%", texto)
+        self.assertIn("Ajuste V1.2 vs bruto: -4,4 pp", texto)
         self.assertIn("casa 1,90 | fora 1,20 | total 3,10", texto)
         self.assertIn("PPG recente", texto)
         self.assertIn("casa local 5", texto)
@@ -82,6 +83,17 @@ class EstudoJogoShadowTests(unittest.TestCase):
         self.assertIn("Confrontos diretos, ausências, escalações e descanso não são inferidos", texto)
         self.assertIn("excesso de confiança", texto)
         self.assertEqual(ps, antes)
+
+    def test_nao_mistura_versoes_anteriores_nem_challengers(self):
+        v12 = snapshot()
+        v11 = snapshot(ranking=2)
+        v11["modelo_versao"] = "V1.1"
+        outro = snapshot(ranking=3)
+        outro["modelo_versao"] = "Platt_SHADOW"
+        texto = gerar_estudo_jogo([v12, v11, outro], "", agora=self.agora)
+        self.assertIn("1 previsões disponíveis", texto)
+        self.assertNotIn("Casa 2", texto)
+        self.assertNotIn("Casa 3", texto)
 
     def test_ausencia_de_telemetria_nao_inventa_estatisticas(self):
         texto = gerar_estudo_jogo([snapshot(diag=False)], "1", agora=self.agora)
