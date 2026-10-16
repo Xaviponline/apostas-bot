@@ -7,7 +7,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from estudo_forma_espn import contexto_espn
-from estudo_jogo_shadow import gerar_estudo_jogo
+from estudo_jogo_shadow import gerar_estudo_jogo, _numero, _fmt
 
 
 TZ_PT = ZoneInfo("Europe/Lisbon")
@@ -73,10 +73,17 @@ def _conclusao_mercado(mercado, dados):
     p_c = c / n_c
     p_f = f / n_f
     if p_c >= 2/3 and p_f >= 2/3:
-        linhas.append(
-            "🟢 Tendência observada concordante nas duas equipas; "
-            "não valida a probabilidade estimada pela V1.2."
-        )
+        if min(n_c, n_f) < 5:
+            linhas.append(
+                "🟡 Tendência favorável com evidência limitada: ambos os históricos "
+                "mostram frequência elevada, mas pelo menos uma amostra tem menos "
+                "de 5 jogos."
+            )
+        else:
+            linhas.append(
+                "🟢 Tendência observada favorável em ambas as amostras locais "
+                "(mínimo 5 jogos por equipa); não valida a V1.2."
+            )
     elif p_c <= 1/3 and p_f <= 1/3:
         linhas.append(
             "🔴 Possível contradição: resultados locais de ambas as equipas "
@@ -87,10 +94,15 @@ def _conclusao_mercado(mercado, dados):
             "🟠 Tendências locais opostas entre equipas; "
             "a previsão merece cautela acrescida."
         )
+    elif (p_c >= 2/3 and p_f >= 0.50) or (p_f >= 2/3 and p_c >= 0.50):
+        linhas.append(
+            "🟡 Tendência parcialmente favorável: uma amostra é forte, "
+            "mas a outra apresenta apoio moderado."
+        )
     else:
         linhas.append(
-            "🟡 Tendência mista ou inconclusiva; sem concordância forte "
-            "com os dois históricos locais."
+            "⚪ Tendência mista ou inconclusiva; sem evidência consistente "
+            "nas duas amostras locais."
         )
     if min(n_c, n_f) < 5:
         linhas.append(
@@ -101,6 +113,34 @@ def _conclusao_mercado(mercado, dados):
         "⚠️ Estas observações podem sobrepor-se aos dados usados na V1.2; "
         "não são validação estatística independente nem fora da amostra."
     )
+    return linhas
+
+
+def _nota_preco_historico(previsao):
+    """Só descreve a odd inicial já congelada; nunca estima VALUE nem odds atuais."""
+    odd = _numero(previsao.get("odd_real"))
+    minima = _numero(previsao.get("odd_minima"))
+    linhas = ["💰 LEITURA DO PREÇO HISTÓRICO — SEM VALUE NOVO"]
+    if odd is None or odd <= 1:
+        linhas.append(
+            "⚪ Sem odd real histórica registada; não é possível comparar o preço "
+            "com o mínimo congelado."
+        )
+    elif minima is None or minima <= 1:
+        linhas.append(
+            f"⚪ Odd inicial {_fmt(odd)} registada; mínimo congelado indisponível."
+        )
+    elif odd < minima:
+        linhas.append(
+            f"🔴 Odd inicial {_fmt(odd)} abaixo do mínimo congelado {_fmt(minima)}: "
+            "não satisfazia o critério de preço no primeiro registo."
+        )
+    else:
+        linhas.append(
+            f"🟡 Odd inicial {_fmt(odd)} atingiu o mínimo congelado {_fmt(minima)}; "
+            "não demonstra VALUE nem confirma a cotação atual."
+        )
+    linhas.append("⚠️ Não consultar odds agora; não altera coorte ou decisão comercial.")
     return linhas
 
 
@@ -119,6 +159,18 @@ def gerar_estudo_completo(previsao, ranking, agora=None, session=None):
     base = gerar_estudo_jogo([previsao], str(ranking), agora=agora)
     dados = {}
     from_espn = contexto_espn(previsao, session=session, detalhes=dados)
+    # A ficha offline permanece intacta; apenas a composição do modo completo
+    # esclarece que este comando também consultou a ESPN.
+    base = base.replace(
+        "🔒 Estudo apenas leitura: sem consultas externas, sem VALUE novo, sem apostas.",
+        "🔒 Snapshot V1.2 apenas leitura; consulta complementar ESPN separada."
+    )
+    if dados:
+        base = base.replace(
+            "• Confrontos diretos, ausências, escalações e descanso não são inferidos.",
+            "• Confrontos diretos na janela ESPN apresentados abaixo; "
+            "ausências, escalações e descanso não verificados."
+        )
     linhas = [
         f"📘 ESTUDO COMPLETO — SHADOW | RANKING #{ranking}",
         "",
@@ -136,7 +188,11 @@ def gerar_estudo_completo(previsao, ranking, agora=None, session=None):
             "contexto verificado. Não atribuí conclusões à forma.",
             "",
         ])
+    linhas.extend(_nota_preco_historico(previsao))
     linhas.extend([
+        "",
+        "──────────",
+        "",
         from_espn,
         "",
         "🔐 Relatório exclusivamente informativo: sem novas apostas, sem "
