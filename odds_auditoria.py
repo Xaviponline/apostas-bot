@@ -437,6 +437,9 @@ class AuditoriaOdds:
                 getattr(self.fonte, "ultimo_diagnostico_eventos", "") or ""
             ).strip()
 
+        n_primarios = len(eventos)
+        complemento_consultado = False
+
         # Só em auditoria/recuperação explícita (não no /analisa normal):
         # consultar no máximo uma lista complementar pré-jogo, quando faltam
         # correspondências. A fonte aplica cache/cooldown para poupar quota.
@@ -450,6 +453,7 @@ class AuditoriaOdds:
             )
             complementar = getattr(self.fonte, "eventos_complementares", None)
             if ausentes and callable(complementar):
+                complemento_consultado = True
                 try:
                     extras = complementar() or []
                 except (RuntimeError, ValueError, TypeError, OSError):
@@ -490,6 +494,11 @@ class AuditoriaOdds:
                 indice_exato=indice,
             )
             if not candidatos:
+                from odds_pistas_descoberta import recolher_pistas
+                selecao["_odds_descoberta"] = recolher_pistas(
+                    jogo, eventos, n_primarios, complemento_consultado,
+                    self._nome_equipa_compativel,
+                )
                 self._registar_diagnostico(
                     selecao,
                     diagnostico_descoberta or "evento_nao_encontrado",
