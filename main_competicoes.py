@@ -887,6 +887,14 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         except (TypeError, ValueError):
             return str(valor)
 
+    def _executar_estudo_jogo(self, argumentos=""):
+        """Estudo SHADOW apenas a partir de previsões congeladas; zero HTTP."""
+        from estudo_jogo_shadow import gerar_estudo_jogo
+        return gerar_estudo_jogo(
+            self.previsoes.dados.get("previsoes", []), argumentos,
+            agora=datetime.now(TZ_PORTUGAL),
+        )
+
     def _executar_odds_cobertura(self):
         """Relatorio offline; nunca consulta OddsPapi nem modifica previsoes."""
         from odds_cobertura import ObservatorioCobertura
@@ -1675,6 +1683,20 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível gerar a auditoria comercial agora. "
                     "A V1.2, a SEL1 e a odd inicial congelada não foram alteradas."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/estudo_jogo":
+            # SHADOW só para OWNER/ADMIN; clientes não veem diagnósticos experimentais.
+            if not owner_admin:
+                return
+            try:
+                resposta = self._executar_estudo_jogo(argumentos)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "🧠 ESTUDO DE JOGO — indisponível. "
+                    "Sem alterações à V1.2, SEL1, V1.3, odds ou snapshots."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
