@@ -41,7 +41,7 @@ def _dados_competidores(evento):
         if ids[0] <= 0 or ids[1] <= 0 or ids[0] == ids[1]:
             return None
         return ids
-    except (IndexError, KeyError, ValueError, TypeError, StopIteration):
+    except (IndexError, KeyError, ValueError, TypeError, AttributeError, StopIteration):
         return None
 
 
@@ -135,7 +135,9 @@ def contexto_espn(previsao, session=None):
             return base + "\n⚪ Fixture ESPN não confirmado pelo ID; sem associação por nomes."
         fixture = correspondentes[0]
         ids = _dados_competidores(fixture)
-        ts_espn = EstatisticasESPN._timestamp(fixture.get("date"))
+        comp = fixture.get("competitions") or []
+        data_fixture = fixture.get("date") or (comp[0].get("date") if comp and isinstance(comp[0], dict) else None)
+        ts_espn = EstatisticasESPN._timestamp(data_fixture)
         if ids is None or ts_espn is None or abs(ts_espn - ts) > 90 * 60:
             return base + "\n⚪ Equipas ou horário do fixture não validados."
         # Exclui conservadoramente todo o dia em que foi gerada a previsão.
