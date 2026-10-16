@@ -71,7 +71,7 @@ class EstudoCompletoTests(unittest.TestCase):
         texto = gerar_estudo_completo(p, 1, agora=AGORA, session=sessao)
         self.assertIn("Possível contradição", texto)
         self.assertIn("0/3 jogos", texto)
-        self.assertIn("probabilidade V1.2", texto.lower())
+        self.assertIn("probabilidade v1.2", texto.lower())
         self.assertEqual(len(sessao.calls), 2)
 
     def test_falha_espn_sem_cruzamento_e_sem_dados_inventados(self):
