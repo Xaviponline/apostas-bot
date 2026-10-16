@@ -124,6 +124,7 @@ def gerar_estudo_jogo(previsoes, argumento="", agora=None):
     hoje = [
         p for p in (previsoes or [])
         if isinstance(p, dict) and p.get("data_jogo") == data_iso
+        and str(p.get("modelo_versao") or "") == "V1.2"
         and _inteiro(p.get("ranking_modelo")) is not None
         and _inteiro(p.get("ranking_modelo")) > 0
     ]
@@ -183,6 +184,7 @@ def gerar_estudo_jogo(previsoes, argumento="", agora=None):
         f"🎯 Mercado: {p.get('mercado') or 'Não indicado'}",
         f"📈 Probabilidade V1.2: {_fmt(prova * 100 if prova is not None else None, 1)}%",
         f"🧮 Probabilidade bruta: {_fmt(bruta * 100 if bruta is not None else None, 1)}%",
+        f"↳ Ajuste V1.2 vs bruto: {_fmt((prova - bruta) * 100 if prova is not None and bruta is not None else None, 1)} pp",
         f"📚 Qualidade da base: {_fmt(p.get('qualidade'), 0)}/100 (não é probabilidade de acerto)",
         "",
         "🔬 ESTATÍSTICAS CONGELADAS",
