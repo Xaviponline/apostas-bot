@@ -73,7 +73,7 @@ class OddsFalhasShadowTests(unittest.TestCase):
             self.assertIn("fixture omitido no lote — inconclusivo", painel)
             detalhe = gerar_painel_falhas(copia, path, "2", agora=AGORA)
             self.assertIn("bookmaker", detalhe)
-            self.assertIn("Sem odd", detalhe)
+            self.assertIn("sem confirmação no snapshot", detalhe)
             self.assertIn("ID de fixture na fonte: não guardado", detalhe)
             self.assertEqual(path.read_bytes(), original)
             self.assertEqual(copia, [p1, p2, p3])
