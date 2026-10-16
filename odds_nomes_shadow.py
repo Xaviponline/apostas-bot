@@ -33,20 +33,32 @@ def _nome_curto(valor):
 def diagnosticar_nomes(previsoes, odds, argumento, permite_quota, agora=None):
     agora = (agora or datetime.now(TZ)).astimezone(TZ)
     arg = str(argumento or "").strip()
-    if not arg.isascii() or not arg.isdecimal() or len(arg) > 3:
-        return "Formato: /odds_nomes 3 (ranking V1.2 do dia; OWNER)."
-    rank = int(arg)
-    if rank < 1:
-        return "Formato: /odds_nomes 3 (ranking V1.2 do dia; OWNER)."
+    partes = arg.split()
+    formato = "Formato: /odds_nomes 3 ou /odds_nomes 2026-10-16 3 (OWNER)."
+    if not arg.isascii() or len(partes) not in (1, 2):
+        return formato
+    dia = agora.date().isoformat()
+    if len(partes) == 2:
+        try:
+            dia = datetime.strptime(partes[0], "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            return formato
+        if dia != partes[0]:
+            return formato
+    ranking_txt = partes[-1]
+    if not ranking_txt.isdecimal() or len(ranking_txt) > 3 or int(ranking_txt) < 1:
+        return formato
+    rank = int(ranking_txt)
     jogos = [
         p for p in previsoes or []
         if isinstance(p, dict)
-        and p.get("data_jogo") == agora.date().isoformat()
+        and p.get("data_jogo") == dia
         and p.get("modelo_versao") == "V1.2"
         and p.get("ranking_modelo") == rank
     ]
     if len(jogos) != 1:
-        return "⚪ Ranking inexistente ou repetido no dia. Zero OddsPapi."
+        return ("⚪ Ranking inexistente ou repetido em " + dia
+                + ". Usa /odds_nomes AAAA-MM-DD 3 para jogos anteriores. Zero OddsPapi.")
     if getattr(odds, "provider", None) != "oddspapi" or not getattr(odds, "configurada", False):
         return "⚪ OddsPapi indisponível. Zero consultas externas."
     if not callable(permite_quota) or not permite_quota("ODDS_AUTO", 25):
@@ -62,7 +74,7 @@ def diagnosticar_nomes(previsoes, odds, argumento, permite_quota, agora=None):
 
     jogo = jogos[0]
     linhas = [
-        f"🔬 NOMES DA ODDS PAPI — SHADOW | #{rank}",
+        f"🔬 NOMES DA ODDS PAPI — SHADOW | {dia} | #{rank}",
         f"⚽ {_nome_curto(jogo.get('casa'))} vs {_nome_curto(jogo.get('fora'))}",
         "📚 Fonte: catálogo /participants, apenas nomes e IDs.",
     ]
