@@ -104,7 +104,8 @@ def relatorio_robustez_v13(metricas):
             linhas.append(f"• Pior dia liquidado: {pior_data} | {pior_lucro:+.2f}u".replace(".", ","))
         if mercados:
             mercado, n = sorted(mercados.items(), key=lambda x: (-x[1], x[0]))[0]
-            linhas.append(f"• Mercado mais frequente: {mercado} — {n}/{total} ({n / total * 100:.1f}%)".replace(".", ","))
+            percentagem = f"{n / total * 100:.1f}".replace(".", ",")
+            linhas.append(f"• Mercado mais frequente: {mercado} — {n}/{total} ({percentagem}%)")
 
         linhas += ["", "📐 INCERTEZA DO ROI"]
         if total < MIN_LIQUIDADAS_IC or len(dias) < MIN_DIAS_IC or datas_invalidas:
