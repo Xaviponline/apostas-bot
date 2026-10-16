@@ -13,16 +13,26 @@ from estudo_jogo_shadow import gerar_estudo_jogo
 TZ_PT = ZoneInfo("Europe/Lisbon")
 
 
-def _ocorrencias(partidas, mercado):
-    """Conta eventos observados; nunca converte frequências em probabilidade."""
-    regras = {
+def _ocorrencias(partidas, mercado, lado):
+    """Contagem de indicadores alinhados, não é probabilidade de um mercado."""
+    golos = {
         "Over 1.5 Golos": lambda gf, ga: gf + ga >= 2,
         "Over 2.5 Golos": lambda gf, ga: gf + ga >= 3,
         "Under 2.5 Golos": lambda gf, ga: gf + ga <= 2,
         "Under 3.5 Golos": lambda gf, ga: gf + ga <= 3,
         "Ambas Marcam": lambda gf, ga: gf > 0 and ga > 0,
     }
-    regra = regras.get(mercado)
+    regras_lado = {
+        "Vitória Casa": {"casa": lambda gf, ga: gf > ga,
+                         "fora": lambda gf, ga: gf < ga},
+        "Vitória Fora": {"casa": lambda gf, ga: gf < ga,
+                         "fora": lambda gf, ga: gf > ga},
+        "1X (Casa ou Empate)": {"casa": lambda gf, ga: gf >= ga,
+                                "fora": lambda gf, ga: gf <= ga},
+        "X2 (Empate ou Fora)": {"casa": lambda gf, ga: gf <= ga,
+                                "fora": lambda gf, ga: gf >= ga},
+    }
+    regra = golos.get(mercado) or regras_lado.get(mercado, {}).get(lado)
     if regra is None:
         return None
     validos = [
@@ -35,8 +45,8 @@ def _ocorrencias(partidas, mercado):
 def _conclusao_mercado(mercado, dados):
     casa = dados.get("casa_local") or []
     fora = dados.get("fora_local") or []
-    taxa_casa = _ocorrencias(casa, mercado)
-    taxa_fora = _ocorrencias(fora, mercado)
+    taxa_casa = _ocorrencias(casa, mercado, "casa")
+    taxa_fora = _ocorrencias(fora, mercado, "fora")
     linhas = ["🔎 CRUZAMENTO — V1.2 vs RESULTADOS OBSERVADOS"]
     if taxa_casa is None or taxa_fora is None:
         linhas.append(
@@ -47,8 +57,13 @@ def _conclusao_mercado(mercado, dados):
 
     c, n_c = taxa_casa
     f, n_f = taxa_fora
-    linhas.append(f"• {mercado}, equipa da casa em casa: {c}/{n_c} jogos")
-    linhas.append(f"• {mercado}, visitantes fora: {f}/{n_f} jogos")
+    if mercado in {"Vitória Casa", "Vitória Fora", "1X (Casa ou Empate)", "X2 (Empate ou Fora)"}:
+        linhas.append(f"• Indicador de resultados favoráveis, equipa da casa em casa: {c}/{n_c}")
+        linhas.append(f"• Indicador complementar, visitantes fora: {f}/{n_f}")
+        linhas.append("ℹ️ Em resultados 1X2, os indicadores são proxies de equipas diferentes, NÃO frequências do mesmo mercado.")
+    else:
+        linhas.append(f"• {mercado}, equipa da casa em casa: {c}/{n_c} jogos")
+        linhas.append(f"• {mercado}, visitantes fora: {f}/{n_f} jogos")
     if min(n_c, n_f) < 3:
         linhas.append(
             "⚪ Amostra local insuficiente (<3 jogos) para classificar a concordância."
@@ -57,17 +72,17 @@ def _conclusao_mercado(mercado, dados):
 
     p_c = c / n_c
     p_f = f / n_f
-    if p_c >= 0.67 and p_f >= 0.67:
+    if p_c >= 2/3 and p_f >= 2/3:
         linhas.append(
             "🟢 Tendência observada concordante nas duas equipas; "
             "não valida a probabilidade estimada pela V1.2."
         )
-    elif p_c <= 0.33 and p_f <= 0.33:
+    elif p_c <= 1/3 and p_f <= 1/3:
         linhas.append(
             "🔴 Possível contradição: resultados locais de ambas as equipas "
             "têm baixa frequência do mercado escolhido."
         )
-    elif (p_c >= 0.67 and p_f <= 0.33) or (p_f >= 0.67 and p_c <= 0.33):
+    elif (p_c >= 2/3 and p_f <= 1/3) or (p_f >= 2/3 and p_c <= 1/3):
         linhas.append(
             "🟠 Tendências locais opostas entre equipas; "
             "a previsão merece cautela acrescida."
