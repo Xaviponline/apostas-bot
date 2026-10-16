@@ -225,8 +225,9 @@ def contexto_espn(previsao, session=None, detalhes=None):
     linhas.extend([
         "",
         "⚠️ Apenas amostra ESPN da competição e período indicado; pode ser incompleta.",
-        "⚠️ Janela de 70 dias limitada ao ano consultado quando atravessa janeiro.",
         "⚠️ Contexto complementar consultado agora, NÃO dados originais congelados.",
         "🔒 Não altera V1.2, SEL1, Platt, V1.3, odds ou rankings.",
     ])
+    if inicio_cobertura > inicio:
+        linhas.append("⚠️ Janela de 70 dias limitada ao ano consultado quando atravessa janeiro.")
     return "\n".join(linhas)
