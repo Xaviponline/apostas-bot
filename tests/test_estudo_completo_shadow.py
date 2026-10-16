@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from estudo_completo_shadow import gerar_estudo_completo, _conclusao_mercado
+from estudo_completo_shadow import gerar_estudo_completo, _conclusao_mercado, _nota_preco_historico
 from main_competicoes import BotPremiumDiarioCompeticoes
 from test_estudo_forma_espn import Sessao, event, snapshot
 
@@ -58,7 +58,7 @@ class EstudoCompletoTests(unittest.TestCase):
         self.assertIn("CRUZAMENTO — V1.2", texto)
         self.assertIn("Over 2.5 Golos, equipa da casa em casa: 3/3", texto)
         self.assertIn("Over 2.5 Golos, visitantes fora: 3/3", texto)
-        self.assertIn("Tendência observada concordante", texto)
+        self.assertIn("Tendência favorável com evidência limitada", texto)
         self.assertIn("amostra casa/fora curta", texto.lower())
         self.assertIn("não são validação estatística independente", texto)
         self.assertIn("FORMA RECENTE — ESPN", texto)
@@ -81,7 +81,7 @@ class EstudoCompletoTests(unittest.TestCase):
         texto = gerar_estudo_completo(p, 1, agora=AGORA, session=sessao)
         self.assertIn("Cruzamento automático suspenso", texto)
         self.assertIn("calendário do jogo: HTTP 503", texto)
-        self.assertNotIn("Tendência observada concordante", texto)
+        self.assertNotIn("Tendência favorável com evidência limitada", texto)
         self.assertEqual(len(sessao.calls), 1)
         self.assertEqual(p, antes)
 
@@ -94,8 +94,89 @@ class EstudoCompletoTests(unittest.TestCase):
         joined = "\n".join(linhas)
         self.assertIn("3/3", joined)
         self.assertIn("proxies", joined)
-        self.assertIn("Tendência observada concordante", joined)
+        self.assertIn("Tendência favorável com evidência limitada", joined)
         self.assertNotIn("90%", joined)
+
+    def test_cinco_auditorias_amostra_conservadora(self):
+        # #1 Le Mans: ambos 3/3; #2 BTTS: 3/3 e 2/3; #5 1X2 2/3 e 4/4.
+        t1 = "\n".join(_conclusao_mercado("Over 2.5 Golos", {
+            "casa_local": [(None, 2, 1, "R", True)] * 3,
+            "fora_local": [(None, 2, 1, "R", False)] * 3,
+        }))
+        self.assertIn("Tendência favorável com evidência limitada", t1)
+        self.assertNotIn("🟢", t1)
+        t2 = "\n".join(_conclusao_mercado("Ambas Marcam", {
+            "casa_local": [(None, 1, 1, "R", True)] * 3,
+            "fora_local": [(None, 1, 1, "R", False)] * 2
+                + [(None, 1, 0, "R", False)],
+        }))
+        self.assertIn("Tendência favorável com evidência limitada", t2)
+        t5 = "\n".join(_conclusao_mercado("Vitória Casa", {
+            "casa_local": [(None, 2, 1, "R", True)] * 2
+                + [(None, 1, 2, "R", True)],
+            "fora_local": [(None, 0, 2, "R", False)] * 4,
+        }))
+        self.assertIn("2/3", t5)
+        self.assertIn("4/4", t5)
+        self.assertIn("Tendência favorável com evidência limitada", t5)
+        self.assertIn("proxies", t5)
+
+    def test_tres_e_quatro_sao_parcialmente_favoraveis(self):
+        # #3 Ponte Preta: 5/5 e 3/5; #4 Helmond: 3/5 e 5/5.
+        dados3 = {
+            "casa_local": [(None, 0, 1, "R", True)] * 5,
+            "fora_local": [(None, 0, 1, "R", False)] * 3
+                + [(None, 3, 1, "R", False)] * 2,
+        }
+        r3 = "\n".join(_conclusao_mercado("Under 2.5 Golos", dados3))
+        self.assertIn("5/5", r3)
+        self.assertIn("3/5", r3)
+        self.assertIn("Tendência parcialmente favorável", r3)
+        dados4 = {
+            "casa_local": [(None, 2, 1, "R", True)] * 3
+                + [(None, 0, 0, "R", True)] * 2,
+            "fora_local": [(None, 2, 1, "R", False)] * 5,
+        }
+        r4 = "\n".join(_conclusao_mercado("Over 2.5 Golos", dados4))
+        self.assertIn("3/5", r4)
+        self.assertIn("5/5", r4)
+        self.assertIn("Tendência parcialmente favorável", r4)
+
+    def test_ambas_amostras_cinco_favoravel_sem_chamar_calibracao(self):
+        dados = {
+            "casa_local": [(None, 2, 2, "R", True)] * 4
+                + [(None, 0, 0, "R", True)],
+            "fora_local": [(None, 2, 2, "R", False)] * 4
+                + [(None, 0, 0, "R", False)],
+        }
+        texto = "\n".join(_conclusao_mercado("Over 2.5 Golos", dados))
+        self.assertIn("🟢 Tendência observada favorável", texto)
+        self.assertIn("não valida a V1.2", texto)
+
+    def test_preco_historico_distingue_abaixo_minimo_e_indisponivel(self):
+        casos = (
+            ({"odd_real": 1.35, "odd_minima": 1.52}, "abaixo do mínimo congelado"),
+            ({"odd_real": 1.78, "odd_minima": 1.52}, "não demonstra VALUE"),
+            ({"odd_real": None, "odd_minima": 1.51}, "Sem odd real histórica"),
+            ({"odd_real": 1.62}, "mínimo congelado indisponível"),
+        )
+        for previsao, aviso in casos:
+            copia = copy.deepcopy(previsao)
+            t = "\n".join(_nota_preco_historico(previsao))
+            self.assertIn(aviso, t)
+            self.assertIn("não altera coorte", t)
+            self.assertEqual(previsao, copia)
+
+    def test_relatorio_completo_nao_diz_sem_consultas_e_h2h_esta_esclarecido(self):
+        p = snapshot()
+        texto = gerar_estudo_completo(
+            p, 1, agora=AGORA, session=Sessao(historico=historico())
+        )
+        self.assertIn("Confrontos diretos na janela ESPN apresentados abaixo", texto)
+        self.assertIn("consulta complementar ESPN separada", texto)
+        self.assertNotIn("sem consultas externas", texto)
+        self.assertNotIn("Janela de 70 dias limitada ao ano consultado", texto)
+        self.assertIn("LEITURA DO PREÇO HISTÓRICO", texto)
 
     def test_amostras_menores_que_tres_nao_concluem(self):
         dados = {
