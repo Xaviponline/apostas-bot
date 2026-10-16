@@ -85,31 +85,75 @@ def investigar_fixture_por_equipa(previsoes, odds, argumento, permissao_quota, a
 
     nome_casa = AuditoriaOdds._canon_equipa(p.get("casa"))
     ids = set()
-    total_equipa = 0
+    total_nome_compativel = 0
+    total_exato = 0
+    total_exato_dia = 0
+    origem_id = "cache da lista geral"
     for e in cache:
         if not isinstance(e, dict):
             continue
+        if AuditoriaOdds._nome_equipa_compativel(p.get("casa"), e.get("casa")):
+            total_nome_compativel += 1
         if AuditoriaOdds._canon_equipa(e.get("casa")) != nome_casa:
             continue
+        total_exato += 1
         d = _instante(e.get("data"))
         if d is None or d.astimezone(TZ).date().isoformat() != hoje:
             continue
-        total_equipa += 1
+        total_exato_dia += 1
         identificador = _int_id(e.get("participant1_id"))
         if identificador is not None:
             ids.add(identificador)
-    if len(ids) != 1:
-        motivo = (
-            "nenhum ID de equipa confirmado" if not ids else
-            "mais do que um ID de equipa possível"
-        )
+
+    # Não usar nomes parcialmente compatíveis para escolher participantId:
+    # podem designar equipas B, femininas ou sub-20. Uma ambiguidade de IDs
+    # existentes também nunca é resolvida por uma consulta adicional.
+    if len(ids) > 1:
         return (
             f"🔎 INVESTIGAÇÃO DIRIGIDA — #{ranking}\n"
-            f"• {_limpo(p.get('casa'))} (casa) visto em {total_equipa} evento(s) da listagem.\n"
-            f"⚪ {motivo}; sem consulta dirigida para evitar associação arriscada.\n"
-            f"🔒 Zero odds e snapshots alterados."
+            f"• Nomes compatíveis na listagem: {total_nome_compativel}; "
+            f"nomes exatos: {total_exato}; exatos na data: {total_exato_dia}.\n"
+            "⚪ IDs diferentes para o mesmo nome; pesquisa bloqueada por ambiguidade.\n"
+            "🔒 Zero odds e snapshots alterados."
         )
+    if not ids:
+        # GET /participants é o catálogo oficial de IDs por modalidade.
+        # Não depende de a equipa surgir nos fixtures filtrados por hora.
+        if not permissao_quota("ODDS_AUTO", 25):
+            return "⛔ Catálogo de participantes suspenso pela reserva CLV. Zero consultas adicionais."
+        contexto = getattr(odds, "contexto_operacao", None)
+        with (contexto("MANUAL") if callable(contexto) else nullcontext()):
+            participantes = odds._get_papi(
+                "/participants", {"sportId": 10, "language": "en"}
+            )
+        if not isinstance(participantes, dict) or len(participantes) > 300000:
+            return "⚠️ Catálogo de participantes inválido ou excessivo. Sem pesquisa dirigida."
+        exatos = {
+            n for bruto, nome in participantes.items()
+            if AuditoriaOdds._canon_equipa(nome) == nome_casa
+            for n in [_int_id(bruto)] if n is not None
+        }
+        if len(exatos) != 1:
+            semelhantes = sum(
+                1 for nome in participantes.values()
+                if AuditoriaOdds._nome_equipa_compativel(p.get("casa"), nome)
+            )
+            return (
+                f"🔎 INVESTIGAÇÃO DIRIGIDA — #{ranking}\n"
+                f"• Listagem geral: nomes compatíveis {total_nome_compativel}; "
+                f"exatos {total_exato}; exatos na data {total_exato_dia}.\n"
+                f"• Catálogo de participantes: {len(exatos)} ID(s) exato(s); "
+                f"{min(semelhantes, 999)} nome(s) parcialmente compatível(is).\n"
+                "⚪ Sem ID único e exato. Nenhum evento ou odd associado."
+            )
+        ids = exatos
+        origem_id = "catálogo de participantes (nome exato)"
     participante = next(iter(ids))
+    # Se o catálogo exigiu um pedido, confirmar novamente a reserva CLV
+    # antes do segundo pedido de quota (/fixtures).
+    if origem_id != "cache da lista geral" and not permissao_quota("ODDS_AUTO", 25):
+        return "⛔ Pesquisa de fixtures suspensa após catálogo pela reserva CLV."
+
     inicio = agora.replace(hour=0, minute=0, second=0, microsecond=0)
     fim = inicio + timedelta(days=1)
     parametros = {
@@ -141,7 +185,9 @@ def investigar_fixture_por_equipa(previsoes, odds, argumento, permissao_quota, a
         f"🔎 PESQUISA DIRIGIDA ODDS — SHADOW | #{ranking}",
         f"⚽ {_limpo(p.get('casa'))} vs {_limpo(p.get('fora'))}",
         f"• Identificador verificado da equipa da casa: {participante}",
-        f"• Origem do ID: {'lista geral consultada nesta ronda' if pesquisa_geral else 'cache da lista geral'}",
+        f"• Origem do ID: {origem_id}.",
+        f"• Nomes na listagem geral: compatíveis {total_nome_compativel}, "
+        f"exatos {total_exato}, exatos na data {total_exato_dia}.",
         f"• Eventos devolvidos pela consulta dirigida: {len(dados)}",
         f"• Eventos da equipa na data do jogo: {len(validos)}",
         "📍 Possíveis fixtures (sem associação):",
