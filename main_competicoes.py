@@ -600,6 +600,9 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 "odds_payload_evento_divergente": "payload do evento divergente",
                 "odd_nao_extraida": "odd não extraída",
                 "odds_quota_esgotada": "quota esgotada",
+                "fixture_omitido_no_lote": "evento omitido da resposta em lote",
+                "mercado_nao_disponivel": "mercado não disponível na fonte",
+                "horario_recuperacao_nao_validado": "hora do evento recuperado incompatível ou indisponível",
             }
             for motivo, total in diagnosticos.most_common():
                 linhas.append(f"• {total}× {nomes.get(motivo, motivo)}")
