@@ -893,10 +893,10 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         agora = datetime.now(TZ_PORTUGAL)
         previsoes = self.previsoes.dados.get("previsoes", [])
         partes = str(argumentos or "").strip().split()
-        if len(partes) == 2 and partes[1].lower() == "forma":
+        if len(partes) == 2 and partes[1].lower() in {"forma", "completo"}:
             ranking_str = partes[0]
             if not ranking_str.isascii() or not ranking_str.isdecimal():
-                return "Formato: /estudo_jogo 1 forma (ranking do dia)."
+                return "Formato: /estudo_jogo 1 forma ou /estudo_jogo 1 completo."
             ranking = int(ranking_str)
             hoje = agora.strftime("%Y-%m-%d")
             correspondentes = [
@@ -908,8 +908,11 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             ]
             if len(correspondentes) != 1:
                 return "⚪ Ranking inexistente ou ambíguo. Consulta /estudo_jogo."
-            from estudo_forma_espn import contexto_espn
-            return contexto_espn(correspondentes[0])
+            if partes[1].lower() == "forma":
+                from estudo_forma_espn import contexto_espn
+                return contexto_espn(correspondentes[0])
+            from estudo_completo_shadow import gerar_estudo_completo
+            return gerar_estudo_completo(correspondentes[0], ranking, agora=agora)
 
         return gerar_estudo_jogo(previsoes, argumentos, agora=agora)
 

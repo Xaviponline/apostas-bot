@@ -103,8 +103,8 @@ def _lista_resultados(partidas, max_items=5):
     return linhas
 
 
-def contexto_espn(previsao, session=None):
-    """Relatório factual, sem odds nem reclassificação. Fail-closed."""
+def contexto_espn(previsao, session=None, detalhes=None):
+    """Relatório factual. `detalhes` opcional recebe só dados validados em memória."""
     base = "📚 FORMA RECENTE — ESPN (CONTEXTO SHADOW)"
     diagnostico = previsao.get("diagnostico_modelo") or {}
     if not isinstance(diagnostico, dict):
@@ -189,6 +189,15 @@ def contexto_espn(previsao, session=None):
     casa_local = _equipa_partidas(resultados, casa, local="casa")
     fora_local = _equipa_partidas(resultados, fora, local="fora")
     h2h = [r for r in resultados if {r["casa_id"], r["fora_id"]} == {casa, fora}]
+    if isinstance(detalhes, dict):
+        # Só publicar dados após validar fixture, IDs, timestamps e histórico.
+        # Não guarda nem altera resultados ou previsões persistidas.
+        detalhes.update({
+            "casa_all": casa_all[:5], "fora_all": fora_all[:5],
+            "casa_local": casa_local[:5], "fora_local": fora_local[:5],
+            "h2h": h2h[:3], "liga": liga,
+            "inicio": inicio_cobertura.isoformat(), "fim": fim.isoformat(),
+        })
     linhas = [
         base,
         f"🔎 Liga {liga} | histórico {inicio_cobertura:%d/%m/%Y} a {fim:%d/%m/%Y}",
