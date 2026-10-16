@@ -45,13 +45,14 @@ def _dados_competidores(evento):
         return None
 
 
-def _resultados(eventos, liga_codigo, limite_ts):
+def _resultados(eventos, liga_codigo, limite_ts, inicio_ts=None):
     por_id = {}
     for evento in eventos:
         resultado = EstatisticasESPN._normalizar_resultado(evento, liga_codigo)
         if (
             resultado is not None
             and resultado["timestamp"] < limite_ts
+            and (inicio_ts is None or resultado["timestamp"] >= inicio_ts)
             and resultado["golos_casa"] >= 0
             and resultado["golos_fora"] >= 0
         ):
@@ -123,6 +124,7 @@ def contexto_espn(previsao, session=None):
     dia = datetime.fromtimestamp(ts, TZ_PT).strftime("%Y%m%d")
     sessao = session or requests.Session()
     url = f"{BASE}/{liga}/scoreboard"
+    fase = "calendário do jogo"
     try:
         r = sessao.get(url, params={"dates": dia, "limit": 500}, timeout=(4, 12))
         r.raise_for_status()
@@ -144,17 +146,41 @@ def contexto_espn(previsao, session=None):
         corte = min(ts_criada, ts)
         fim = datetime.fromtimestamp(corte, TZ_PT).date() - timedelta(days=1)
         inicio = fim - timedelta(days=JANELA_DIAS - 1)
-        intervalo = f"{inicio:%Y%m%d}-{fim:%Y%m%d}"
-        r2 = sessao.get(url, params={"dates": intervalo, "limit": 500}, timeout=(4, 12))
+        # Desde setembro de 2026 há endpoints ESPN que rejeitam
+        # dates=YYYYMMDD-YYYYMMDD (HTTP 400). Usar consulta por ano,
+        # mantendo DOIS pedidos no máximo e filtrando antes do snapshot.
+        # Se a janela atravessar 1 de janeiro, só afirmar cobertura do ano atual.
+        inicio_cobertura = max(inicio, fim.replace(month=1, day=1))
+        ano = str(fim.year)
+        fase = "histórico do ano"
+        r2 = sessao.get(url, params={"dates": ano, "limit": 500}, timeout=(4, 12))
         r2.raise_for_status()
         payload2 = r2.json()
         eventos_historicos = payload2.get("events") if isinstance(payload2, dict) else None
-        if not isinstance(eventos_historicos, list) or len(eventos_historicos) >= 500:
-            return base + "\n⚪ Histórico ESPN inválido ou potencialmente truncado."
-    except (requests.RequestException, ValueError, TypeError, OSError):
-        return base + "\n⚪ ESPN temporariamente indisponível; estatísticas não inventadas."
+        if not isinstance(eventos_historicos, list):
+            return base + "\n⚪ Histórico ESPN inválido; estatísticas não inventadas."
+        if len(eventos_historicos) >= 500:
+            return base + "\n⚪ Histórico ESPN potencialmente truncado (limite de 500); análise suspensa."
+    except (requests.RequestException, ValueError, TypeError, OSError) as exc:
+        if isinstance(exc, requests.HTTPError):
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            motivo = f"HTTP {status}" if isinstance(status, int) else "erro HTTP"
+        elif isinstance(exc, requests.Timeout):
+            motivo = "timeout"
+        elif isinstance(exc, requests.ConnectionError):
+            motivo = "falha de ligação"
+        elif isinstance(exc, (ValueError, TypeError)):
+            motivo = "resposta inválida"
+        else:
+            motivo = "erro de comunicação"
+        # Sem URL, parâmetros, payloads ou exceções completas.
+        return base + f"\n⚪ ESPN indisponível em {fase}: {motivo}. Estatísticas não inventadas."
 
-    resultados = _resultados(eventos_historicos, liga, corte)
+    inicio_ts = datetime(
+        inicio_cobertura.year, inicio_cobertura.month, inicio_cobertura.day,
+        tzinfo=TZ_PT,
+    ).timestamp()
+    resultados = _resultados(eventos_historicos, liga, corte, inicio_ts=inicio_ts)
     casa, fora = ids
     casa_nome = str(previsao.get("casa") or "Casa")[:90]
     fora_nome = str(previsao.get("fora") or "Fora")[:90]
@@ -165,8 +191,8 @@ def contexto_espn(previsao, session=None):
     h2h = [r for r in resultados if {r["casa_id"], r["fora_id"]} == {casa, fora}]
     linhas = [
         base,
-        f"🔎 Liga {liga} | últimos {JANELA_DIAS} dias anteriores ao snapshot",
-        "📍 Só resultados finais da mesma competição; sem jogos futuros.",
+        f"🔎 Liga {liga} | histórico {inicio_cobertura:%d/%m/%Y} a {fim:%d/%m/%Y}",
+        "📍 Só resultados finais da mesma competição anteriores ao snapshot.",
         "",
         f"🏠 {casa_nome} — até 5 resultados recentes",
         f"• Forma: {_resumo_forma(casa_all)}",
@@ -190,6 +216,7 @@ def contexto_espn(previsao, session=None):
     linhas.extend([
         "",
         "⚠️ Apenas amostra ESPN da competição e período indicado; pode ser incompleta.",
+        "⚠️ Janela de 70 dias limitada ao ano consultado quando atravessa janeiro.",
         "⚠️ Contexto complementar consultado agora, NÃO dados originais congelados.",
         "🔒 Não altera V1.2, SEL1, Platt, V1.3, odds ou rankings.",
     ])

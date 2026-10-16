@@ -98,7 +98,8 @@ class EstudoFormaEspnTests(unittest.TestCase):
         self.assertNotIn("17/10", texto)
         self.assertEqual(len(s.calls), 2)
         self.assertEqual(s.calls[0][1]["dates"], "20301016")
-        self.assertEqual(s.calls[1][1]["dates"], "20300807-20301015")
+        self.assertEqual(s.calls[1][1]["dates"], "2030")
+        self.assertIn("07/08/2030 a 15/10/2030", texto)
         self.assertTrue(all(x[0].endswith("/fra.1/scoreboard") for x in s.calls))
         self.assertTrue(all(x[2] == (4, 12) for x in s.calls))
         self.assertEqual(p, original)
@@ -134,10 +135,48 @@ class EstudoFormaEspnTests(unittest.TestCase):
         self.assertEqual(s.calls, [])
 
     def test_http_e_api_truncada_sao_inconclusivos(self):
-        self.assertIn("temporariamente indisponível", contexto_espn(snapshot(), session=Sessao(status=503)))
+        self.assertIn("calendário do jogo: HTTP 503", contexto_espn(snapshot(), session=Sessao(status=503)))
         s = Sessao(historico=[event(42+i, "2030-10-10") for i in range(500)])
         self.assertIn("truncado", contexto_espn(snapshot(), session=s))
         self.assertEqual(len(s.calls), 2)
+
+    def test_http_400_no_historico_identifica_fase_sem_dados_sensiveis(self):
+        class Historico400(Sessao):
+            def get(self, url, params=None, timeout=None):
+                r = super().get(url, params=params, timeout=timeout)
+                if len(self.calls) == 2:
+                    return Resposta({"message": "segredo interno do fornecedor"}, status=400)
+                return r
+
+        sessao = Historico400()
+        texto = contexto_espn(snapshot(), session=sessao)
+        self.assertIn("histórico do ano: HTTP 400", texto)
+        self.assertNotIn("segredo interno", texto)
+        self.assertNotIn("https://", texto)
+        self.assertEqual(len(sessao.calls), 2)
+        self.assertEqual(sessao.calls[1][1]["dates"], "2030")
+
+    def test_ano_civil_nao_importa_resultados_do_ano_anterior(self):
+        p = snapshot()
+        p["timestamp_jogo"] = datetime(2030, 1, 20, 19, tzinfo=timezone.utc).timestamp()
+        p["criada_em"] = datetime(2030, 1, 20, 9, tzinfo=timezone.utc).isoformat()
+        fixture = event(1000, "2030-01-20", finished=False)
+        sessao = Sessao(
+            fixture=[fixture],
+            historico=[
+                event(51, "2029-12-20", home_id=101, away_id=303,
+                      home_name="Casa Real", away_name="Rival A"),
+                event(52, "2030-01-10", home_id=101, away_id=303,
+                      home_name="Casa Real", away_name="Rival A"),
+            ],
+        )
+        texto = contexto_espn(p, session=sessao)
+        self.assertIn("01/01/2030 a 19/01/2030", texto)
+        self.assertIn("10/01 (C) vs Rival A", texto)
+        self.assertNotIn("20/12", texto)
+        self.assertIn("limitada ao ano consultado", texto)
+        self.assertEqual(sessao.calls[1][1]["dates"], "2030")
+        self.assertEqual(len(sessao.calls), 2)
 
     def test_resultados_sem_final_ignorado(self):
         s = Sessao(historico=[event(99, "2030-10-10", finished=False)])
