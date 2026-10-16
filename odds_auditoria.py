@@ -498,6 +498,8 @@ class AuditoriaOdds:
                 selecao["_odds_descoberta"] = recolher_pistas(
                     jogo, eventos, n_primarios, complemento_consultado,
                     self._nome_equipa_compativel,
+                    normalizar=self._normalizar,
+                    timestamp_fn=self._timestamp_iso,
                 )
                 self._registar_diagnostico(
                     selecao,
