@@ -4,7 +4,7 @@ Não usa probabilidades aleatórias nem odds fabricadas. A versão atual calcula
 probabilidades de modelo e uma odd justa/mínima; odds reais de mercado entram
 como camada independente de auditoria e não alteram a seleção da V1.
 """
-from collections import OrderedDict
+from math import isfinite
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -231,105 +231,138 @@ class AnalisadorInteligente:
         return list(self.ultimas_selecoes)
 
     def gerar_relatorio(self, jogos, selecoes=None):
-        """Relatório público/compacto com apresentação premium."""
+        """Vitrine de sugestões /analisa, sem alterar o modelo ou selecionar apostas.
+
+        O preço real é apenas o que foi observado na execução, não uma odd
+        em direto. Grupos são exclusivamente uma apresentação das seleções
+        originais e não entram em SEL1, Top5, coortes ou gate.
+        """
         if selecoes is None:
             selecoes = self.gerar_todas_apostas(jogos)
         r = self.ultimo_resumo
-        nome_selecoes = "SELEÇÃO" if r["selecoes"] == 1 else "SELEÇÕES"
+        total = len(selecoes)
         linhas = [
             f"🎯 ANÁLISE PREMIUM — {self.data_hoje}",
-            f"📊 {r['selecoes']} {nome_selecoes} PARA HOJE",
-            f"🧠 Modelo {self.MODELO_VERSAO} • Probabilidade conservadora",
+            "━━━━━━━━━━━━━━━━━━━━",
+            f"⚽ {total} " + ("SUGESTÃO" if total == 1 else "SUGESTÕES") + " DO MODELO",
+            f"🧠 V{self.MODELO_VERSAO.lstrip('V')} · Prognósticos estatísticos",
+            "🔒 Ranking e mercados definidos antes de consultar as odds",
         ]
 
         if not selecoes:
-            linhas.extend(
-                [
-                    "",
-                    "✅ Nenhuma seleção passou os filtros hoje.",
-                    "O modelo não força apostas quando os dados ou a probabilidade não chegam ao mínimo.",
-                ]
-            )
+            linhas.extend([
+                "",
+                "🛡️ NENHUMA SUGESTÃO HOJE",
+                "Nenhuma seleção passou os filtros. O modelo não força apostas.",
+                f"📚 Jogos analisados: {r['jogos']} | Com dados: {r['com_dados']}",
+            ])
             return "\n".join(linhas)
 
-        grupos = OrderedDict()
-        for s in sorted(selecoes, key=lambda x: str((x.get("jogo") or {}).get("horario") or "99:99")):
-            hora = str((s.get("jogo") or {}).get("horario") or "--:--")
-            grupos.setdefault(hora, []).append(s)
+        def odd_segura(valor):
+            try:
+                odd = float(valor)
+            except (ValueError, TypeError, OverflowError):
+                return None
+            return odd if isfinite(odd) and 1.0 < odd < 1000 else None
 
-        numero = 1
-        odds_reais = 0
-        com_valor = 0
-        abaixo_minima = 0
-        sem_odd = 0
-        for hora, itens in grupos.items():
-            linhas.extend(["", f"⏰ {hora} — JOGOS"])
-            for indice_item, s in enumerate(itens):
-                if indice_item:
-                    linhas.append("")
-                j = s["jogo"]
-                risco, estrelas = self._risco_e_estrelas(s["confianca"])
-                liga_original = j.get("liga") or "Competição"
+        grupos = {"valor": [], "sem_odd": [], "abaixo": []}
+        for item in selecoes:
+            real = odd_segura(item.get("odd_real"))
+            minima = odd_segura(item.get("odd_minima"))
+            if real is None or minima is None:
+                grupo = "sem_odd"
+            elif real >= minima:
+                grupo = "valor"
+            else:
+                grupo = "abaixo"
+            grupos[grupo].append((item, real, minima))
+
+        def ordem(entrada):
+            selecao = entrada[0]
+            try:
+                rank = int(selecao.get("ranking_modelo") or 999)
+            except (TypeError, ValueError, OverflowError):
+                rank = 999
+            jogo = selecao.get("jogo") or {}
+            return (rank, str(jogo.get("horario") or "99:99"), str(jogo.get("id") or ""))
+
+        for entradas in grupos.values():
+            entradas.sort(key=ordem)
+
+        linhas.extend([
+            "",
+            f"💎 {len(grupos['valor'])} odds ≥ mínimo  ·  🟡 {len(grupos['sem_odd'])} sem odd",
+            f"🔴 {len(grupos['abaixo'])} abaixo do mínimo",
+        ])
+
+        def bloco(cabecalho, grupo):
+            entradas = grupos[grupo]
+            if not entradas:
+                return
+            linhas.extend(["", "━━━━━━━━━━━━━━━━━━━━", f"{cabecalho} ({len(entradas)})", "━━━━━━━━━━━━━━━━━━━━"])
+            for selecao, real, minima in entradas:
+                jogo = selecao.get("jogo") or {}
+                liga_original = jogo.get("liga") or "Competição"
                 liga = nome_liga_pt(liga_original)
                 bandeira = self._bandeira_liga(liga_original)
-                linhas.extend(
-                    [
-                        f"#{numero} {risco}",
-                        f"   ⚽ {j.get('casa')} vs {j.get('fora')}",
-                        f"   🏆 {bandeira} {liga}",
-                        f"   💰 {s['mercado']}",
-                        f"   🏅 Ranking modelo: #{s['ranking_modelo']}" if s.get("ranking_modelo") else "   🏅 Ranking modelo: histórico",
-                        f"   📈 {self._fmt_num(s['probabilidade']*100, 1)}% | Odd justa {self._fmt_num(s['odd_justa'])}",
-                        f"   ✅ Odd mínima: ≥ {self._fmt_num(s['odd_minima'])}",
-                    ]
-                )
-                tem_odd_real = False
-                try:
-                    odd_real = float(s.get("odd_real"))
-                    if odd_real > 1.0:
-                        tem_odd_real = True
-                        ev = float(s.get("ev_real", (float(s["probabilidade"]) * odd_real) - 1.0))
-                        sinal = "+" if ev >= 0 else ""
+                rank = selecao.get("ranking_modelo")
+                rotulo_rank = f"#{rank}" if rank else "histórico"
+                hora = str(jogo.get("horario") or "--:--")
+                probabilidade = self._fmt_num(selecao["probabilidade"] * 100, 1)
+                odd_justa = self._fmt_num(selecao["odd_justa"])
+                minima_fmt = self._fmt_num(minima if minima is not None else selecao["odd_minima"])
+                confianca = str(selecao.get("confianca") or "não indicada")
+                mercado = str(selecao.get("mercado") or "Mercado por identificar")
+                linhas.extend([
+                    "",
+                    f"🏅 RANKING {rotulo_rank}  ·  ⏰ {hora}",
+                    f"⚽ {jogo.get('casa') or '?'} vs {jogo.get('fora') or '?'}",
+                    f"🏆 {bandeira} {liga}",
+                    f"🎯 {mercado}",
+                ])
+                if grupo == "valor":
+                    linhas.extend([
+                        f"📈 Modelo {probabilidade}% · Confiança {confianca}",
+                        f"💶 Odd registada {self._fmt_num(real)}  |  Mín. {minima_fmt}",
+                        f"⚖️ Odd justa {odd_justa}  |  Dados {selecao['qualidade']}/100",
+                    ])
+                    ev = (float(selecao["probabilidade"]) * real - 1.0) if real is not None else 0.0
+                    alertas = selecao.get("_odds_alertas") or []
+                    distancia = real / minima - 1 if minima else 0.0
+                    if (alertas or ev >= 0.25 or distancia >= 0.25):
                         linhas.append(
-                            f"   💶 Odd real {self._fmt_num(odd_real)} | EV {sinal}{self._fmt_num(ev*100, 1)}%"
+                            f"⚠️ PREÇO/EV INVULGAR — verificar o evento e a odd "
+                            f"(EV do modelo {ev*100:+.1f}%)".replace(".", ",")
                         )
-                        odds_reais += 1
-                        if odd_real >= float(s["odd_minima"]):
-                            linhas.append("   🟢 VALOR CONFIRMADO — odd real ≥ odd mínima")
-                            com_valor += 1
-                        else:
-                            linhas.append("   🔴 SEM VALOR À ODD ATUAL — abaixo da odd mínima")
-                            abaixo_minima += 1
-                except (TypeError, ValueError):
-                    tem_odd_real = False
+                    else:
+                        linhas.append("🟢 VALOR CONFIRMADO — pelo critério da odd mínima do modelo")
+                elif grupo == "sem_odd":
+                    linhas.extend([
+                        f"📈 Modelo {probabilidade}% · Confiança {confianca}",
+                        f"🟡 Odd por confirmar  |  Mínima ≥ {minima_fmt}",
+                        f"⚪ ODD REAL INDISPONÍVEL — Odd justa {odd_justa}",
+                    ])
+                else:
+                    linhas.extend([
+                        f"📈 Modelo {probabilidade}% · Confiança {confianca}",
+                        f"🔴 SEM VALOR À ODD ATUAL — registada {self._fmt_num(real)} < mínima {minima_fmt}",
+                    ])
 
-                if not tem_odd_real:
-                    linhas.append("   ⚪ ODD REAL INDISPONÍVEL — valor de mercado por validar")
-                    sem_odd += 1
+        bloco("💎 PREÇO ACIMA DO MÍNIMO", "valor")
+        bloco("🟡 SUGESTÕES SEM ODD CONFIRMADA", "sem_odd")
+        bloco("🔴 PREÇO ABAIXO DO MÍNIMO", "abaixo")
 
-                linhas.extend(
-                    [
-                        f"   ⭐ {estrelas}",
-                        f"   🧪 Cobertura dos dados {s['qualidade']}/100",
-                    ]
-                )
-                numero += 1
-
-        linhas.append("")
-        if odds_reais:
-            linhas.append(
-                f"💶 Odds reais congeladas: {odds_reais}/{len(selecoes)}. Servem apenas para auditoria e não alteraram as seleções da V1."
-            )
-        else:
-            linhas.append(
-                "ℹ️ Sem odds reais de mercado não mostramos ROI/EV. Esses valores só entram quando forem medidos com odds reais."
-            )
-        linhas.append(
-            f"🧭 Validação de mercado: {com_valor} com valor | {abaixo_minima} abaixo da mínima | {sem_odd} sem odd real."
-        )
-        linhas.append(
-            f"📚 Jogos analisados: {r['jogos']} | Com dados suficientes: {r['com_dados']}"
-        )
+        linhas.extend([
+            "",
+            "━━━━━━━━━━━━━━━━━━━━",
+            f"📚 Jogos analisados: {r['jogos']} | Com dados suficientes: {r['com_dados']}",
+            f"💶 Odds observadas: {len(grupos['valor']) + len(grupos['abaixo'])}/{total}",
+            f"🧭 Validação de mercado: {len(grupos['valor'])} com valor | "
+            f"{len(grupos['abaixo'])} abaixo da mínima | {len(grupos['sem_odd'])} sem odd real.",
+            "ℹ️ Odds são registos da consulta, não cotações em direto.",
+            "⚠️ Probabilidade e VALUE são estimativas do modelo, não lucro garantido.",
+            "🛡️ Um preço acima do mínimo não comprova vantagem estatística.",
+        ])
         return "\n".join(linhas)
 
     def gerar_relatorio_tecnico(self, jogos, selecoes=None):
