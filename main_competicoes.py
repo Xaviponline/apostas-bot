@@ -207,6 +207,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             f"🛡️ Integridade: {integ['divergentes']} divergencia(s) em {integ['protegidos']} snapshots selados",
             "",
             "ℹ️ /clv_diagnostico — detalhes de fechos em falta",
+            "ℹ️ /consistencia — snapshots do dia, rankings e odds invulgares",
             "ℹ️ /odds_verificacao — EV/fixtures invulgares; /quota_plano — consumo diario",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
@@ -1657,6 +1658,22 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                         resposta = auditoria.relatorio(status)
             except (OSError, RuntimeError, ValueError, TypeError, KeyError, requests.RequestException):
                 resposta = "⚠️ Auditoria de odds/quota temporariamente indisponivel."
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/consistencia":
+            if not owner_admin:
+                return
+            try:
+                from auditoria_consistencia_shadow import relatorio_consistencia
+                resposta = relatorio_consistencia(
+                    self.previsoes.dados.get("previsoes", [])
+                )
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "🛡️ Auditoria de consistência indisponível. "
+                    "Nenhum snapshot, modelo ou odd foi modificado."
+                )
             self.enviar_mensagem(chat_id, resposta)
             return
 
