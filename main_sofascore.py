@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
 import logging
+from math import isfinite
 from contextlib import nullcontext
 import os
 import re
@@ -359,7 +360,6 @@ class BotPremiumReal:
             if not isinstance(ts, (int, float)):
                 continue
             # Não aceitar timestamps inválidos (NaN/infinito) ou fora da janela.
-            from math import isfinite
             inicio_ts = float(ts)
             if not isfinite(inicio_ts) or not agora_ts < inicio_ts <= limite_ts:
                 continue
