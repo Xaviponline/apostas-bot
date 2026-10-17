@@ -63,7 +63,7 @@ class AnalisaVitrinePremiumTests(unittest.TestCase):
     def test_preco_maior_que_minimo_nao_e_aposta_garantida(self):
         texto = self._relatorio([selecao(1, "17:00", 1.62, 1.50, 0.66)])
         self.assertIn("1 SUGESTÃO DO MODELO", texto)
-        self.assertIn("🟢 VALOR PELO CRITÉRIO DO MODELO", texto)
+        self.assertIn("🟢 VALOR CONFIRMADO", texto)
         self.assertNotIn("⚠️ PREÇO/EV INVULGAR", texto)
         self.assertIn("não comprova vantagem estatística", texto)
 
@@ -72,7 +72,7 @@ class AnalisaVitrinePremiumTests(unittest.TestCase):
             selecao(5, "19:00", 1.70, 1.55, 0.66, ["competicao_divergente"])
         ])
         self.assertIn("⚠️ PREÇO/EV INVULGAR", texto)
-        self.assertNotIn("🟢 VALOR PELO CRITÉRIO DO MODELO", texto)
+        self.assertNotIn("🟢 VALOR CONFIRMADO", texto)
 
     def test_odd_nao_finita_nao_confirma_preco(self):
         texto = self._relatorio([selecao(4, "15:00", float("nan"))])
