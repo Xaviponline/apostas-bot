@@ -140,6 +140,34 @@ class EstudoFormaEspnTests(unittest.TestCase):
         self.assertIn("truncado", contexto_espn(snapshot(), session=s))
         self.assertEqual(len(s.calls), 2)
 
+    def test_pedido_maior_que_500_recupera_forma_sem_terceiro_pedido(self):
+        historico = [
+            event(
+                2000 + i, "2030-10-10",
+                home_id=101 if i == 0 else 5000 + i,
+                away_id=303 if i == 0 else 7000 + i,
+                home_name="Casa Real" if i == 0 else f"Casa {i}",
+                away_name="Rival A" if i == 0 else f"Fora {i}",
+            ) for i in range(600)
+        ]
+        s = Sessao(historico=historico)
+        original = copy.deepcopy(snapshot())
+        texto = contexto_espn(original, session=s)
+        self.assertIn("10/10 (C) vs Rival A: 2-1", texto)
+        self.assertNotIn("truncado", texto)
+        self.assertEqual(len(s.calls), 2)
+        self.assertEqual(s.calls[1][1]["limit"], 1000)
+        self.assertEqual(original, snapshot())
+
+    def test_limite_1000_atingido_ainda_suspende_com_seguranca(self):
+        historico = [event(5000 + i, "2030-10-10") for i in range(1000)]
+        s = Sessao(historico=historico)
+        detalhes = {}
+        texto = contexto_espn(snapshot(), session=s, detalhes=detalhes)
+        self.assertIn("potencialmente truncado", texto)
+        self.assertEqual(detalhes, {})
+        self.assertEqual(len(s.calls), 2)
+
     def test_http_400_no_historico_identifica_fase_sem_dados_sensiveis(self):
         class Historico400(Sessao):
             def get(self, url, params=None, timeout=None):
