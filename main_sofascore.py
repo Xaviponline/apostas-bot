@@ -398,9 +398,20 @@ class BotPremiumReal:
         )
         resumo = self.previsoes.atualizar_estado_mercado(enriquecidas)
         fechos = int(resumo.get('fechos_capturados') or 0)
+        self._registar_tentativa_clv(candidatas, "consulta_concluida", enriquecidas)
         if fechos:
             logging.info('CLV_AUTO | %s closing line(s) capturada(s)', fechos)
         return fechos
+
+    def _registar_tentativa_clv(self, candidatas, estado, enriquecidas=None):
+        """Telemetria local: uma falha de auditoria nunca impede o CLV."""
+        try:
+            from clv_tentativas import DiarioTentativasCLV
+            diario = DiarioTentativasCLV.para_previsoes(self.previsoes)
+            if diario is not None:
+                diario.registar(self.previsoes, candidatas, estado, enriquecidas)
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+            logging.warning('CLV_AUDITORIA | diario indisponivel; captura oficial intacta')
 
     def _contexto_odds(self, operacao):
         contexto = getattr(self.odds, "contexto_operacao", None)
@@ -462,12 +473,14 @@ class BotPremiumReal:
         self._proxima_captura_clv = agora + self.CLV_AUTO_INTERVALO_SEG
 
         if not self._quota_permite_captura("CLV_AUTO"):
+            self._registar_tentativa_clv(candidatas, "quota_nao_autorizou")
             return 0
 
         try:
             with self._contexto_odds("CLV_AUTO"):
                 return self._capturar_clv_pendentes(candidatas)
         except (requests.RequestException, RuntimeError, ValueError, TypeError):
+            self._registar_tentativa_clv(candidatas, "consulta_interrompida")
             logging.warning('CLV_AUTO | captura indisponível; tenta novamente mais tarde')
             return 0
 
