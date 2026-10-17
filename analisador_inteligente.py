@@ -244,7 +244,7 @@ class AnalisadorInteligente:
         linhas = [
             f"🎯 ANÁLISE PREMIUM — {self.data_hoje}",
             "━━━━━━━━━━━━━━━━━━━━",
-            f"⚽ {total} SUGESTÃO" + (" DO MODELO" if total == 1 else "ÕES DO MODELO"),
+            f"⚽ {total} " + ("SUGESTÃO" if total == 1 else "SUGESTÕES") + " DO MODELO",
             f"🧠 V{self.MODELO_VERSAO.lstrip('V')} · Prognósticos estatísticos",
             "🔒 Ranking e mercados definidos antes de consultar as odds",
         ]
