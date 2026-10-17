@@ -56,3 +56,71 @@ class DiarioTentativasCLV:
         finally:
             if os.path.exists(temp):
                 os.unlink(temp)
+
+    def registar(self, previsoes, selecoes, estado, enriquecidas=None, agora=None):
+        """Regista só factos do ciclo já executado; sem consulta adicional.
+
+        Um diagnóstico desconhecido nunca é transformado em causa certa.
+        """
+        if estado not in {"consulta_concluida", "quota_nao_autorizou", "consulta_interrompida"}:
+            raise ValueError("Estado de captura não reconhecido")
+        agora = agora or datetime.now(timezone.utc)
+        if agora.tzinfo is None:
+            raise ValueError("Hora UTC inválida")
+        instante = agora.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        indices = {
+            (str(p.get("event_id")), str(p.get("mercado"))): (i, p)
+            for i, p in enumerate(previsoes.dados.get("previsoes", []), 1)
+        }
+        extras = {
+            (str((s.get("jogo") or {}).get("id")), str(s.get("mercado"))): s
+            for s in (enriquecidas or [])
+        }
+        eventos = []
+        for s in (selecoes or []):
+            chave = (str((s.get("jogo") or {}).get("id")), str(s.get("mercado")))
+            if chave not in indices:
+                continue
+            indice, previsao = indices[chave]
+            enriquecida = extras.get(chave) or {}
+            if estado != "consulta_concluida":
+                resultado, motivo = "sem_fecho", estado
+            elif previsoes._odd_real_valida(previsao.get("odd_fecho")) is not None:
+                resultado, motivo = "fecho_capturado", "fecho_persistido"
+            else:
+                resultado = "sem_fecho"
+                codigo = str(enriquecida.get("_odds_diag") or "")
+                if codigo in self.MOTIVOS:
+                    motivo = codigo
+                elif enriquecida.get("odd_real") is not None:
+                    motivo = "cotacao_sem_fecho_persistido"
+                else:
+                    motivo = "motivo_nao_confirmado"
+            eventos.append({
+                "snapshot": indice,
+                "data_jogo": str(previsao.get("data_jogo") or ""),
+                "registado_em": instante,
+                "resultado": resultado,
+                "motivo": motivo,
+            })
+        if not eventos:
+            return 0
+        dados = self._ler()
+        dados["eventos"].extend(eventos)
+        self._guardar(dados)
+        return len(eventos)
+
+    def por_snapshot(self):
+        """Contagens e última observação; histórico vazio ≠ ausência de tentativa."""
+        resumo = {}
+        for e in self._ler()["eventos"]:
+            try:
+                indice = int(e.get("snapshot"))
+            except (ValueError, TypeError):
+                continue
+            if indice < 1:
+                continue
+            item = resumo.setdefault(indice, {"tentativas": 0, "ultima": None})
+            item["tentativas"] += 1
+            item["ultima"] = e
+        return resumo
