@@ -26,6 +26,7 @@ from odds_rastreio import RastreioOdds
 from backup_externo import BackupExterno
 from vigilancia_externa import VigilanciaExterna
 from rotinas_diarias import RotinasDiarias
+from alertas_prejogo import AlertasPreJogo
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
@@ -63,6 +64,10 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         self._rotinas_diarias = RotinasDiarias(
             pasta_estado / "rotinas_diarias_estado.json" if pasta_estado else None
         )
+        self._alertas_prejogo = AlertasPreJogo(
+            pasta_estado / "alertas_prejogo_owner.json" if pasta_estado else None
+        )
+        self._proximo_check_prejogo = 0.0
 
     def _executar_analise(self, tecnica=False):
         """Analise normal intacta; export SHADOW best-effort depois do registo.
@@ -90,6 +95,26 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             logging.warning("PLATT_SHADOW | export indisponível; produção intacta")
         return resposta
 
+    def _avisar_prejogo_se_devido(self):
+        """Avisos OWNER T-60m, sem consultar fornecedores, a cada 30s."""
+        if not self.owner_id or not self.chat_id:
+            return 0
+        agora = time.monotonic()
+        if agora < getattr(self, "_proximo_check_prejogo", 0.0):
+            return 0
+        self._proximo_check_prejogo = agora + 30
+        try:
+            enviados = self._alertas_prejogo.avisar(
+                self.previsoes.dados.get("previsoes", []),
+                lambda msg: self.enviar_mensagem(self.chat_id, msg),
+            )
+            if enviados:
+                logging.info("ALERTA_PREJOGO | %s selecao(oes) enviada(s) ao OWNER", enviados)
+            return enviados
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError, requests.RequestException):
+            logging.warning("ALERTA_PREJOGO | envio indisponivel; previsoes/odds intactas")
+            return 0
+
     def _rotinas_diarias_se_devido(self):
         """ESPN e relatorio OWNER, isolados de odds, CLV e Telegram polling."""
         try:
@@ -107,6 +132,10 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     logging.info("RELATORIO_AUTO | resumo diario OWNER enviado")
             except Exception:
                 logging.warning("RELATORIO_AUTO | entrega indisponivel; nenhuma odd alterada")
+
+        # Independente da liquidação e do relatório diário: após polling
+        # Telegram, o aviso é avaliado mesmo que a rotina ESPN falhe.
+        self._avisar_prejogo_se_devido()
 
     def _ping_externo_se_devido(self):
         """So e chamado depois de polling Telegram e tarefas sem excecao."""
@@ -234,6 +263,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "",
             "ℹ️ /clv_diagnostico — detalhes de fechos em falta",
             "ℹ️ /consistencia — snapshots do dia, rankings e odds invulgares",
+            "ℹ️ /alertas_prejogo — avisos OWNER T-60m, anti-duplicados",
             "ℹ️ /lab_platt_prospectivo — teste da calibração pré-registada",
             "ℹ️ /odds_verificacao — EV/fixtures invulgares; /quota_plano — consumo diario",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
@@ -1772,6 +1802,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "🛡️ Auditoria de consistência indisponível. "
                     "Nenhum snapshot, modelo ou odd foi modificado."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/alertas_prejogo":
+            if not owner_admin:
+                return
+            try:
+                resposta = self._alertas_prejogo.relatorio(
+                    self.previsoes.dados.get("previsoes", [])
+                )
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                resposta = (
+                    "🔔 Alertas pré-jogo temporariamente indisponíveis. "
+                    "Sem alterações a odds ou previsões."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
