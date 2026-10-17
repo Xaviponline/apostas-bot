@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
 import logging
+from math import isfinite
 from contextlib import nullcontext
 import os
 import re
@@ -340,11 +341,12 @@ class BotPremiumReal:
         agora = datetime.now(ZoneInfo('Europe/Lisbon'))
         agora_ts = agora.timestamp()
         limite_ts = agora_ts + (self.CLV_TARDIO_JANELA_SEG if tardio else self.CLV_AUTO_JANELA_SEG)
-        data_iso = agora.strftime('%Y-%m-%d')
+        # O timestamp e a fonte de verdade: um jogo logo apos a meia-noite
+        # entra na janela T-30m ainda durante o dia local anterior.
         selecoes = []
 
         for p in self.previsoes.dados.get('previsoes', []):
-            if p.get('data_jogo') != data_iso or p.get('estado') != 'pendente':
+            if p.get('estado') != 'pendente':
                 continue
             if self.previsoes._odd_entrada_valor(p) is None:
                 continue
@@ -357,7 +359,9 @@ class BotPremiumReal:
             ts = p.get('timestamp_jogo')
             if not isinstance(ts, (int, float)):
                 continue
-            if float(ts) <= agora_ts or float(ts) > limite_ts:
+            # Não aceitar timestamps inválidos (NaN/infinito) ou fora da janela.
+            inicio_ts = float(ts)
+            if not isfinite(inicio_ts) or not agora_ts < inicio_ts <= limite_ts:
                 continue
             try:
                 prob = float(p['probabilidade'])
@@ -383,6 +387,13 @@ class BotPremiumReal:
                     'odd_minima': odd_minima,
                 }
             )
+        # Com fallback individual limitado, atender primeiro jogos que arrancam
+        # mais cedo. Não acrescenta rondas de pedidos nem altera mercados.
+        selecoes.sort(key=lambda s: (
+            float(s["jogo"]["timestamp"]),
+            str(s["jogo"].get("id") or ""),
+            str(s.get("mercado") or ""),
+        ))
         return selecoes
 
     def _capturar_clv_pendentes(self, selecoes=None):
