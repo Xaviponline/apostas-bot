@@ -336,7 +336,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         linhas = [
             f"💎 PREMIUM PICKS — {agora.strftime('%d/%m/%Y')}",
             "━━━━━━━━━━━━━━━━━━━━",
-            f"📊 {len(previsoes)} seleções ainda por começar",
+            f"📊 {len(previsoes)} seleção(ões) ainda por começar",
             f"🟢 {n_value} com VALUE registado  ·  🟡 {n_aguarda} sem odd válida",
             f"🔴 {n_sem_valor} sem VALUE / expiradas",
             "🔒 Previsões já congeladas pelo modelo",
@@ -353,8 +353,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 confianca = str(p.get("confianca_modelo") or "").strip()
                 linhas.extend([
                     "",
-                    f"🟢 {hora}  ·  RANK {rank}  ·  {confianca or 'MODELO'}",
-                    f"⚽ {p.get('casa') or '?'}  🆚  {p.get('fora') or '?'}",
+                    f"🟢 {hora}  ·  Ranking {rank}  ·  {confianca or 'MODELO'}",
+                    f"⚽ {p.get('casa') or '?'}  vs  {p.get('fora') or '?'}",
                     f"🎯 {p.get('mercado') or 'Mercado'}",
                     f"📈 Modelo {prob*100:.1f}%  ·  Odd mínima ≥ {minima:.2f}".replace(".", ","),
                     f"💰 Valor confirmado @ {odd_conf:.2f} (registado)".replace(".", ","),
@@ -365,8 +365,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             for ts, ranking, p, prob, minima, _, _, _ in grupos["aguarda"]:
                 rank = f"#{ranking}" if 1 <= ranking < 999 else "#—"
                 linhas.extend([
-                    f"⏰ {self._hora_portugal(ts)}  ·  {rank}  {p.get('casa') or '?'} 🆚 {p.get('fora') or '?'}",
-                    (f"   🎯 {p.get('mercado') or 'Mercado'}  ·  {prob*100:.1f}%  ·  mín. {minima:.2f}").replace(".", ","),
+                    f"⏰ {self._hora_portugal(ts)}  ·  Ranking {rank}  {p.get('casa') or '?'} vs {p.get('fora') or '?'}",
+                    (f"   🎯 {p.get('mercado') or 'Mercado'}  ·  {prob*100:.1f}%  ·  Odd mínima ≥ {minima:.2f}").replace(".", ","),
                     "",
                 ])
 
@@ -376,12 +376,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 rank = f"#{ranking}" if 1 <= ranking < 999 else "#—"
                 situacao = "⛔ Expirada" if estado == "expirado" else "🔴 Sem valor"
                 info_odd = (
-                    f"última odd {odd_atual:.2f} < mín. {minima:.2f}"
+                    f"última odd {odd_atual:.2f} < mínima {minima:.2f}"
                     if odd_atual is not None and odd_atual < minima
-                    else f"mín. {minima:.2f} (preço não validado)"
+                    else f"mínima {minima:.2f} (preço não validado)"
                 )
                 linhas.extend([
-                    f"⏰ {self._hora_portugal(ts)}  ·  {rank}  {p.get('casa') or '?'} 🆚 {p.get('fora') or '?'}",
+                    f"⏰ {self._hora_portugal(ts)}  ·  Ranking {rank}  {p.get('casa') or '?'} vs {p.get('fora') or '?'}",
                     (f"   🎯 {p.get('mercado') or 'Mercado'}  ·  {situacao}  ·  {info_odd}").replace(".", ","),
                     "",
                 ])
