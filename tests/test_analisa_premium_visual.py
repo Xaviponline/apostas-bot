@@ -1,6 +1,7 @@
 """Testes da apresentação /analisa, independente de odds e snapshots."""
 import copy
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from analisador_inteligente import AnalisadorInteligente
 
@@ -78,6 +79,37 @@ class AnalisaVitrinePremiumTests(unittest.TestCase):
         texto = self._relatorio([selecao(4, "15:00", float("nan"))])
         self.assertIn("🟡 1 sem odd", texto)
         self.assertNotIn("Odd registada nan", texto)
+
+    def test_jogos_ja_iniciados_nao_sao_apresentados_como_oportunidades(self):
+        passado = selecao(3, "12:30", 2.02, 1.51, 0.696)
+        passado["jogo"]["timestamp"] = (datetime.now(timezone.utc) - timedelta(hours=1)).timestamp()
+        futuro = selecao(8, "15:15", 1.72, 1.52, 0.691)
+        futuro["jogo"]["timestamp"] = (datetime.now(timezone.utc) + timedelta(hours=3)).timestamp()
+        texto = self._relatorio([passado, futuro])
+        self.assertIn("2 SUGESTÕES DO MODELO", texto)
+        self.assertIn("🕒 1 por começar  ·  ⛔ 1 já iniciados", texto)
+        self.assertIn("💎 1 odds ≥ mínimo", texto)
+        self.assertIn("JOGOS JÁ INICIADOS — HISTÓRICO (1)", texto)
+        self.assertIn("⛔ JÁ INICIADO", texto)
+        self.assertLess(texto.index("Casa 8"), texto.index("Casa 3"))
+        # A odd histórica não entra no contador VALUE para os jogos futuros.
+        self.assertIn("Odds observadas em jogos futuros: 1/1", texto)
+
+    def test_maximo_por_execucao_nao_se_confunde_com_total_diario(self):
+        entradas = [selecao(i, "15:00", None) for i in range(1, 21)]
+        extras = [selecao(19, "19:30", None), selecao(20, "21:30", 1.39, 1.54)]
+        extras[0]["jogo"]["id"] = 100999
+        extras[0]["jogo"]["casa"] = "Ronda posterior A"
+        extras[1]["jogo"]["id"] = 101000
+        extras[1]["jogo"]["casa"] = "Ronda posterior B"
+        texto = self._relatorio(entradas + extras)
+        self.assertIn("22 SUGESTÕES DO MODELO", texto)
+        self.assertIn("máximo de 20 por execução", texto)
+        self.assertIn("Rankings repetidos entre execuções: #19 (2x), #20 (2x)", texto)
+        self.assertIn("RANKING #19 ⚠️ repetido", texto)
+        self.assertIn("Ronda posterior A", texto)
+        self.assertIn("Ronda posterior B", texto)
+        self.assertIn("20 por execução", texto)
 
     def test_zero_selecoes_nao_forca_apostas(self):
         texto = self._relatorio([])
