@@ -99,12 +99,16 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         """Avisos OWNER T-60m, sem consultar fornecedores, a cada 30s."""
         if not self.owner_id or not self.chat_id:
             return 0
+        # Testes/migrações podem construir um bot sem chamar __init__.
+        alertas = getattr(self, "_alertas_prejogo", None)
+        if alertas is None:
+            return 0
         agora = time.monotonic()
         if agora < getattr(self, "_proximo_check_prejogo", 0.0):
             return 0
         self._proximo_check_prejogo = agora + 30
         try:
-            enviados = self._alertas_prejogo.avisar(
+            enviados = alertas.avisar(
                 self.previsoes.dados.get("previsoes", []),
                 lambda msg: self.enviar_mensagem(self.chat_id, msg),
             )
