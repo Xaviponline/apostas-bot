@@ -64,6 +64,32 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             pasta_estado / "rotinas_diarias_estado.json" if pasta_estado else None
         )
 
+    def _executar_analise(self, tecnica=False):
+        """Analise normal intacta; export SHADOW best-effort depois do registo.
+
+        O export usa dados já congelados e nunca paga chamadas OddsPapi.
+        Primeira exportação do processo, registos adicionais ou checkpoint a
+        cada 6h; falhas externas não alteram a resposta ou os snapshots.
+        """
+        resposta = super()._executar_analise(tecnica=tecnica)
+        lab = getattr(self, "research_lab", None)
+        if tecnica or lab is None or not lab.configurado:
+            return resposta
+        previsoes = self.previsoes.dados.get("previsoes", [])
+        agora = time.monotonic()
+        anterior = getattr(self, "_platt_lab_ultimo_total", -1)
+        proxima = getattr(self, "_platt_lab_proximo_export", 0)
+        if len(previsoes) <= anterior and agora < proxima:
+            return resposta
+        try:
+            lab.exportar(previsoes)
+            self._platt_lab_ultimo_total = len(previsoes)
+            self._platt_lab_proximo_export = agora + 6 * 3600
+            logging.info("PLATT_SHADOW | export de snapshots aceite pelo Research Lab")
+        except (requests.RequestException, RuntimeError, ValueError, TypeError, OSError):
+            logging.warning("PLATT_SHADOW | export indisponível; produção intacta")
+        return resposta
+
     def _rotinas_diarias_se_devido(self):
         """ESPN e relatorio OWNER, isolados de odds, CLV e Telegram polling."""
         try:
@@ -208,6 +234,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "",
             "ℹ️ /clv_diagnostico — detalhes de fechos em falta",
             "ℹ️ /consistencia — snapshots do dia, rankings e odds invulgares",
+            "ℹ️ /lab_platt_prospectivo — teste da calibração pré-registada",
             "ℹ️ /odds_verificacao — EV/fixtures invulgares; /quota_plano — consumo diario",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
@@ -1469,6 +1496,78 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         ])
         return "\n".join(linhas)
 
+    def _executar_lab_platt_prospectivo(self):
+        """Leitura da experiência Platt congelada, sem recalcular previsões."""
+        if not self.research_lab.configurado:
+            return "🧪 PLATT PROSPETIVA\n\n⚪ Research Lab não configurado."
+        dados = self.research_lab.status()
+        p = dados.get("platt_prospectivo") if isinstance(
+            dados.get("platt_prospectivo"), dict
+        ) else {}
+        estado = str(p.get("estado") or "NÃO_INICIADO")
+        linhas = [
+            "🧪 PLATT TOP5 — TESTE PROSPETIVO SHADOW",
+            "🔒 Probabilidades congeladas antes dos jogos; V1.2 e V1.3 intactas",
+            f"Estado: {estado}",
+        ]
+        if estado == "NÃO_INICIADO":
+            linhas.extend([
+                "⚪ Ainda não há calibrador congelado.",
+                "ℹ️ Executa /lab_export para iniciar o protocolo com dados atuais.",
+            ])
+            return "\n".join(linhas)
+        if estado == "AGUARDA_TREINO":
+            linhas.extend([
+                f"Histórico elegível: {p.get('treino_candidatos', 0)}/80",
+                f"Dias de treino: {p.get('treino_dias', 0)}/10",
+                "ℹ️ Aguarda amostra suficiente; nenhum prognóstico foi pré-registado.",
+            ])
+            return "\n".join(linhas)
+        if estado == "INDISPONÍVEL":
+            linhas.append("⚠️ Estado inacessível; não assumir que houve pré-registo.")
+            return "\n".join(linhas)
+        if estado not in {"AVALIAÇÃO_DESCRITIVA", "CHECKPOINT_ATINGIDO"}:
+            linhas.append("⚠️ Estado desconhecido; sem inferências.")
+            return "\n".join(linhas)
+        linhas.extend([
+            f"📅 Calibrador congelado: {p.get('congelado_em') or '—'}",
+            f"📚 Treino histórico: {p.get('treino_n', '?')} previsões | "
+            f"{p.get('treino_dias', '?')} dias",
+            f"🔐 Digest treino: {p.get('treino_digest') or '—'}",
+            "",
+            f"🎯 Inscritas: {p.get('previsoes', 0)}/{p.get('alvo', 100)} | "
+            f"Total armazenado: {p.get('inscritas_total', 0)}",
+            f"✅ Liquidadas: {p.get('liquidadas', 0)} | "
+            f"Dias inscritos: {p.get('dias', 0)}/20",
+            f"⚠️ Inconsistências: {p.get('avisos', 0)}",
+        ])
+        if p.get("delta_brier") is not None:
+            b1 = float(p["brier_champion"])
+            b2 = float(p["brier_platt"])
+            delta = float(p["delta_brier"])
+            linhas.extend([
+                "",
+                "📊 MESMOS JOGOS FUTUROS CONGELADOS",
+                f"Brier Champion {b1:.4f} → Platt {b2:.4f} | Δ {delta:+.4f}".replace(".", ","),
+                f"Gap Champion {float(p['gap_champion_pp']):+.1f}pp → "
+                f"Platt {float(p['gap_platt_pp']):+.1f}pp".replace(".", ","),
+            ])
+        if p.get("ic95_delta"):
+            lim = p["ic95_delta"]
+            linhas.append(
+                f"IC95 bootstrap/dia Δ Brier: [{float(lim[0]):+.4f}, "
+                f"{float(lim[1]):+.4f}]".replace(".", ",")
+            )
+            linhas.append("Checkpoint shadow: " + str(p.get("conclusao_shadow") or "INCONCLUSIVO"))
+            linhas.append("🔒 Mesmo com melhoria, promoção exige decisão humana separada.")
+        else:
+            linhas.append("⏳ Sem decisão: esperar 100 liquidadas e 20 dias distintos.")
+        linhas.extend([
+            "⚠️ Brier melhor não garante apostas rentáveis.",
+            "🔒 Sem impacto nos mercados, odds mínimas, SEL1 ou coorte V1.3.",
+        ])
+        return "\n".join(linhas)
+
     def _executar_lab_top5(self):
         if not self.research_lab.configurado:
             return "🧪 RESEARCH LAB\n\n⚪ Ainda não está configurado no Railway."
@@ -1772,7 +1871,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self.enviar_mensagem(chat_id, resposta)
             return
 
-        if comando in {"/lab_export", "/lab_status", "/lab_drift", "/lab_top5", "/lab_drift_segmentado"}:
+        if comando in {"/lab_export", "/lab_status", "/lab_drift", "/lab_top5", "/lab_drift_segmentado", "/lab_platt_prospectivo"}:
             if not owner_admin:
                 return
             try:
@@ -1784,6 +1883,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     resposta = self._executar_lab_drift()
                 elif comando == "/lab_drift_segmentado":
                     resposta = self._executar_lab_drift_segmentado()
+                elif comando == "/lab_platt_prospectivo":
+                    resposta = self._executar_lab_platt_prospectivo()
                 else:
                     resposta = self._executar_lab_top5()
             except (

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 import threading
 from typing import Any
@@ -12,6 +13,7 @@ from . import LAB_VERSION
 from .config import LabConfig
 from .dataset import validar_payload
 from .runner import executar_experimento
+from .platt_prospectivo import atualizar_protocolo, resumo_protocolo
 from .storage import LabStorage
 
 
@@ -36,6 +38,14 @@ def _executar_e_guardar(payload: dict[str, Any]) -> None:
     if not _run_lock.acquire(blocking=False):
         return
     try:
+        # Primeiro congela previsões futuras e coeficientes, ANTES da análise
+        # histórica demorada. Falhas SHADOW não bloqueiam o Research Lab normal.
+        try:
+            anterior = storage.get_json("shadow/platt_prospectivo_v1.json", default=None)
+            novo = atualizar_protocolo(anterior, payload)
+            storage.put_json("shadow/platt_prospectivo_v1.json", novo)
+        except Exception:
+            logging.exception("PLATT_SHADOW | falhou atualização isolada (sem alterar produção)")
         report = executar_experimento(payload, config)
         storage.guardar_relatorio(report)
     finally:
@@ -94,6 +104,13 @@ def status(authorization: str | None = Header(default=None)):
     _auth(authorization)
     payload = storage.get_json("datasets/latest.json", default={}) or {}
     report = storage.get_json("reports/latest.json", default=None)
+    try:
+        platt = resumo_protocolo(
+            storage.get_json("shadow/platt_prospectivo_v1.json", default=None)
+        )
+    except Exception:
+        logging.exception("PLATT_SHADOW | estado não consultável")
+        platt = {"estado": "INDISPONÍVEL"}
     return {
         "lab_version": LAB_VERSION,
         "dataset": {
@@ -102,6 +119,7 @@ def status(authorization: str | None = Header(default=None)):
             "generated_at": payload.get("generated_at"),
         },
         "report": report,
+        "platt_prospectivo": platt,
         "analysis_running": _run_lock.locked(),
     }
 
