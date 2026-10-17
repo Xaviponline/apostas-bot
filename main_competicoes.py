@@ -6,6 +6,7 @@ import requests
 from collections import Counter
 from pathlib import Path
 from datetime import datetime
+from math import isfinite
 
 from acessos_premium import GestorAcessosPremium
 from estatisticas_forma_web import EstatisticasFormaWeb
@@ -268,22 +269,43 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         ).replace(".", ",")
 
     def _executar_picks_cliente(self):
+        """Vitrine Premium: destaca VALUE, sem esconder as restantes previsoes.
+
+        Apenas leitura dos snapshots; sem consultas de odds, alteracao de
+        ranking, novos VALUE ou mudancas no protocolo comercial V1.3.
+        """
         agora = datetime.now(TZ_PORTUGAL)
         data_iso = agora.strftime("%Y-%m-%d")
         agora_ts = agora.timestamp()
         previsoes = []
+
+        def odd_valida(valor):
+            try:
+                valor = float(valor)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return valor if isfinite(valor) and valor > 1.0 else None
+
         for p in self.previsoes.dados.get("previsoes", []):
+            if not isinstance(p, dict):
+                continue
             if p.get("data_jogo") != data_iso or p.get("estado") != "pendente":
                 continue
             ts = p.get("timestamp_jogo")
-            if not isinstance(ts, (int, float)) or float(ts) <= agora_ts:
+            if not isinstance(ts, (int, float)) or not isfinite(float(ts)) or ts <= agora_ts:
                 continue
             try:
                 prob = float(p["probabilidade"])
                 odd_minima = float(p["odd_minima"])
-            except (KeyError, TypeError, ValueError):
+            except (KeyError, TypeError, ValueError, OverflowError):
                 continue
-            previsoes.append((float(ts), int(p.get("ranking_modelo") or 999), p, prob, odd_minima))
+            if not isfinite(prob) or not 0 < prob <= 1 or not isfinite(odd_minima) or odd_minima <= 1:
+                continue
+            try:
+                ranking = int(p.get("ranking_modelo") or 999)
+            except (TypeError, ValueError, OverflowError):
+                ranking = 999
+            previsoes.append((float(ts), ranking, p, prob, odd_minima))
 
         previsoes.sort(key=lambda item: (item[0], item[1]))
         if not previsoes:
@@ -293,70 +315,84 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 "Quando forem publicadas, aparecerão aqui sem alterar o modelo."
             )
 
-        estrelas = {
-            "ALTA": "⭐⭐⭐⭐⭐",
-            "MÉDIA-ALTA": "⭐⭐⭐⭐",
-            "MÉDIA": "⭐⭐⭐",
-            "BAIXA": "⭐⭐",
-        }
-        linhas = [
-            f"🎯 PREMIUM PICKS — {agora.strftime('%d/%m/%Y')}",
-            f"📊 {len(previsoes)} seleções ainda por começar",
-            "🔒 Previsões já congeladas pelo modelo",
-            "",
-        ]
-        hora_anterior = None
-        for _, ranking, p, prob, odd_minima in previsoes:
-            hora = self._hora_portugal(p.get("timestamp_jogo"))
-            if hora != hora_anterior:
-                if hora_anterior is not None:
-                    linhas.append("")
-                linhas.append(f"⏰ {hora}")
-                hora_anterior = hora
-            confianca = str(p.get("confianca_modelo") or "").strip()
-            estrela = estrelas.get(confianca, "⭐")
-            linhas.extend(
-                [
-                    f"• ⚽ {p.get('casa') or '?'} vs {p.get('fora') or '?'}",
-                    f"  💰 {p.get('mercado') or 'Mercado'}",
-                    f"  📈 {prob*100:.1f}% | Odd mínima ≥ {odd_minima:.2f}".replace(".", ","),
-                    f"  {estrela} {confianca or 'MODELO'} | Ranking #{ranking if ranking < 999 else '—'}",
-                ]
-            )
-            estado_valor = str(p.get("valor_estado") or "")
-            try:
-                odd_atual = float(p.get("odd_mercado_atual"))
-            except (TypeError, ValueError):
-                odd_atual = None
-            try:
-                odd_confirmada = float(
-                    p.get("odd_valor_confirmado", p.get("odd_real"))
-                )
-            except (TypeError, ValueError):
-                odd_confirmada = None
-            if estado_valor == "confirmado" and odd_confirmada and odd_confirmada > 1.0:
-                linhas.append(
-                    f"  🟢 Valor confirmado @ {odd_confirmada:.2f}".replace(".", ",")
-                )
-            elif estado_valor == "expirado":
-                sufixo = (
-                    f" — odd atual {odd_atual:.2f} < {odd_minima:.2f}"
-                    if odd_atual and odd_atual > 1.0
-                    else ""
-                )
-                linhas.append(("  ⛔ PICK EXPIRADO" + sufixo).replace(".", ","))
-            elif estado_valor == "sem_valor" and odd_atual and odd_atual > 1.0:
-                linhas.append(
-                    f"  🔴 Sem valor à odd {odd_atual:.2f}".replace(".", ",")
-                )
+        grupos = {"value": [], "aguarda": [], "sem_valor": []}
+        for ts, ranking, p, prob, minima in previsoes:
+            estado = str(p.get("valor_estado") or "")
+            odd_atual = odd_valida(p.get("odd_mercado_atual"))
+            odd_conf = odd_valida(p.get("odd_valor_confirmado"))
+            if odd_conf is None:
+                odd_conf = odd_valida(p.get("odd_real"))
+            item = (ts, ranking, p, prob, minima, odd_atual, odd_conf, estado)
+            if estado == "confirmado" and odd_conf is not None and odd_conf >= minima:
+                grupos["value"].append(item)
+            elif estado == "expirado" or (estado == "sem_valor" and odd_atual is not None):
+                grupos["sem_valor"].append(item)
+            else:
+                grupos["aguarda"].append(item)
 
-        linhas.extend(
-            [
-                "",
-                "ℹ️ A odd mínima é o preço mínimo de referência do modelo.",
-                "⚠️ Probabilidades são estimativas estatísticas, não garantias de resultado.",
-            ]
-        )
+        n_value = len(grupos["value"])
+        n_aguarda = len(grupos["aguarda"])
+        n_sem_valor = len(grupos["sem_valor"])
+        nome_selecoes = "seleção" if len(previsoes) == 1 else "seleções"
+        linhas = [
+            f"💎 PREMIUM PICKS — {agora.strftime('%d/%m/%Y')}",
+            "━━━━━━━━━━━━━━━━━━━━",
+            f"📊 {len(previsoes)} {nome_selecoes} ainda por começar",
+            f"🟢 {n_value} com VALUE registado  ·  🟡 {n_aguarda} sem odd válida",
+            f"🔴 {n_sem_valor} sem VALUE / expiradas",
+            "🔒 Previsões já congeladas pelo modelo",
+        ]
+
+        def cabecalho(texto, total):
+            linhas.extend(["", "━━━━━━━━━━━━━━━━━━━━", f"{texto}  ({total})", "━━━━━━━━━━━━━━━━━━━━"])
+
+        if n_value:
+            cabecalho("💎 VALUE REGISTADO", n_value)
+            for ts, ranking, p, prob, minima, _, odd_conf, _ in grupos["value"]:
+                hora = self._hora_portugal(ts)
+                rank = f"#{ranking}" if 1 <= ranking < 999 else "#—"
+                confianca = str(p.get("confianca_modelo") or "").strip()
+                linhas.extend([
+                    "",
+                    f"🟢 {hora}  ·  Ranking {rank}  ·  {confianca or 'MODELO'}",
+                    f"⚽ {p.get('casa') or '?'}  vs  {p.get('fora') or '?'}",
+                    f"🎯 {p.get('mercado') or 'Mercado'}",
+                    f"📈 Modelo {prob*100:.1f}%  ·  Odd mínima ≥ {minima:.2f}".replace(".", ","),
+                    f"💰 Valor confirmado @ {odd_conf:.2f} (registado)".replace(".", ","),
+                ])
+
+        if n_aguarda:
+            cabecalho("🟡 A AGUARDAR ODD VÁLIDA", n_aguarda)
+            for ts, ranking, p, prob, minima, _, _, _ in grupos["aguarda"]:
+                rank = f"#{ranking}" if 1 <= ranking < 999 else "#—"
+                linhas.extend([
+                    f"⏰ {self._hora_portugal(ts)}  ·  Ranking {rank}  {p.get('casa') or '?'} vs {p.get('fora') or '?'}",
+                    (f"   🎯 {p.get('mercado') or 'Mercado'}  ·  {prob*100:.1f}%  ·  Odd mínima ≥ {minima:.2f}").replace(".", ","),
+                    "",
+                ])
+
+        if n_sem_valor:
+            cabecalho("🔴 SEM VALUE / EXPIRADAS", n_sem_valor)
+            for ts, ranking, p, prob, minima, odd_atual, _, estado in grupos["sem_valor"]:
+                rank = f"#{ranking}" if 1 <= ranking < 999 else "#—"
+                situacao = "⛔ Expirada" if estado == "expirado" else "🔴 Sem valor"
+                info_odd = (
+                    f"última odd {odd_atual:.2f} < mínima {minima:.2f}"
+                    if odd_atual is not None and odd_atual < minima
+                    else f"mínima {minima:.2f} (preço não validado)"
+                )
+                linhas.extend([
+                    f"⏰ {self._hora_portugal(ts)}  ·  Ranking {rank}  {p.get('casa') or '?'} vs {p.get('fora') or '?'}",
+                    (f"   🎯 {p.get('mercado') or 'Mercado'}  ·  {situacao}  ·  {info_odd}").replace(".", ","),
+                    "",
+                ])
+
+        linhas.extend([
+            "━━━━━━━━━━━━━━━━━━━━",
+            "ℹ️ Odds apresentadas são registos históricos, não cotações em direto.",
+            "⚠️ VALUE = odd registada acima do mínimo do modelo; não prova vantagem real.",
+            "🛡️ Probabilidades e confiança são estimativas, não garantias de acerto.",
+        ])
         return "\n".join(linhas)
 
     def _executar_clientes_admin(self):
