@@ -1,5 +1,8 @@
 """Alertas Telegram OWNER pré-jogo, APENAS leitura de snapshots V1.2.
 
+Inclui ate 20 selecoes diferentes por dia, pela ordem do primeiro registo,
+sem repetir previsoes de analises adicionais ou alterar rankings.
+
 Disparo: entre T-60m e T-45m (polling até ~30 s). Sem consulta OddsPapi,
 alteração de odds/probabilidades ou impacto nos gates comerciais/shadow.
 Uma vez por evento+mercado+kickoff, persistente em disco.
@@ -19,6 +22,7 @@ TZ_PT = ZoneInfo("Europe/Lisbon")
 ANTECEDE_SEG = 60 * 60
 MARGEM_ATRASO_SEG = 15 * 60
 MAX_CARTOES_MENSAGEM = 4
+MAX_SELECOES_DIA = 20
 VERSAO_ESTADO = 1
 
 
@@ -44,7 +48,7 @@ def _rank(valor):
         i = int(valor)
     except (TypeError, ValueError, OverflowError):
         return None
-    return i if 1 <= i <= 5 else None
+    return i if 1 <= i <= MAX_SELECOES_DIA else None
 
 
 def _hora(ts):
@@ -148,34 +152,48 @@ class AlertasPreJogo:
                 os.unlink(tmp)
 
     @staticmethod
-    def _elegiveis(previsoes, agora):
+    def _selecoes_do_dia(previsoes, agora):
+        """As primeiras 20 previsões V1.2 distintas da data, independentemente
+        do estado atual. Jogos concluídos continuam a contar para o limite;
+        executar /analisa de novo não troca a coorte diária de notificações.
+        """
         if agora.tzinfo is None:
             raise ValueError("Data aware necessária")
-        ts = agora.timestamp()
         dia = agora.astimezone(TZ_PT).date().isoformat()
         vistos = set()
-        items = []
+        selecionadas = []
+        # O histórico é append-only: esta é a ordem real de registo.
         for p in previsoes or []:
             if not isinstance(p, dict) or p.get("modelo_versao") != "V1.2":
                 continue
-            if p.get("data_jogo") != dia or p.get("estado") != "pendente":
+            if p.get("data_jogo") != dia:
                 continue
             rank = _rank(p.get("ranking_modelo"))
             inicio = _numero(p.get("timestamp_jogo"))
             prob = _numero(p.get("probabilidade"))
             if rank is None or inicio is None or prob is None or not 0 < prob < 1:
                 continue
-            if not p.get("event_id") or not p.get("mercado"):
-                continue
-            # A seleção também tem de existir antes do início; não gerar
-            # alertas para snapshots com timestamps anómalos/retroativos.
-            if not ANTECEDE_SEG - MARGEM_ATRASO_SEG <= inicio - ts <= ANTECEDE_SEG:
+            if p.get("event_id") is None or not p.get("mercado"):
                 continue
             chave = _chave(p)
             if chave in vistos:
                 continue
             vistos.add(chave)
-            items.append((inicio, rank, chave, p))
+            selecionadas.append((inicio, rank, chave, p))
+            if len(selecionadas) == MAX_SELECOES_DIA:
+                break
+        return selecionadas
+
+    @classmethod
+    def _elegiveis(cls, previsoes, agora):
+        ts = agora.timestamp()
+        items = []
+        for inicio, rank, chave, p in cls._selecoes_do_dia(previsoes, agora):
+            if p.get("estado") != "pendente":
+                continue
+            # A seleção já está congelada; nunca enviar após o início.
+            if ANTECEDE_SEG - MARGEM_ATRASO_SEG <= inicio - ts <= ANTECEDE_SEG:
+                items.append((inicio, rank, chave, p))
         items.sort(key=lambda x: (x[0], x[1], x[2]))
         return items
 
@@ -196,7 +214,7 @@ class AlertasPreJogo:
             header = [
                 "🔔 ALERTA PRÉ-JOGO — ~1 HORA ANTES",
                 f"⏰ Próximos jogos a partir das {primeiro} (Portugal)",
-                f"🏅 {len(lote)} seleção(ões) Top 5 congeladas",
+                f"🏅 {len(lote)} seleção(ões) da análise diária (máx. 20)",
                 "━━━━━━━━━━━━━━━━━━━━",
             ]
             mensagem = "\n\n".join(["\n".join(header)] + [_card(p) for _, _, _, p in lote])
@@ -216,6 +234,7 @@ class AlertasPreJogo:
     def relatorio(self, previsoes, agora=None):
         dt = agora or datetime.now(timezone.utc)
         estado = self._ler()
+        total_dia = self._selecoes_do_dia(previsoes, dt)
         candidatos = self._elegiveis(previsoes, dt)
         ja_enviados = set(estado["avisados"])
         pendentes = [item for item in candidatos if item[2] not in ja_enviados]
@@ -224,7 +243,8 @@ class AlertasPreJogo:
         linhas = [
             "🔔 ALERTAS PRÉ-JOGO — ESTADO OWNER",
             "🕘 Envio entre 60 e 45 minutos antes de cada jogo, Portugal",
-            "🎯 Apenas Top 5 V1.2, futuros e pendentes",
+            "🎯 Ranking #1–#20 V1.2 da análise diária (máximo 20), futuros e pendentes",
+            f"📋 Seleções distintas registadas hoje: {len(total_dia)}/20",
             f"✅ Alertas já enviados hoje: {total_hoje}",
             f"📨 Seleções na janela de envio ainda não avisadas: {len(pendentes)}",
             "🔒 Sem chamadas OddsPapi nem alterações às previsões.",

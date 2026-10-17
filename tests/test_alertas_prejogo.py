@@ -69,7 +69,7 @@ class AlertaPreJogoTests(unittest.TestCase):
             snapshot(4, minutos=46),
             snapshot(5, minutos=44),
             snapshot(6, minutos=-10),
-            snapshot(7, minutos=59, rank=6),
+            snapshot(7, minutos=59, rank=21),
             snapshot(8, minutos=59, prob=float("nan")),
             snapshot(9, minutos=59, rank=2),
         ]
@@ -118,6 +118,67 @@ class AlertaPreJogoTests(unittest.TestCase):
         self.assertEqual(self.alertas.avisar([d1, d2, d3], mens.append, agora=AGORA), 2)
         self.assertEqual(len(mens), 1)
         self.assertIn("2 seleção(ões)", mens[0])
+
+    def test_todos_os_rankings_de_um_a_vinte_e_nao_so_top5(self):
+        rankings = [1, 5, 6, 13, 14, 17, 19, 20]
+        dados = [snapshot(200 + rank, rank=rank) for rank in rankings]
+        mensagens = []
+        self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 8)
+        self.assertEqual(len(mensagens), 2)  # 4 cartões por mensagem
+        corpo = "\n".join(mensagens)
+        for rank in rankings:
+            self.assertIn(f"RANKING #{rank}", corpo)
+        self.assertIn("máx. 20", corpo)
+        self.assertNotIn("Top 5 congeladas", corpo)
+        relatorio = self.alertas.relatorio(dados, agora=AGORA)
+        self.assertIn("Ranking #1–#20", relatorio)
+        self.assertIn("8/20", relatorio)
+
+    def test_no_maximo_20_do_dia_e_analise_repetida_nao_acrescenta(self):
+        # Primeira análise com 20 seleções. Uma segunda ronda pode ter ranks
+        # iguais e +10 jogos; não devem originar 30 alertas diários.
+        originais = [snapshot(i, rank=i) for i in range(1, 21)]
+        adicionais = [snapshot(i, rank=(i % 20) + 1) for i in range(21, 31)]
+        dados = originais + adicionais
+        antes = copy.deepcopy(dados)
+        mensagens = []
+        self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 20)
+        self.assertEqual(len(mensagens), 5)
+        self.assertEqual(dados, antes)
+        self.assertEqual(self.alertas.avisar(dados, mensagens.append,
+                                            agora=AGORA + timedelta(minutes=5)), 0)
+        self.assertEqual(len(mensagens), 5)
+        self.assertIn("20/20", self.alertas.relatorio(dados, agora=AGORA))
+        # Uma seleção concluída continua a contar para a coorte de 20;
+        # não substituir por picks novas após o início.
+        dados[0]["estado"] = "ganhou"
+        self.assertEqual(len(self.alertas._selecoes_do_dia(dados, AGORA)), 20)
+        self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 0)
+
+    def test_seis_picks_hoje_incluem_rankings_13_14_17_e_19(self):
+        dados = [
+            snapshot(101, rank=14, minutos=60),
+            snapshot(102, rank=13, minutos=60),
+            snapshot(103, rank=5, minutos=60),
+            snapshot(104, rank=17, minutos=60),
+            snapshot(105, rank=19, minutos=60, odd=1.39),
+            snapshot(106, rank=19, minutos=60, odd=None),
+        ]
+        self.assertIn("6/20", self.alertas.relatorio(dados, agora=AGORA))
+        mensagens = []
+        self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 6)
+        tudo = "\n".join(mensagens)
+        for ranking in (5, 13, 14, 17, 19):
+            self.assertIn(f"RANKING #{ranking}", tudo)
+        self.assertIn("sem odd registada", tudo)
+        self.assertIn("inferior à mínima", tudo)
+
+    def test_ranking_vinte_um_nao_enviado(self):
+        dados = [snapshot(100, rank=20), snapshot(101, rank=21)]
+        mensagens = []
+        self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 1)
+        self.assertIn("RANKING #20", mensagens[0])
+        self.assertNotIn("RANKING #21", mensagens[0])
 
     def test_estado_read_only_e_guardado_na_reinicializacao(self):
         self.alertas.avisar([snapshot()], lambda msg: None, agora=AGORA)
