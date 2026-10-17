@@ -335,16 +335,17 @@ class AnalisadorInteligente:
                             f"(EV do modelo {ev*100:+.1f}%)".replace(".", ",")
                         )
                     else:
-                        linhas.append("🟢 VALOR PELO CRITÉRIO DO MODELO — preço ≥ mínimo")
+                        linhas.append("🟢 VALOR CONFIRMADO — pelo critério da odd mínima do modelo")
                 elif grupo == "sem_odd":
                     linhas.extend([
                         f"📈 Modelo {probabilidade}% · Confiança {confianca}",
                         f"🟡 Odd por confirmar  |  Mínima ≥ {minima_fmt}",
+                        f"⚪ ODD REAL INDISPONÍVEL — Odd justa {odd_justa}",
                     ])
                 else:
                     linhas.extend([
                         f"📈 Modelo {probabilidade}% · Confiança {confianca}",
-                        f"🔴 Odd registada {self._fmt_num(real)} < mínima {minima_fmt}",
+                        f"🔴 SEM VALOR À ODD ATUAL — registada {self._fmt_num(real)} < mínima {minima_fmt}",
                     ])
 
         bloco("💎 PREÇO ACIMA DO MÍNIMO", "valor")
@@ -356,6 +357,8 @@ class AnalisadorInteligente:
             "━━━━━━━━━━━━━━━━━━━━",
             f"📚 Jogos analisados: {r['jogos']} | Com dados suficientes: {r['com_dados']}",
             f"💶 Odds observadas: {len(grupos['valor']) + len(grupos['abaixo'])}/{total}",
+            f"🧭 Validação de mercado: {len(grupos['valor'])} com valor | "
+            f"{len(grupos['abaixo'])} abaixo da mínima | {len(grupos['sem_odd'])} sem odd real.",
             "ℹ️ Odds são registos da consulta, não cotações em direto.",
             "⚠️ Probabilidade e VALUE são estimativas do modelo, não lucro garantido.",
             "🛡️ Um preço acima do mínimo não comprova vantagem estatística.",
