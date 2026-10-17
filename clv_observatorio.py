@@ -93,16 +93,35 @@ class ObservatorioCLV:
             linhas.append(f"❓ Hora de inicio indisponivel: {t['horario_indisponivel']}")
         sem = [p for p in d["detalhes"] if p["situacao"] == "sem_fecho"]
         if sem:
+            from clv_tentativas import DiarioTentativasCLV
+            diario = DiarioTentativasCLV.para_previsoes(previsoes)
+            try:
+                provas = diario.por_snapshot() if diario is not None else {}
+                diario_indisponivel = False
+            except (OSError, RuntimeError, ValueError, TypeError):
+                provas, diario_indisponivel = {}, True
             linhas.extend(["", "⚠️ FECHOS EM FALTA (mais recentes)"])
             for p in sorted(sem, key=lambda x: float(x["timestamp_jogo"] or 0), reverse=True)[:6]:
                 linhas.append(
                     f"• #{p['snapshot']} {p['data_jogo']} {p['casa']} vs {p['fora']} | {p['mercado']}"
                 )
+                evento = provas.get(int(p["snapshot"]))
+                if diario_indisponivel:
+                    linhas.append("  ↳ Diário indisponível; causa por apurar.")
+                elif evento:
+                    ultimo = evento["ultima"]
+                    linhas.append(
+                        f"  ↳ Tentativas registadas: {evento['tentativas']} | "
+                        f"Última: {ultimo.get('registado_em', '?')} | "
+                        f"Diagnóstico: {ultimo.get('motivo', 'desconhecido')}"
+                    )
+                else:
+                    linhas.append("  ↳ Sem telemetria histórica: causa não confirmada.")
             if len(sem) > 6:
                 linhas.append(f"• +{len(sem)-6} outros; consultar /carteira_detalhe")
         linhas.extend([
             "",
-            "ℹ️ Sem fecho nao indica necessariamente erro de API; causa ainda por apurar.",
+            "ℹ️ Diagnosticos instrumentados so valem desde a instalacao; historico antigo permanece desconhecido.",
             "🛡️ Nenhuma odd e inferida e nenhum dado historico e reescrito.",
             "ℹ️ Nao consulta a OddsPapi.",
         ])
