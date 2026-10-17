@@ -64,6 +64,32 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             pasta_estado / "rotinas_diarias_estado.json" if pasta_estado else None
         )
 
+    def _executar_analise(self, tecnica=False):
+        """Analise normal intacta; export SHADOW best-effort depois do registo.
+
+        O export usa dados já congelados e nunca paga chamadas OddsPapi.
+        Primeira exportação do processo, registos adicionais ou checkpoint a
+        cada 6h; falhas externas não alteram a resposta ou os snapshots.
+        """
+        resposta = super()._executar_analise(tecnica=tecnica)
+        lab = getattr(self, "research_lab", None)
+        if tecnica or lab is None or not lab.configurado:
+            return resposta
+        previsoes = self.previsoes.dados.get("previsoes", [])
+        agora = time.monotonic()
+        anterior = getattr(self, "_platt_lab_ultimo_total", -1)
+        proxima = getattr(self, "_platt_lab_proximo_export", 0)
+        if len(previsoes) <= anterior and agora < proxima:
+            return resposta
+        try:
+            lab.exportar(previsoes)
+            self._platt_lab_ultimo_total = len(previsoes)
+            self._platt_lab_proximo_export = agora + 6 * 3600
+            logging.info("PLATT_SHADOW | export de snapshots aceite pelo Research Lab")
+        except (requests.RequestException, RuntimeError, ValueError, TypeError, OSError):
+            logging.warning("PLATT_SHADOW | export indisponível; produção intacta")
+        return resposta
+
     def _rotinas_diarias_se_devido(self):
         """ESPN e relatorio OWNER, isolados de odds, CLV e Telegram polling."""
         try:
