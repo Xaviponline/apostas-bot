@@ -17,6 +17,9 @@ from estatisticas_espn import EstatisticasESPN
 TZ_PT = ZoneInfo("Europe/Lisbon")
 BASE = EstatisticasESPN.BASE
 JANELA_DIAS = 70
+# A League One inglesa pode ter mais de 500 jogos por ano civil.
+# Aumentamos apenas a capacidade da resposta, não o número de pedidos.
+LIMITE_HISTORICO = 1000
 
 
 def _hora_snapshot(previsao):
@@ -153,14 +156,19 @@ def contexto_espn(previsao, session=None, detalhes=None):
         inicio_cobertura = max(inicio, fim.replace(month=1, day=1))
         ano = str(fim.year)
         fase = "histórico do ano"
-        r2 = sessao.get(url, params={"dates": ano, "limit": 500}, timeout=(4, 12))
+        r2 = sessao.get(url, params={"dates": ano, "limit": LIMITE_HISTORICO}, timeout=(4, 12))
         r2.raise_for_status()
         payload2 = r2.json()
         eventos_historicos = payload2.get("events") if isinstance(payload2, dict) else None
         if not isinstance(eventos_historicos, list):
             return base + "\n⚪ Histórico ESPN inválido; estatísticas não inventadas."
-        if len(eventos_historicos) >= 500:
-            return base + "\n⚪ Histórico ESPN potencialmente truncado (limite de 500); análise suspensa."
+        # Um limite interno de 500 pode persistir mesmo ao pedir 1000.
+        # Se o resultado atingir um teto suspeito, manter falha fechada.
+        if len(eventos_historicos) == 500 or len(eventos_historicos) >= LIMITE_HISTORICO:
+            return (
+                base + "\n⚪ Histórico ESPN potencialmente truncado "
+                "(500 resultados ou limite de 1000 atingido); análise suspensa."
+            )
     except (requests.RequestException, ValueError, TypeError, OSError) as exc:
         if isinstance(exc, requests.HTTPError):
             status = getattr(getattr(exc, "response", None), "status_code", None)
