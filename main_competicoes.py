@@ -333,10 +333,11 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         n_value = len(grupos["value"])
         n_aguarda = len(grupos["aguarda"])
         n_sem_valor = len(grupos["sem_valor"])
+        nome_selecoes = "seleção" if len(previsoes) == 1 else "seleções"
         linhas = [
             f"💎 PREMIUM PICKS — {agora.strftime('%d/%m/%Y')}",
             "━━━━━━━━━━━━━━━━━━━━",
-            f"📊 {len(previsoes)} seleção(ões) ainda por começar",
+            f"📊 {len(previsoes)} {nome_selecoes} ainda por começar",
             f"🟢 {n_value} com VALUE registado  ·  🟡 {n_aguarda} sem odd válida",
             f"🔴 {n_sem_valor} sem VALUE / expiradas",
             "🔒 Previsões já congeladas pelo modelo",
