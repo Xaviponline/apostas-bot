@@ -5,6 +5,8 @@ probabilidades de modelo e uma odd justa/mínima; odds reais de mercado entram
 como camada independente de auditoria e não alteram a seleção da V1.
 """
 from math import isfinite
+from collections import Counter
+from datetime import timezone
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -265,10 +267,29 @@ class AnalisadorInteligente:
                 return None
             return odd if isfinite(odd) and 1.0 < odd < 1000 else None
 
+        # /analisa acumula snapshots de várias execuções ao longo do dia.
+        # Uma ronda tem no máximo MAX_SELECOES; o dia pode ter mais e
+        # repetir rankings locais. Identificar sem modificar as entradas.
+        rankings = Counter(
+            int(s["ranking_modelo"])
+            for s in selecoes
+            if isinstance(s.get("ranking_modelo"), int)
+            and not isinstance(s["ranking_modelo"], bool)
+            and s["ranking_modelo"] > 0
+        )
+        repetidos = {rank: n for rank, n in rankings.items() if n > 1}
+        agora_ts = datetime.now(timezone.utc).timestamp()
+        iniciados = []
         grupos = {"valor": [], "sem_odd": [], "abaixo": []}
         for item in selecoes:
             real = odd_segura(item.get("odd_real"))
             minima = odd_segura(item.get("odd_minima"))
+            ts = (item.get("jogo") or {}).get("timestamp")
+            # Sem timestamp não se infere que o jogo começou. Os snapshots
+            # reais têm timestamp, mas os históricos legados podem não ter.
+            if isinstance(ts, (int, float)) and isfinite(float(ts)) and float(ts) <= agora_ts:
+                iniciados.append((item, real, minima))
+                continue
             if real is None or minima is None:
                 grupo = "sem_odd"
             elif real >= minima:
@@ -288,12 +309,19 @@ class AnalisadorInteligente:
 
         for entradas in grupos.values():
             entradas.sort(key=ordem)
+        iniciados.sort(key=ordem)
+        futuros = total - len(iniciados)
 
         linhas.extend([
+            "📚 Lista acumulada do dia; máximo de 20 por execução.",
+            f"🕒 {futuros} por começar  ·  ⛔ {len(iniciados)} já iniciados",
             "",
             f"💎 {len(grupos['valor'])} odds ≥ mínimo  ·  🟡 {len(grupos['sem_odd'])} sem odd",
             f"🔴 {len(grupos['abaixo'])} abaixo do mínimo",
         ])
+        if repetidos:
+            duplicados = ", ".join(f"#{rank} ({quantidade}x)" for rank, quantidade in sorted(repetidos.items()))
+            linhas.append(f"⚠️ Rankings repetidos entre execuções: {duplicados}. Não representam um Top {total} único.")
 
         def bloco(cabecalho, grupo):
             entradas = grupos[grupo]
@@ -307,6 +335,7 @@ class AnalisadorInteligente:
                 bandeira = self._bandeira_liga(liga_original)
                 rank = selecao.get("ranking_modelo")
                 rotulo_rank = f"#{rank}" if rank else "histórico"
+                marcador_rank = " ⚠️ repetido" if rank in repetidos else ""
                 hora = str(jogo.get("horario") or "--:--")
                 probabilidade = self._fmt_num(selecao["probabilidade"] * 100, 1)
                 odd_justa = self._fmt_num(selecao["odd_justa"])
@@ -315,7 +344,7 @@ class AnalisadorInteligente:
                 mercado = str(selecao.get("mercado") or "Mercado por identificar")
                 linhas.extend([
                     "",
-                    f"🏅 RANKING {rotulo_rank}  ·  ⏰ {hora}",
+                    f"🏅 RANKING {rotulo_rank}{marcador_rank}  ·  ⏰ {hora}",
                     f"⚽ {jogo.get('casa') or '?'} vs {jogo.get('fora') or '?'}",
                     f"🏆 {bandeira} {liga}",
                     f"🎯 {mercado}",
@@ -352,11 +381,29 @@ class AnalisadorInteligente:
         bloco("🟡 SUGESTÕES SEM ODD CONFIRMADA", "sem_odd")
         bloco("🔴 PREÇO ABAIXO DO MÍNIMO", "abaixo")
 
+        if iniciados:
+            linhas.extend([
+                "", "━━━━━━━━━━━━━━━━━━━━",
+                f"⛔ JOGOS JÁ INICIADOS — HISTÓRICO ({len(iniciados)})",
+                "━━━━━━━━━━━━━━━━━━━━",
+                "Não são sugestões disponíveis para apostar.",
+            ])
+            for item, real, _ in iniciados:
+                jogo = item.get("jogo") or {}
+                rank = item.get("ranking_modelo")
+                rank_txt = f"#{rank}" if rank else "—"
+                repetido = " ⚠️ repetido" if rank in repetidos else ""
+                linhas.append(
+                    f"• {jogo.get('horario') or '--:--'} · Ranking {rank_txt}{repetido} · "
+                    f"{jogo.get('casa') or '?'} vs {jogo.get('fora') or '?'}"
+                )
+                linhas.append(f"  🎯 {item.get('mercado') or 'Mercado'} · ⛔ JÁ INICIADO")
+
         linhas.extend([
             "",
             "━━━━━━━━━━━━━━━━━━━━",
             f"📚 Jogos analisados: {r['jogos']} | Com dados suficientes: {r['com_dados']}",
-            f"💶 Odds observadas: {len(grupos['valor']) + len(grupos['abaixo'])}/{total}",
+            f"💶 Odds observadas em jogos futuros: {len(grupos['valor']) + len(grupos['abaixo'])}/{futuros}",
             f"🧭 Validação de mercado: {len(grupos['valor'])} com valor | "
             f"{len(grupos['abaixo'])} abaixo da mínima | {len(grupos['sem_odd'])} sem odd real.",
             "ℹ️ Odds são registos da consulta, não cotações em direto.",
