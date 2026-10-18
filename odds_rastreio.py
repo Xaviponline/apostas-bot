@@ -263,3 +263,153 @@ class RastreioOdds:
             "🔒 Dados locais, sem nova chamada OddsPapi, sem validação independente Betano e sem alterar apostas.",
         ])
         return "\n".join(linhas)
+
+    @staticmethod
+    def _instante(valor):
+        """Interpretar a hora de observação como UTC, sem data inferida."""
+        if not valor:
+            return None
+        try:
+            dt = datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                return None
+            return dt.timestamp()
+        except (ValueError, TypeError, OverflowError):
+            return None
+
+    def relatorio_disponibilidade(self, previsoes, agora=None):
+        """Diagnóstico READ-ONLY de odds historicas sem reconfirmação.
+
+        Um diagnostico posterior à cotação não prova retirada da odd,
+        mas impede que esta leitura a confunda com preço atual.
+        Não altera snapshot, estado de VALUE, CLV nem V1.3.
+        """
+        dt = agora or datetime.now(timezone.utc)
+        if dt.tzinfo is None:
+            raise ValueError("Hora timezone-aware necessária")
+        from datetime import timedelta
+        from math import isfinite
+
+        data_limite = (dt.astimezone(ZoneInfo("Europe/Lisbon")).date()
+                       - timedelta(days=7)).isoformat()
+        registos = previsoes.dados.get("previsoes", [])
+        alvos = {}
+        for p in registos:
+            if not isinstance(p, dict) or str(p.get("data_jogo") or "") < data_limite:
+                continue
+            minimo = p.get("odd_minima")
+            odd = p.get("odd_valor_confirmado")
+            if odd is None:
+                odd = p.get("odd_real")
+            try:
+                minimo = float(minimo)
+                odd = float(odd)
+                inicio = float(p.get("timestamp_jogo"))
+                if (not all(isfinite(x) for x in (minimo, odd, inicio))
+                    or minimo <= 1 or odd < minimo):
+                    continue
+            except (TypeError, ValueError, OverflowError):
+                continue
+            evento = p.get("event_id")
+            mercado = p.get("mercado")
+            if evento is None or not mercado:
+                continue
+            chave = (str(evento), str(mercado), int(inicio))
+            alvos[chave] = {
+                "jogo": f"{p.get('casa') or '?'} vs {p.get('fora') or '?'}",
+                "mercado": str(mercado),
+                "inicio": inicio,
+                "entrada": odd,
+                "ultimo": None,
+                "n_observacoes": 0,
+            }
+
+        if self.path is None or not self.path.exists():
+            return (
+                "🔎 VALIDADE DAS ODDS — AUDITORIA LOCAL\n"
+                "Rastreio de consultas indisponível; não é possível reconfirmar "
+                "os preços históricos. Nenhuma aposta foi alterada."
+            )
+        if self.path.is_symlink() or self.path.stat().st_size > self.MAX_BYTES:
+            raise RuntimeError("Rastreio indisponível por segurança")
+        with self.path.open("r", encoding="utf-8") as f:
+            for linha in f:
+                if not linha.strip():
+                    continue
+                item = json.loads(linha)
+                if not isinstance(item, dict):
+                    raise ValueError("Rastreio corrompido")
+                try:
+                    ini = int(float(item.get("timestamp_jogo")))
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                chave = (
+                    str(item.get("event_id_modelo") or ""),
+                    str(item.get("mercado_modelo") or ""),
+                    ini,
+                )
+                alvo = alvos.get(chave)
+                if alvo is None:
+                    continue
+                observado_ts = self._instante(item.get("observado_em"))
+                if observado_ts is None or observado_ts >= alvo["inicio"] or observado_ts > dt.timestamp():
+                    continue
+                alvo["n_observacoes"] += 1
+                atual = alvo["ultimo"]
+                # Uma observação mais antiga nunca desfaz um sinal posterior.
+                if atual is None or observado_ts >= atual["timestamp"]:
+                    cotacao = item.get("odd_observada")
+                    try:
+                        preco = float(cotacao) if cotacao is not None else None
+                        if preco is not None and (not isfinite(preco) or preco <= 1):
+                            preco = None
+                    except (TypeError, ValueError, OverflowError):
+                        preco = None
+                    alvo["ultimo"] = {
+                        "timestamp": observado_ts,
+                        "odd": preco,
+                        "diag": str(item.get("diagnostico") or ""),
+                    }
+
+        sem_preco = []
+        cotadas = 0
+        sem_dados = 0
+        for alvo in alvos.values():
+            ultima = alvo["ultimo"]
+            if ultima is None:
+                sem_dados += 1
+            elif ultima["odd"] is not None:
+                cotadas += 1
+            elif ultima["diag"]:
+                sem_preco.append(alvo)
+            else:
+                sem_dados += 1
+
+        sem_preco.sort(key=lambda p: (p["inicio"], p["jogo"]), reverse=True)
+        linhas = [
+            "🔎 VALIDADE DAS ODDS — AUDITORIA LOCAL",
+            f"📚 VALUE histórico nos últimos 7 dias: {len(alvos)} seleção(ões)",
+            f"✅ Última observação com preço: {cotadas}",
+            f"⚠️ Última observação sem cotação válida: {len(sem_preco)}",
+            f"❓ Sem observação conclusiva: {sem_dados}",
+            "",
+            "⚠️ Registo de VALUE não significa que a odd esteja disponível agora.",
+        ]
+        for alvo in sem_preco[:8]:
+            ultima = alvo["ultimo"]
+            hora = self._hora_portugal(ultima["timestamp"])
+            linhas.extend([
+                "",
+                f"⚠️ {alvo['jogo']} | {alvo['mercado']}",
+                f"  Odd histórica {alvo['entrada']:.2f} | Última tentativa: {hora}",
+                f"  Diagnóstico: {ultima['diag']} — preço NÃO reconfirmado",
+            ])
+        if len(sem_preco) > 8:
+            linhas.append(f"+{len(sem_preco)-8} sinais adicionais")
+        linhas.extend([
+            "",
+            "ℹ️ Erro/mercado ausente numa recolha não prova retirada definitiva na Betano.",
+            "ℹ️ 'Última observação com preço' também NÃO prova preço atual.",
+            "🔒 Sem novas chamadas OddsPapi, sem alterar snapshots, CLV, V1.2, V1.3 ou Platt.",
+        ])
+        return "\n".join(linhas)
