@@ -4,6 +4,8 @@ Sem consultar o fornecedor, sem credenciais e sem reescrever qualquer snapshot.
 Nao constitui confirmacao independente de odds na app Betano.
 """
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+import unicodedata
 from pathlib import Path
 import json
 import os
@@ -26,6 +28,9 @@ class RastreioOdds:
             jogo = s.get("jogo") or {}
             diag = s.get("_odds_diag")
             meta = s.get("_rastreio_odds") or {}
+            contexto = s.get("_odds_evento_contexto") or {}
+            if not isinstance(contexto, dict):
+                contexto = {}
             # Apenas metadados e cotacoes observadas; nunca guardar payload
             # integral da API, credenciais ou identificadores de clientes.
             if not meta and not diag:
@@ -71,6 +76,10 @@ class RastreioOdds:
                 "jogo": f"{jogo.get('casa') or '?'} vs {jogo.get('fora') or '?'}"[:200],
                 "event_id_modelo": str(jogo.get("id") or "")[:64],
                 "mercado_modelo": str(s.get("mercado") or "")[:80],
+                "liga_modelo": str(jogo.get("liga") or "")[:120],
+                "liga_fonte_fixture": str(contexto.get("liga_fixture") or "")[:120],
+                "liga_fonte_odds": str(contexto.get("liga_odds") or "")[:120],
+                "inicio_fonte_fixture": str(contexto.get("inicio_fixture") or "")[:64],
                 "timestamp_jogo": jogo.get("timestamp"),
                 "odd_observada": s.get("odd_real"),
                 "diagnostico": str(diag or "")[:64],
@@ -140,5 +149,117 @@ class RastreioOdds:
         linhas.extend([
             "ℹ️ Metadados observados; nao valida de forma independente a cotacao na Betano.",
             "🔒 Nao altera odds/modelo, nao consulta API e nao guarda chaves.",
+        ])
+        return "\n".join(linhas)
+
+    @staticmethod
+    def _texto_pesquisa(texto):
+        texto = unicodedata.normalize("NFKD", str(texto or ""))
+        return "".join(c for c in texto if not unicodedata.combining(c)).casefold()
+
+    @staticmethod
+    def _hora_portugal(valor):
+        if valor in (None, ""):
+            return "não registada"
+        try:
+            if isinstance(valor, (float, int)):
+                dt = datetime.fromtimestamp(float(valor), timezone.utc)
+            else:
+                dt = datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(ZoneInfo("Europe/Lisbon")).strftime("%d/%m/%Y %H:%M")
+        except (ValueError, TypeError, OverflowError, OSError):
+            return "data inválida"
+
+    def detalhe(self, termo):
+        """Pesquisa local por jogo/fixture e mostra provas existentes.
+
+        Nunca consulta OddsPapi, não reescreve o JSONL nem associa odds.
+        Campos antigos não recolhidos são explicitamente desconhecidos.
+        """
+        termo = str(termo or "").strip()
+        if not 3 <= len(termo) <= 80:
+            return (
+                "🔎 Usa /odds_rastreio_detalhe <nome da equipa ou ID do fixture>\n"
+                "Exemplos: /odds_rastreio_detalhe Estudiantes\n"
+                "          /odds_rastreio_detalhe RKC"
+            )
+        if self.path is None or not self.path.exists():
+            return "🔎 RASTREIO ODDS — Ainda não existem observações locais."
+        if self.path.is_symlink():
+            raise RuntimeError("Rastreio não pode ser symlink")
+        if self.path.stat().st_size > self.MAX_BYTES:
+            raise RuntimeError("Rastreio excede o limite de segurança")
+        busca = self._texto_pesquisa(termo)
+        total = 0
+        ultimos = []
+        with self.path.open("r", encoding="utf-8") as f:
+            for linha in f:
+                if not linha.strip():
+                    continue
+                item = json.loads(linha)
+                if not isinstance(item, dict):
+                    raise ValueError("Registo de rastreio inválido")
+                campos = (
+                    item.get("jogo"), item.get("event_id_modelo"),
+                    item.get("fixture_id_fonte"),
+                )
+                if not any(busca in self._texto_pesquisa(campo) for campo in campos):
+                    continue
+                total += 1
+                ultimos.append(item)
+                ultimos = ultimos[-3:]
+
+        if not total:
+            return (
+                f"🔎 RASTREIO ODDS — '{termo}'\n"
+                "Sem observações locais correspondentes.\n"
+                "ℹ️ Não foram feitas novas consultas à OddsPapi."
+            )
+
+        def campo(item, chave):
+            valor = item.get(chave)
+            return str(valor) if valor not in (None, "") else "não registado"
+
+        linhas = [
+            "🔎 RASTREIO ODDS — DETALHE LOCAL",
+            f"🔍 Pesquisa: {termo}",
+            f"📚 Observações encontradas: {total} | últimas {len(ultimos)}",
+            "ℹ️ As observações podem ser rondas repetidas, não jogos distintos.",
+        ]
+        for item in reversed(ultimos):
+            odd = item.get("odd_observada")
+            try:
+                odd_txt = f"{float(odd):.2f}".replace(".", ",") if odd is not None else "não registada"
+            except (TypeError, ValueError, OverflowError):
+                odd_txt = "inválida"
+            alertas = item.get("alertas_contexto") or []
+            if not isinstance(alertas, list):
+                alertas = []
+            linhas.extend([
+                "",
+                "━━━━━━━━━━━━━━━━━━━━",
+                f"⚽ {campo(item, 'jogo')}",
+                f"🎯 Modelo: {campo(item, 'mercado_modelo')} | Odd observada: {odd_txt}",
+                f"🕘 Jogo (modelo): {self._hora_portugal(item.get('timestamp_jogo'))}",
+                f"🕘 Jogo (fixture fonte): {self._hora_portugal(item.get('inicio_fonte_fixture'))}",
+                f"🏆 Liga (modelo): {campo(item, 'liga_modelo')}",
+                f"🏆 Liga (fixture): {campo(item, 'liga_fonte_fixture')}",
+                f"🏆 Liga (odds): {campo(item, 'liga_fonte_odds')}",
+                f"📡 Fonte: {campo(item, 'fonte')} | Observado: {self._hora_portugal(item.get('observado_em'))}",
+                f"🆔 Fixture fonte: {campo(item, 'fixture_id_fonte')}",
+                f"🔢 Mercado: {campo(item, 'mercado_id_fonte')} — {campo(item, 'mercado_nome_fonte')}",
+                f"📋 Período: {campo(item, 'periodo_fonte')} | Linha: {campo(item, 'linha_fonte')}",
+                f"🎯 Seleção fonte: {campo(item, 'selecao_nome_fonte')} | Ref: {campo(item, 'outcome_ref_fonte')}",
+                f"🔗 Associação: {campo(item, 'resultado_associacao')}",
+                f"🕒 Atualização odd: {campo(item, 'odds_atualizada_em')}",
+                f"⚠️ Diagnóstico: {campo(item, 'diagnostico')} | Contexto: {', '.join(str(a) for a in alertas) if alertas else 'sem alerta registado'}",
+            ])
+        linhas.extend([
+            "",
+            "ℹ️ Campos 'não registado' não podem ser reconstruídos do histórico; "
+            "competições e horas da fonte passam a ser guardadas em futuras recolhas.",
+            "🔒 Dados locais, sem nova chamada OddsPapi, sem validação independente Betano e sem alterar apostas.",
         ])
         return "\n".join(linhas)

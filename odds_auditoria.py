@@ -515,6 +515,13 @@ class AuditoriaOdds:
                 continue
 
             evento = candidatos[0]
+            # Metadados de contexto observados no fixture já associado.
+            # Diagnóstico passivo: sem influenciar matches, odds ou snapshots.
+            selecao["_odds_evento_contexto"] = {
+                "liga_fixture": str(evento.get("liga") or ""),
+                "inicio_fixture": str(evento.get("data") or ""),
+                "liga_odds": "",
+            }
             alertas_contexto = self._alertas_contexto(jogo, evento)
             if evento.get("_origem_descoberta_complementar"):
                 # Novo fixture: exige validação temporal real; nunca associar
@@ -584,6 +591,9 @@ class AuditoriaOdds:
                 continue
 
             if isinstance(dados, dict):
+                contexto = selecao.get("_odds_evento_contexto")
+                if isinstance(contexto, dict):
+                    contexto["liga_odds"] = str(dados.get("liga") or "")
                 adicionais = self._alertas_contexto(jogo, eventos_resolvidos[chave_evento], dados)
                 selecao["_odds_alertas"] = sorted(set(
                     (selecao.get("_odds_alertas") or []) + adicionais
