@@ -277,6 +277,75 @@ class RastreioOdds:
         except (ValueError, TypeError, OverflowError):
             return None
 
+    def ultimas_observacoes(self, selecoes, agora=None):
+        """Ultima recolha por event_id/mercado/kickoff, apenas evidência local.
+
+        Não prova disponibilidade atual. As leituras anteriores ao kickoff e
+        anteriores ao instante da mensagem são as únicas consideradas.
+        Nunca altera odds, previsões ou ficheiros.
+        """
+        dt = agora or datetime.now(timezone.utc)
+        if dt.tzinfo is None:
+            raise ValueError("Hora com timezone obrigatória")
+        alvos = {}
+        for p in selecoes or []:
+            if not isinstance(p, dict) or p.get("event_id") is None or not p.get("mercado"):
+                continue
+            try:
+                kickoff = float(p["timestamp_jogo"])
+                if not (float("-inf") < kickoff < float("inf")):
+                    continue
+            except (KeyError, ValueError, TypeError, OverflowError):
+                continue
+            alvos[(str(p["event_id"]), str(p["mercado"]), int(kickoff))] = kickoff
+
+        if not alvos or self.path is None or not self.path.exists():
+            return {}
+        if self.path.is_symlink() or self.path.stat().st_size > self.MAX_BYTES:
+            raise RuntimeError("Rastreio indisponível por segurança")
+        resultado = {}
+        from math import isfinite
+        with self.path.open("r", encoding="utf-8") as ficheiro:
+            for linha in ficheiro:
+                if not linha.strip():
+                    continue
+                item = json.loads(linha)
+                if not isinstance(item, dict):
+                    raise ValueError("Linha de rastreio inválida")
+                try:
+                    inicio = float(item["timestamp_jogo"])
+                    if not isfinite(inicio):
+                        continue
+                except (KeyError, ValueError, TypeError, OverflowError):
+                    continue
+                chave = (
+                    str(item.get("event_id_modelo") or ""),
+                    str(item.get("mercado_modelo") or ""),
+                    int(inicio),
+                )
+                kickoff = alvos.get(chave)
+                if kickoff is None:
+                    continue
+                obs = self._instante(item.get("observado_em"))
+                if obs is None or obs > dt.timestamp() or obs >= kickoff:
+                    continue
+                anterior = resultado.get(chave)
+                if anterior is not None and anterior["timestamp"] > obs:
+                    continue
+                preco = item.get("odd_observada")
+                try:
+                    preco = float(preco) if preco is not None else None
+                    if preco is not None and (not isfinite(preco) or preco <= 1):
+                        preco = None
+                except (ValueError, TypeError, OverflowError):
+                    preco = None
+                resultado[chave] = {
+                    "timestamp": obs,
+                    "preco": preco,
+                    "diagnostico": str(item.get("diagnostico") or "")[:64],
+                }
+        return resultado
+
     def relatorio_disponibilidade(self, previsoes, agora=None):
         """Diagnóstico READ-ONLY de odds historicas sem reconfirmação.
 

@@ -10,6 +10,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from alertas_prejogo import AlertasPreJogo
+from odds_rastreio import RastreioOdds
 from main_competicoes import BotPremiumDiarioCompeticoes
 
 
@@ -202,6 +203,86 @@ class AlertaPreJogoTests(unittest.TestCase):
         r = self.alertas.avisar(dados, mensagens.append, agora=AGORA)
         self.assertEqual(r, 1)
         self.assertEqual(len(mensagens), 2)
+
+    def test_alerta_mostra_preco_nao_reconfirmado_apos_falha_mercado(self):
+        dados = [snapshot(21)]
+        original = copy.deepcopy(dados)
+        rastreio_path = Path(self.tmp.name) / "rastreio.jsonl"
+        observacoes = [
+            (AGORA - timedelta(minutes=120), 2.02, ""),
+            (AGORA - timedelta(minutes=12), None, "mercado_nao_disponivel"),
+        ]
+        with rastreio_path.open("w", encoding="utf-8") as f:
+            for quando, odd, diag in observacoes:
+                f.write(json.dumps({
+                    "event_id_modelo": "21", "mercado_modelo": "Under 2.5 Golos",
+                    "timestamp_jogo": dados[0]["timestamp_jogo"],
+                    "observado_em": quando.isoformat(),
+                    "odd_observada": odd, "diagnostico": diag,
+                }) + "\n")
+        conteudo = rastreio_path.read_bytes()
+        alerta = AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path))
+        mensagens = []
+        self.assertEqual(alerta.avisar(dados, mensagens.append, agora=AGORA), 1)
+        self.assertIn("PREÇO NÃO RECONFIRMADO às 15:48", mensagens[0])
+        self.assertIn("mercado_nao_disponivel", mensagens[0])
+        self.assertIn("Odd registada 2,02", mensagens[0])
+        self.assertEqual(dados, original)
+        self.assertEqual(rastreio_path.read_bytes(), conteudo)
+        self.assertEqual(alerta.avisar(dados, mensagens.append, agora=AGORA + timedelta(minutes=2)), 0)
+        self.assertEqual(len(mensagens), 1)
+
+    def test_alerta_ultima_odd_nao_e_apresentada_como_preco_atual(self):
+        dados = [snapshot(22)]
+        rastreio_path = Path(self.tmp.name) / "rastreio.jsonl"
+        rastreio_path.write_text(json.dumps({
+            "event_id_modelo": "22", "mercado_modelo": "Under 2.5 Golos",
+            "timestamp_jogo": dados[0]["timestamp_jogo"],
+            "observado_em": (AGORA - timedelta(minutes=17)).isoformat(),
+            "odd_observada": 1.65,
+        }) + "\n", encoding="utf-8")
+        mensagens = []
+        AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path)).avisar(
+            dados, mensagens.append, agora=AGORA
+        )
+        self.assertIn("Última observação 15:43: odd 1,65", mensagens[0])
+        self.assertIn("não confirma disponibilidade agora", mensagens[0])
+
+    def test_outro_evento_mercado_e_obs_futura_nao_contaminam_alerta(self):
+        dados = [snapshot(23)]
+        rastreio_path = Path(self.tmp.name) / "rastreio.jsonl"
+        linhas = [
+            {"event_id_modelo": "23", "mercado_modelo": "Ambas Marcam",
+             "timestamp_jogo": dados[0]["timestamp_jogo"],
+             "observado_em": (AGORA - timedelta(minutes=5)).isoformat(),
+             "diagnostico": "mercado_nao_disponivel"},
+            {"event_id_modelo": "999", "mercado_modelo": "Under 2.5 Golos",
+             "timestamp_jogo": dados[0]["timestamp_jogo"],
+             "observado_em": (AGORA - timedelta(minutes=5)).isoformat(),
+             "diagnostico": "mercado_nao_disponivel"},
+            {"event_id_modelo": "23", "mercado_modelo": "Under 2.5 Golos",
+             "timestamp_jogo": dados[0]["timestamp_jogo"],
+             "observado_em": (AGORA + timedelta(minutes=5)).isoformat(),
+             "diagnostico": "mercado_nao_disponivel"},
+        ]
+        rastreio_path.write_text("".join(json.dumps(x) + "\n" for x in linhas), encoding="utf-8")
+        mensagens = []
+        AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path)).avisar(
+            dados, mensagens.append, agora=AGORA
+        )
+        self.assertIn("PREÇO ATUAL: não reconfirmado por observações locais", mensagens[0])
+        self.assertNotIn("mercado_nao_disponivel", mensagens[0])
+
+    def test_rastreio_ilegivel_nao_bloqueia_alerta_e_mantem_integridade(self):
+        dados = [snapshot(24)]
+        rastreio_path = Path(self.tmp.name) / "rastreio.jsonl"
+        rastreio_path.write_text("JSON inválido", encoding="utf-8")
+        original = rastreio_path.read_bytes()
+        mensagens = []
+        alerta = AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path))
+        self.assertEqual(alerta.avisar(dados, mensagens.append, agora=AGORA), 1)
+        self.assertIn("não reconfirmado por observações locais", mensagens[0])
+        self.assertEqual(rastreio_path.read_bytes(), original)
 
     def test_comando_owner_sem_envio_e_tarefa_automatica(self):
         b = BotPremiumDiarioCompeticoes.__new__(BotPremiumDiarioCompeticoes)

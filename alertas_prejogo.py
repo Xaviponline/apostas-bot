@@ -69,7 +69,7 @@ def _chave(p):
     ])
 
 
-def _card(p):
+def _card(p, ultima=None):
     ts = float(p["timestamp_jogo"])
     rank = int(p["ranking_modelo"])
     prob = float(p["probabilidade"])
@@ -113,13 +113,32 @@ def _card(p):
         linhas.append("🔴 RISCO DE PREÇO — sem odd registada; VALUE não confirmado")
     else:
         linhas.append("🔴 RISCO DE PREÇO — odd registada inferior à mínima; sem VALUE")
+    if ultima is None:
+        linhas.append("⚪ PREÇO ATUAL: não reconfirmado por observações locais antes deste alerta")
+    else:
+        hora_obs = _hora(ultima["timestamp"])
+        obs_preco = _odd(ultima.get("preco"))
+        motivo = str(ultima.get("diagnostico") or "").strip()
+        if obs_preco is not None:
+            linhas.append(
+                f"🔎 Última observação {hora_obs}: odd {_virgula(obs_preco, 2)}"
+                " — não confirma disponibilidade agora"
+            )
+        elif motivo:
+            linhas.append(
+                f"🔴 PREÇO NÃO RECONFIRMADO às {hora_obs}: {motivo}"
+                " — confirmar na Betano"
+            )
+        else:
+            linhas.append(f"⚪ Última recolha {hora_obs} sem cotação ou motivo conclusivo")
     linhas.append("ℹ️ Probabilidade do modelo pode estar sobrestimada; não representa garantia.")
     return "\n".join(linhas)
 
 
 class AlertasPreJogo:
-    def __init__(self, path):
+    def __init__(self, path, rastreio=None):
         self.path = Path(path) if path is not None else None
+        self.rastreio = rastreio
 
     def _ler(self):
         if self.path is None:
@@ -206,6 +225,15 @@ class AlertasPreJogo:
             if item[2] not in estado["avisados"]
         ]
         enviados = 0
+        observacoes = {}
+        if pendentes and self.rastreio is not None:
+            try:
+                observacoes = self.rastreio.ultimas_observacoes(
+                    [p for _, _, _, p in pendentes], agora=dt
+                )
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                # O rastreio é informativo: uma falha não pode impedir alertas.
+                observacoes = {}
         for pos in range(0, len(pendentes), MAX_CARTOES_MENSAGEM):
             lote = pendentes[pos:pos + MAX_CARTOES_MENSAGEM]
             if not lote:
@@ -217,7 +245,14 @@ class AlertasPreJogo:
                 f"🏅 {len(lote)} seleção(ões) da análise diária (máx. 20)",
                 "━━━━━━━━━━━━━━━━━━━━",
             ]
-            mensagem = "\n\n".join(["\n".join(header)] + [_card(p) for _, _, _, p in lote])
+            mensagem = "\n\n".join(
+                ["\n".join(header)] + [
+                    _card(p, observacoes.get((
+                        str(p["event_id"]), str(p["mercado"]), int(float(p["timestamp_jogo"]))
+                    )))
+                    for _, _, _, p in lote
+                ]
+            )
             mensagem += "\n\n🔒 Alerta informativo: cotação histórica, sem novas consultas nem garantia de acerto."
             enviar(mensagem)
             for _, _, chave, _ in lote:
