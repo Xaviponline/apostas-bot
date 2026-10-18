@@ -65,7 +65,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             pasta_estado / "rotinas_diarias_estado.json" if pasta_estado else None
         )
         self._alertas_prejogo = AlertasPreJogo(
-            pasta_estado / "alertas_prejogo_owner.json" if pasta_estado else None
+            pasta_estado / "alertas_prejogo_owner.json" if pasta_estado else None,
+            rastreio=self._rastreio_odds,
         )
         self._proximo_check_prejogo = 0.0
 
