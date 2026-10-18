@@ -114,7 +114,10 @@ def _card(p, ultima=None):
     else:
         linhas.append("🔴 RISCO DE PREÇO — odd registada inferior à mínima; sem VALUE")
     if ultima is None:
-        linhas.append("⚪ PREÇO ATUAL: não reconfirmado por observações locais antes deste alerta")
+        if odd_reg is None:
+            linhas.append("⚪ SEM COTAÇÃO OBSERVADA — não há preço registado para validar VALUE")
+        else:
+            linhas.append("⚪ PREÇO HISTÓRICO — sem observação local posterior que o reconfirme")
     else:
         hora_obs = _hora(ultima["timestamp"])
         obs_preco = _odd(ultima.get("preco"))
@@ -125,10 +128,16 @@ def _card(p, ultima=None):
                 " — não confirma disponibilidade agora"
             )
         elif motivo:
-            linhas.append(
-                f"🔴 PREÇO NÃO RECONFIRMADO às {hora_obs}: {motivo}"
-                " — confirmar na Betano"
-            )
+            if odd_reg is None:
+                linhas.append(
+                    f"📡 Última consulta às {hora_obs}: {motivo}"
+                    " — sem cotação válida; VALUE não confirmado"
+                )
+            else:
+                linhas.append(
+                    f"🔴 PREÇO NÃO RECONFIRMADO às {hora_obs}: {motivo}"
+                    " — confirmar na Betano"
+                )
         else:
             linhas.append(f"⚪ Última recolha {hora_obs} sem cotação ou motivo conclusivo")
     linhas.append("ℹ️ Probabilidade do modelo pode estar sobrestimada; não representa garantia.")
@@ -242,7 +251,7 @@ class AlertasPreJogo:
             header = [
                 "🔔 ALERTA PRÉ-JOGO — ~1 HORA ANTES",
                 f"⏰ Próximos jogos a partir das {primeiro} (Portugal)",
-                f"🏅 {len(lote)} seleção(ões) da análise diária (máx. 20)",
+                f"🏅 {len(lote)} {'seleção' if len(lote) == 1 else 'seleções'} da análise diária (máx. 20)",
                 "━━━━━━━━━━━━━━━━━━━━",
             ]
             mensagem = "\n\n".join(
@@ -253,7 +262,7 @@ class AlertasPreJogo:
                     for _, _, _, p in lote
                 ]
             )
-            mensagem += "\n\n🔒 Alerta informativo: cotação histórica, sem novas consultas nem garantia de acerto."
+            mensagem += "\n\n🔒 Alerta informativo: odds históricas ou ausentes, sem novas consultas nem garantia de acerto."
             enviar(mensagem)
             for _, _, chave, _ in lote:
                 estado["avisados"][chave] = dt.astimezone(timezone.utc).isoformat()
