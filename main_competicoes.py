@@ -271,6 +271,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /lab_platt_prospectivo — teste da calibração pré-registada",
             "ℹ️ /odds_verificacao — EV/fixtures invulgares; /quota_plano — consumo diario",
             "ℹ️ /odds_rastreio_detalhe Estudiantes — origem do preço observado",
+            "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
             "ℹ️ A consulta de conta nao desconta pedidos OddsPapi.",
@@ -1749,6 +1750,19 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível gerar esta área Premium neste momento. "
                     "O histórico e o modelo não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/odds_validade":
+            if not owner_admin:
+                return
+            try:
+                resposta = self._rastreio_odds.relatorio_disponibilidade(self.previsoes)
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError, ArithmeticError):
+                resposta = (
+                    "⚠️ Auditoria de validade temporariamente indisponível. "
+                    "Nenhuma odd ou previsão foi alterada."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
