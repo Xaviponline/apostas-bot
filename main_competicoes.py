@@ -270,6 +270,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /alertas_prejogo — avisos OWNER T-60m, anti-duplicados",
             "ℹ️ /lab_platt_prospectivo — teste da calibração pré-registada",
             "ℹ️ /odds_verificacao — EV/fixtures invulgares; /quota_plano — consumo diario",
+            "ℹ️ /odds_rastreio_detalhe Estudiantes — origem do preço observado",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
             "ℹ️ A consulta de conta nao desconta pedidos OddsPapi.",
@@ -1748,6 +1749,19 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível gerar esta área Premium neste momento. "
                     "O histórico e o modelo não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/odds_rastreio_detalhe":
+            if not owner_admin:
+                return
+            try:
+                resposta = self._rastreio_odds.detalhe(argumentos)
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError, ArithmeticError):
+                resposta = (
+                    "⚠️ Detalhe do rastreio indisponível. "
+                    "Não alterou snapshots, odds ou modelo."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
