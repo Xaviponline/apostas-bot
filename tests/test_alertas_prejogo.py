@@ -78,7 +78,7 @@ class AlertaPreJogoTests(unittest.TestCase):
         mens = []
         self.assertEqual(self.alertas.avisar(dados, mens.append, agora=AGORA), 2)
         self.assertEqual(len(mens), 1)
-        self.assertIn("2 seleção(ões)", mens[0])
+        self.assertIn("2 seleções", mens[0])
 
     def test_sem_odd_abaixo_ou_expirada_todos_devidamente_assinalados(self):
         d1 = snapshot(10, odd=None)
@@ -118,7 +118,7 @@ class AlertaPreJogoTests(unittest.TestCase):
         mens = []
         self.assertEqual(self.alertas.avisar([d1, d2, d3], mens.append, agora=AGORA), 2)
         self.assertEqual(len(mens), 1)
-        self.assertIn("2 seleção(ões)", mens[0])
+        self.assertIn("2 seleções", mens[0])
 
     def test_todos_os_rankings_de_um_a_vinte_e_nao_so_top5(self):
         rankings = [1, 5, 6, 13, 14, 17, 19, 20]
@@ -204,6 +204,41 @@ class AlertaPreJogoTests(unittest.TestCase):
         self.assertEqual(r, 1)
         self.assertEqual(len(mensagens), 2)
 
+    def test_celtic_sem_odd_historica_mostra_consulta_em_vez_de_reconfirmacao(self):
+        dados = [snapshot(25, rank=13, odd=None, prob=0.684, minima=1.53)]
+        dados[0]["casa"] = "Celtic"
+        dados[0]["fora"] = "Heart of Midlothian"
+        dados[0]["qualidade"] = 81
+        rastreio_path = Path(self.tmp.name) / "rastreio_celtic.jsonl"
+        rastreio_path.write_text(json.dumps({
+            "event_id_modelo": "25",
+            "mercado_modelo": "Under 2.5 Golos",
+            "timestamp_jogo": dados[0]["timestamp_jogo"],
+            "observado_em": (AGORA - timedelta(minutes=28)).isoformat(),
+            "odd_observada": None,
+            "diagnostico": "betano_sem_odds_no_evento",
+        }) + "\n", encoding="utf-8")
+        alertas = AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path))
+        originais = copy.deepcopy(dados)
+        enviados = []
+        self.assertEqual(alertas.avisar(dados, enviados.append, agora=AGORA), 1)
+        texto = enviados[0]
+        self.assertIn("1 seleção da análise diária", texto)
+        self.assertNotIn("seleção(ões)", texto)
+        self.assertIn("RISCO DE PREÇO — sem odd registada", texto)
+        self.assertIn("Última consulta às 15:32: betano_sem_odds_no_evento", texto)
+        self.assertIn("sem cotação válida; VALUE não confirmado", texto)
+        self.assertNotIn("PREÇO NÃO RECONFIRMADO", texto)
+        self.assertIn("odds históricas ou ausentes", texto)
+        self.assertEqual(dados, originais)
+
+    def test_sem_odd_sem_rastreio_nao_inventa_reconfirmacao(self):
+        dados = [snapshot(26, odd=None)]
+        enviados = []
+        self.assertEqual(self.alertas.avisar(dados, enviados.append, agora=AGORA), 1)
+        self.assertIn("SEM COTAÇÃO OBSERVADA", enviados[0])
+        self.assertNotIn("PREÇO NÃO RECONFIRMADO", enviados[0])
+
     def test_alerta_mostra_preco_nao_reconfirmado_apos_falha_mercado(self):
         dados = [snapshot(21)]
         original = copy.deepcopy(dados)
@@ -270,7 +305,7 @@ class AlertaPreJogoTests(unittest.TestCase):
         AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path)).avisar(
             dados, mensagens.append, agora=AGORA
         )
-        self.assertIn("PREÇO ATUAL: não reconfirmado por observações locais", mensagens[0])
+        self.assertIn("PREÇO HISTÓRICO — sem observação local posterior", mensagens[0])
         self.assertNotIn("mercado_nao_disponivel", mensagens[0])
 
     def test_rastreio_ilegivel_nao_bloqueia_alerta_e_mantem_integridade(self):
@@ -281,7 +316,7 @@ class AlertaPreJogoTests(unittest.TestCase):
         mensagens = []
         alerta = AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path))
         self.assertEqual(alerta.avisar(dados, mensagens.append, agora=AGORA), 1)
-        self.assertIn("não reconfirmado por observações locais", mensagens[0])
+        self.assertIn("PREÇO HISTÓRICO — sem observação local posterior", mensagens[0])
         self.assertEqual(rastreio_path.read_bytes(), original)
 
     def test_comando_owner_sem_envio_e_tarefa_automatica(self):
