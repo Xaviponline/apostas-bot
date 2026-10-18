@@ -217,7 +217,7 @@ class AlertaPreJogoTests(unittest.TestCase):
             "observado_em": (AGORA - timedelta(minutes=28)).isoformat(),
             "odd_observada": None,
             "diagnostico": "betano_sem_odds_no_evento",
-        }) + "\\n", encoding="utf-8")
+        }) + "\n", encoding="utf-8")
         alertas = AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path))
         originais = copy.deepcopy(dados)
         enviados = []
