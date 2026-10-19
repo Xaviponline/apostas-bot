@@ -107,6 +107,45 @@ class MercadosShadowTests(unittest.TestCase):
         self.assertEqual(fonte.calls, [("odds", "fixture-123")])
         self.assertEqual(dados, antes)
 
+    def test_71_mercados_cantos_sao_reportados_completos_sem_preco(self):
+        dados = [previsao()]
+        anterior = copy.deepcopy(dados)
+        mercados = [
+            {"id": str(20000 + n), "name": "Corners - Over Under Team 1",
+             "handicap": float(n) + 0.5, "period": "fulltime",
+             "odds": [{"seleção": "Over", "odd": 1.8}]}
+            for n in range(71)
+        ]
+        fonte = FonteFake(mercados=mercados, catalogo={"20000": {"name": "Cantos"}})
+        t = diagnosticar_mercado(dados, fonte, "1", lambda *a: True, agora=AGORA)
+        self.assertIn("Mercados com preços no payload: 71", t)
+        self.assertIn("Cantos: 71", t)
+        self.assertIn("Golos/BTTS: 0", t)
+        self.assertIn("Resultado/dupla hipótese: 0", t)
+        self.assertIn("Nenhum nome relacionado com golos/resultado", t)
+        self.assertIn("Nenhum mercado principal detetado", t)
+        self.assertEqual(dados, anterior)
+        self.assertEqual(fonte.calls, [("odds", "fixture-123")])
+
+    def test_nome_resultado_presente_mas_periodo_incompativel_e_assinalado(self):
+        dados = [previsao()]
+        dados[0]["mercado"] = "Vitória Fora"
+        mercados = [
+            {"id": "101", "name": "Full Time Result", "period": "p1",
+             "handicap": 0, "odds": [{"seleção": "2", "odd": 2.14}]},
+            {"id": "10008", "name": "Corners - Over Under Full Time",
+             "period": "fulltime", "handicap": 9.5,
+             "odds": [{"seleção": "Over", "odd": 1.9}]},
+        ]
+        fonte = FonteFake(mercados=mercados, catalogo={"101": {"name": "Full Time Result"}})
+        t = diagnosticar_mercado(dados, fonte, "1", lambda *a: True, agora=AGORA)
+        self.assertIn("Cantos: 1", t)
+        self.assertIn("Resultado/dupla hipótese: 1", t)
+        self.assertIn("Full Time Result", t)
+        self.assertIn("rejeitado pela regra", t)
+        self.assertIn("verificar período, variante", t)
+        self.assertNotIn("preço identificado no payload", t)
+
     def test_sem_quota_sem_consultas(self):
         fonte = FonteFake()
         t = diagnosticar_mercado([previsao()], fonte, "1", lambda *a: False, agora=AGORA)
