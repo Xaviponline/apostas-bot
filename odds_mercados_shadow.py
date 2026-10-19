@@ -31,6 +31,38 @@ def _hora_fonte(valor):
     return datetime.fromtimestamp(ts, TZ_PT).strftime("%H:%M")
 
 
+def _familia_mercado(nome):
+    """Agrupa nomes apenas para observação; NUNCA participa na extração."""
+    texto = AuditoriaOdds._normalizar(nome)
+    if "corner" in texto:
+        return "Cantos"
+    if any(p in texto for p in ("card", "booking")):
+        return "Cartões"
+    if any(p in texto for p in ("shot", "attempt")):
+        return "Remates"
+    if any(p in texto for p in ("goal", "over under full time", "btts")):
+        return "Golos/BTTS"
+    if any(p in texto for p in (
+        "result", "1x2", "1 x 2", "match winner", "double chance",
+        "three way", "match odds",
+    )):
+        return "Resultado/dupla hipótese"
+    return "Outros"
+
+
+def _familias_resumo(mercados):
+    from collections import Counter
+    familias = Counter(
+        _familia_mercado(m.get("name"))
+        for m in mercados if isinstance(m, dict)
+    )
+    ordem = ("Cantos", "Cartões", "Remates", "Golos/BTTS",
+             "Resultado/dupla hipótese", "Outros")
+    return familias, " · ".join(
+        f"{nome}: {familias.get(nome, 0)}" for nome in ordem
+    )
+
+
 def diagnosticar_mercado(previsoes, odds, argumento, permissao_quota, agora=None):
     """Consulta UM fixture de ranking atual; sem qualquer mutação persistente."""
     agora = (agora or datetime.now(TZ_PT)).astimezone(TZ_PT)
@@ -119,6 +151,7 @@ def diagnosticar_mercado(previsoes, odds, argumento, permissao_quota, agora=None
         m for m in mercados if isinstance(m, dict)
         and str(m.get("name") or "").startswith("Market ")
     ]
+    familias, resumo_familias = _familias_resumo(mercados)
     linhas = [
         f"🔬 MERCADOS ODDS PAPI — SHADOW | {hoje} | #{rank}",
         f"⚽ {_curto(p.get('casa'))} vs {_curto(p.get('fora'))}",
@@ -136,6 +169,44 @@ def diagnosticar_mercado(previsoes, odds, argumento, permissao_quota, agora=None
         + ("preço identificado no payload (NÃO confirmado para entrada V1.3)"
            if extraida is not None else _curto(motivo, 55)),
     ]
+    # Os 10 primeiros IDs podem ser apenas cantos. Dar visibilidade ao
+    # conjunto inteiro do payload, sem apresentar preços e sem modificar odds.
+    linhas.extend([
+        "",
+        "📊 FAMÍLIAS DE TODOS OS MERCADOS NO PAYLOAD (aproximação pelo nome)",
+        resumo_familias,
+    ])
+    relacionados = [
+        m for m in mercados if isinstance(m, dict)
+        and _familia_mercado(m.get("name")) in {
+            "Golos/BTTS", "Resultado/dupla hipótese"
+        }
+    ]
+    if relacionados:
+        vistos_relacionados = set()
+        linhas.append("🔎 Nomes relacionados com golos/resultado (até 8 distintos):")
+        for m in relacionados:
+            chave_nome = (
+                str(m.get("name") or ""), str(m.get("period") or ""),
+                str(m.get("handicap") or "")
+            )
+            if chave_nome in vistos_relacionados:
+                continue
+            vistos_relacionados.add(chave_nome)
+            linhas.append(
+                f"• {_curto(m.get('id'), 14)} — {_curto(m.get('name'), 46)}"
+                f" | linha {_curto(m.get('handicap'), 10)}"
+                f" | período {_curto(m.get('period'), 14)}"
+                " | " + ("compatível" if AuditoriaOdds._mercado_compativel(nome_modelo, m)
+                         else "rejeitado pela regra")
+            )
+            if len(vistos_relacionados) == 8:
+                break
+    else:
+        linhas.append(
+            "⚪ Nenhum nome relacionado com golos/resultado "
+            "identificado neste payload."
+        )
     # Não incluir preços, chaves de API, cookies nem respostas integrais.
     mostrados = sorted(
         (m for m in mercados if isinstance(m, dict)),
@@ -182,6 +253,10 @@ def diagnosticar_mercado(previsoes, odds, argumento, permissao_quota, agora=None
         linhas.append("⚠️ HIPÓTESE FORTE: mercado com ID mas sem tradução do catálogo.")
     elif not compativeis:
         linhas.append("⚠️ Mercado pretendido não identificado na resposta; causa por confirmar.")
+        if familias.get("Golos/BTTS", 0) == 0 and familias.get("Resultado/dupla hipótese", 0) == 0:
+            linhas.append("🧭 Nenhum mercado principal detetado pelos nomes; cobertura da fonte por verificar.")
+        else:
+            linhas.append("🧭 Existem nomes de golos/resultado; verificar período, variante e regra de correspondência.")
     else:
         linhas.append("ℹ️ Encontrado nome de mercado; verificar linha/outcome e período.")
     linhas.extend([
