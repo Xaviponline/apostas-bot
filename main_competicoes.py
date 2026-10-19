@@ -1035,6 +1035,38 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             rastreio, argumento=argumentos, agora=datetime.now(TZ_PORTUGAL),
         )
 
+    def _executar_odds_mercados(self, argumentos=""):
+        """Diagnóstico OWNER por ranking: apenas um fixture e metadados."""
+        from odds_mercados_shadow import diagnosticar_mercado
+        arg = str(argumentos or "").strip()
+        if not arg.isascii() or not arg.isdecimal() or not 1 <= len(arg) <= 2 or not 1 <= int(arg) <= 20:
+            return "Formato: /odds_mercados 1 (ranking de hoje, 1–20; OWNER)."
+        dia = datetime.now(TZ_PORTUGAL).date().isoformat()
+        chave = (dia, int(arg))
+        cache = getattr(self, "_diagnosticos_mercados_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._diagnosticos_mercados_cache = cache
+        if chave in cache:
+            return "♻️ Resultado da primeira consulta neste processo; zero pedidos adicionais.\n\n" + cache[chave]
+        try:
+            resposta = diagnosticar_mercado(
+                self.previsoes.dados.get("previsoes", []),
+                self.odds,
+                arg,
+                self._quota_permite_captura,
+                agora=datetime.now(TZ_PORTUGAL),
+            )
+        except (requests.RequestException, RuntimeError, OSError, ValueError,
+                TypeError, KeyError, ArithmeticError):
+            resposta = (
+                "⚠️ Diagnóstico de mercados indisponível. Nenhum snapshot, "
+                "odds congelada ou decisão comercial foi modificado."
+            )
+        # Guardar inclusive falhas para impedir repetição involuntária da API.
+        cache[chave] = resposta
+        return resposta
+
     def _executar_odds_nomes(self, argumentos=""):
         """Diagnóstico de catálogo OWNER, uma consulta por ranking/dia/processo."""
         from odds_nomes_shadow import diagnosticar_nomes
@@ -2058,6 +2090,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     "Sem alterações à V1.2, SEL1, V1.3, odds ou snapshots."
                 )
             self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/odds_mercados":
+            if not owner_admin:
+                return
+            self.enviar_mensagem(chat_id, self._executar_odds_mercados(argumentos))
             return
 
         if comando == "/odds_nomes":
