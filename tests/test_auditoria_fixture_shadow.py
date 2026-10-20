@@ -98,8 +98,14 @@ class AuditoriaFixtureShadowTest(unittest.TestCase):
             with path.open("a", encoding="utf-8") as file:
                 file.write("{registo incompleto\n")
             texto = relatorio_auditoria_fixture([p], path, agora=AGORA)
-        self.assertIn("auditoria suspensa", texto)
+        self.assertIn("Rastreio ilegivel", texto)
         self.assertNotIn("Com observacao associada: 1/1", texto)
+
+    def test_ausencia_de_rastreio_e_inconclusiva(self):
+        p = previsao()
+        texto = relatorio_auditoria_fixture([p], None, agora=AGORA)
+        self.assertIn("Contexto de fixtures insuficiente", texto)
+        self.assertNotIn("✅ Sem divergencias", texto)
 
     def test_comando_owner_sem_alteracoes(self):
         bot = BotPremiumDiarioCompeticoes.__new__(BotPremiumDiarioCompeticoes)
