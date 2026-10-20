@@ -268,6 +268,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "",
             "ℹ️ /clv_diagnostico — detalhes de fechos em falta",
             "ℹ️ /consistencia — snapshots do dia, rankings e odds invulgares",
+            "ℹ️ /auditoria_fixture — ligar snapshots a metadados da fonte, sem novas consultas",
             "ℹ️ /alertas_prejogo — avisos OWNER T-60m, anti-duplicados",
             "ℹ️ /lab_platt_prospectivo — teste da calibração pré-registada",
             "ℹ️ /odds_verificacao — EV/fixtures invulgares; /quota_plano — consumo diario",
@@ -1852,6 +1853,25 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                         resposta = auditoria.relatorio(status)
             except (OSError, RuntimeError, ValueError, TypeError, KeyError, requests.RequestException):
                 resposta = "⚠️ Auditoria de odds/quota temporariamente indisponivel."
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/auditoria_fixture":
+            if not owner_admin:
+                return
+            try:
+                from auditoria_fixture_shadow import relatorio_auditoria_fixture
+                path = getattr(self.previsoes, "path", None)
+                rastreio = Path(path).with_name("odds_rastreio.jsonl") if path else None
+                resposta = relatorio_auditoria_fixture(
+                    self.previsoes.dados.get("previsoes", []), rastreio,
+                    argumento=argumentos,
+                )
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError, ArithmeticError):
+                resposta = (
+                    "🧭 Auditoria de fixtures indisponivel. "
+                    "Zero pedidos OddsPapi; previsoes e odds intactas."
+                )
             self.enviar_mensagem(chat_id, resposta)
             return
 
