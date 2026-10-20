@@ -191,7 +191,9 @@ class ObservatorioCobertura:
     def calcular(self, snapshots=None):
         registos, historicas = self._amostras(snapshots)
         grupos = defaultdict(lambda: {"eventos": 0, "confirmados": 0, "betano_sem_odds": 0,
-                                    "mercado_indisponivel": 0, "incertos": 0, "dias": set()})
+                                    "mercado_indisponivel": 0, "incertos": 0, "dias": set(),
+                                    "ultima_com_odd": 0, "ultima_sem_odd": 0,
+                                    "ultima_inconclusiva": 0, "sem_observacao_local": 0})
         for reg in registos.values():
             if not isinstance(reg, dict):
                 continue
@@ -214,14 +216,29 @@ class ObservatorioCobertura:
             else:
                 grupo["incertos"] += 1
 
+            # A categoria historica conta se alguma vez houve preco.
+            # A ultima observacao local revela se uma consulta posterior
+            # voltou a ter preco, nao se a Betano o oferece agora.
+            ultima = reg.get("ultima_categoria")
+            if ultima == "odd_confirmada":
+                grupo["ultima_com_odd"] += 1
+            elif ultima in {"mercado_indisponivel", "betano_sem_odds"}:
+                grupo["ultima_sem_odd"] += 1
+            elif ultima == "incerto":
+                grupo["ultima_inconclusiva"] += 1
+            else:
+                # Importacao exclusiva de snapshot historico; sem consulta
+                # local posterior observada neste observatorio.
+                grupo["sem_observacao_local"] += 1
+
         saida = []
         for (liga, mercado), d in grupos.items():
             n, ok = d["eventos"], d["confirmados"]
             decisivos = d["betano_sem_odds"] + d["mercado_indisponivel"]
             dias = len(d["dias"])
-            if ok and decisivos >= 2 and n >= 5 and dias >= 2:
+            if 0 < ok < n:
                 estado = "PARCIAL OBSERVADA"
-            elif ok:
+            elif ok == n and ok > 0:
                 estado = "OBSERVADA"
             else:
                 estado = "NAO CONFIRMADA"
@@ -232,6 +249,10 @@ class ObservatorioCobertura:
                 "confirmados": ok, "betano_sem_odds": d["betano_sem_odds"],
                 "mercado_indisponivel": d["mercado_indisponivel"],
                 "incertos": d["incertos"], "estado": estado,
+                "ultima_com_odd": d["ultima_com_odd"],
+                "ultima_sem_odd": d["ultima_sem_odd"],
+                "ultima_inconclusiva": d["ultima_inconclusiva"],
+                "sem_observacao_local": d["sem_observacao_local"],
                 "candidata_revisao": rever,
             })
         saida.sort(key=lambda g: (-g["eventos"], g["liga"], g["mercado"]))
@@ -260,6 +281,12 @@ class ObservatorioCobertura:
                 f"{d['confirmados']}/{d['eventos']} com odd | "
                 f"{d['dias']} dia(s) | {d['estado']}"
             )
+            linhas.append(
+                f"  ↳ Ultima local: {d['ultima_com_odd']} com odd / "
+                f"{d['ultima_sem_odd']} sem cotacao / "
+                f"{d['ultima_inconclusiva']} inconclusiva / "
+                f"{d['sem_observacao_local']} sem recolha local"
+            )
             if d["candidata_revisao"]:
                 linhas.append("  ⚠️ Candidata a revisao manual, sem bloqueio")
             elif d["incertos"]:
@@ -271,6 +298,7 @@ class ObservatorioCobertura:
             "⚠️ Amostras limitadas a jogos selecionados, nao a todos os jogos da liga.",
             "Sem odds historicas falhadas antes deste observatorio.",
             "HTTP 400/404 e fixtures omitidos nunca provam falta de cobertura.",
+            "A ultima observacao local e historica; nao comprova odd atual na Betano.",
             "🔒 Nao exclui ligas, nao consulta a API e nao altera V1.2, SEL1 ou V1.3.",
         ])
         return "\n".join(linhas)
