@@ -48,6 +48,52 @@ class CoberturaOddsTests(unittest.TestCase):
             self.assertEqual(grupo["estado"], "OBSERVADA")
             self.assertEqual(len(json.loads(path.read_text())["observacoes"]), 1)
 
+    def test_cobertura_parcial_nao_se_chama_totalmente_observada(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            obs = ObservatorioCobertura(Path(tmp) / "dados.json")
+            obs.registar([
+                self._selecao(1, odd=2.20),
+                self._selecao(2, diag="mercado_nao_disponivel"),
+                self._selecao(3, diag="fixture_omitido_no_lote"),
+                self._selecao(4, diag="mercado_nao_disponivel"),
+            ])
+            grupo = obs.calcular()["grupos"][0]
+            self.assertEqual((grupo["confirmados"], grupo["eventos"]), (1, 4))
+            self.assertEqual(grupo["estado"], "PARCIAL OBSERVADA")
+
+    def test_distingue_odd_ja_observada_da_ultima_observacao_local(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "dados.json"
+            obs = ObservatorioCobertura(path)
+            p = self._selecao(100, odd=2.20)
+            obs.registar([p])
+            obs.registar([self._selecao(100, diag="mercado_nao_disponivel")])
+            dados = obs.calcular()
+            grupo = dados["grupos"][0]
+            self.assertEqual(grupo["confirmados"], 1)
+            self.assertEqual(grupo["ultima_com_odd"], 0)
+            self.assertEqual(grupo["ultima_sem_odd"], 1)
+            self.assertEqual(grupo["sem_observacao_local"], 0)
+            texto = obs.relatorio()
+            self.assertIn("1/1 com odd", texto)
+            self.assertIn("0 com odd / 1 sem cotacao", texto)
+            self.assertIn("nao comprova odd atual", texto)
+
+    def test_snapshot_importado_nao_e_falsa_reconfirmacao(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            obs = ObservatorioCobertura(Path(tmp) / "dados.json")
+            snapshot = {
+                "event_id": 200, "liga": "Liga Teste",
+                "data_jogo": datetime.now(timezone.utc).date().isoformat(),
+                "mercado": "Vitória Casa", "odd_real": 1.95,
+                "odds_fonte": "OddsPapi / Betano PT",
+            }
+            grupo = obs.calcular([snapshot])["grupos"][0]
+            self.assertEqual(grupo["confirmados"], 1)
+            self.assertEqual(grupo["sem_observacao_local"], 1)
+            self.assertEqual(grupo["ultima_com_odd"], 0)
+            self.assertFalse(obs.path.exists())
+
     def test_http_400_404_e_fixtures_omitidos_sao_inconclusivos(self):
         with tempfile.TemporaryDirectory() as tmp:
             obs = ObservatorioCobertura(Path(tmp) / "observacoes.json")
