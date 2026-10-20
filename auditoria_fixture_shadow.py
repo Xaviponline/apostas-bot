@@ -197,8 +197,10 @@ def relatorio_auditoria_fixture(previsoes, path, argumento="", agora=None):
                 )
         if len(detalhes) > MAX_DETALHES:
             linhas.append(f"↳ +{len(detalhes) - MAX_DETALHES} sinais nao listados.")
+    elif contagem["contexto_fixture"] == 0:
+        linhas.append("⚪ Contexto de fixtures insuficiente: sem validacao externa da identidade.")
     else:
-        linhas.append("✅ Nenhuma divergencia detetada nos dados disponiveis.")
+        linhas.append("✅ Sem divergencias nos metadados observados; identidade externa nao garantida.")
 
     linhas.extend([
         "",
