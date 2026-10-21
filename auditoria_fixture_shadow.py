@@ -17,6 +17,23 @@ MAX_DETALHES = 8
 TOLERANCIA_ASSOCIACAO = 1.0
 TOLERANCIA_HORARIO = 90 * 60
 
+# Alias observados no mesmo torneio, apenas para leitura do relatorio.
+# NUNCA alteram a descoberta de fixtures, as odds ou os snapshots.
+ALIASES_LIGA = {
+    frozenset(("portuguese primeira liga", "liga portugal")),
+    frozenset(("argentine liga profesional", "primera lpf")),
+    frozenset(("keuken kampioen divisie", "eerste divisie")),
+}
+
+
+def _nome_liga(nome):
+    return " ".join(str(nome or "").strip().casefold().split())
+
+
+def _mesma_liga_por_alias(modelo, fonte):
+    nomes = {_nome_liga(modelo), _nome_liga(fonte)}
+    return len(nomes) == 2 and frozenset(nomes) in ALIASES_LIGA
+
 
 def _numero(valor):
     if valor is None or isinstance(valor, bool):
@@ -162,11 +179,25 @@ def relatorio_auditoria_fixture(previsoes, path, argumento="", agora=None):
         return "\n".join(linhas + [f"⚠️ {aviso}", "🔒 Nenhum registo modificado."])
     contagem = Counter()
     detalhes = []
+    aliases_conhecidos = []
+    sem_contexto = []
     for p, ultimo in _associar(snapshots, obs):
         sinais = _sinais(p, ultimo)
         contagem["rastreio" if ultimo else "sem_rastreio"] += 1
-        if ultimo and (ultimo.get("liga_fonte_fixture") or ultimo.get("inicio_fonte_fixture")):
+        tem_contexto = bool(ultimo and (
+            ultimo.get("liga_fonte_fixture") or ultimo.get("inicio_fonte_fixture")
+        ))
+        if tem_contexto:
             contagem["contexto_fixture"] += 1
+        else:
+            sem_contexto.append(p)
+        # So descrever alias previamente reconhecido quando ambos os nomes
+        # constam no rastreio. O alerta original e mantido nos ficheiros.
+        if "competicao_divergente" in sinais and ultimo and _mesma_liga_por_alias(
+            p.get("liga"), ultimo.get("liga_fonte_fixture")
+        ):
+            sinais.remove("competicao_divergente")
+            aliases_conhecidos.append((p, ultimo))
         for sinal in sinais:
             contagem[sinal] += 1
         if sinais:
@@ -176,12 +207,30 @@ def relatorio_auditoria_fixture(previsoes, path, argumento="", agora=None):
         f"🏟️ Com contexto do fixture: {contagem['contexto_fixture']}/{len(snapshots)}",
         f"⚠️ Horario divergente: {contagem['horario_divergente']}",
         f"⚠️ Competicao divergente: {contagem['competicao_divergente']}",
+        f"ℹ️ Nomes alternativos conhecidos: {len(aliases_conhecidos)}",
+        f"⚪ Sem contexto do fixture: {len(sem_contexto)}",
         f"⚠️ Data do snapshot incoerente: {contagem['data_modelo_divergente']}",
         f"⚠️ Probabilidade/hora invalida: "
         f"{contagem['probabilidade_invalida'] + contagem['hora_modelo_invalida']}",
     ])
     if aviso:
         linhas.append(f"ℹ️ {aviso}")
+    if aliases_conhecidos:
+        linhas.extend(["", "🏆 DESIGNACOES ALTERNATIVAS (NAO EXCLUIR JOGOS):"])
+        for p, ult in aliases_conhecidos[:MAX_DETALHES]:
+            linhas.append(
+                f"• {str(p.get('casa') or '?')[:48]} vs {str(p.get('fora') or '?')[:48]}: "
+                f"{str(p.get('liga') or '?')[:58]} / "
+                f"{str(ult.get('liga_fonte_fixture') or '?')[:58]}"
+            )
+    if sem_contexto:
+        linhas.extend(["", "⚪ SEM CONTEXTO EXTERNO REGISTADO:"])
+        for p in sem_contexto[:3]:
+            linhas.append(
+                f"• #{p.get('ranking_modelo') or '—'} "
+                f"{str(p.get('casa') or '?')[:48]} vs {str(p.get('fora') or '?')[:48]}"
+            )
+        linhas.append("ℹ️ Rastreio parcial: a identidade deste fixture nao ficou comprovada.")
     if detalhes:
         linhas.extend(["", "🔬 SINAIS PARA REVISAO (max. 8):"])
         for p, ult, sinais in detalhes[:MAX_DETALHES]:
@@ -197,8 +246,8 @@ def relatorio_auditoria_fixture(previsoes, path, argumento="", agora=None):
                 )
         if len(detalhes) > MAX_DETALHES:
             linhas.append(f"↳ +{len(detalhes) - MAX_DETALHES} sinais nao listados.")
-    elif contagem["contexto_fixture"] == 0:
-        linhas.append("⚪ Contexto de fixtures insuficiente: sem validacao externa da identidade.")
+    elif sem_contexto:
+        linhas.append("⚪ Contexto de fixtures insuficiente: validacao externa incompleta.")
     else:
         linhas.append("✅ Sem divergencias nos metadados observados; identidade externa nao garantida.")
 
