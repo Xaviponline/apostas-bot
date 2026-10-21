@@ -1078,7 +1078,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             cache = {}
             self._odds_confronto_cache = cache
         if arg in cache:
-            return "♻️ Resultado em cache — zero pedidos adicionais.\\n\\n" + cache[arg]
+            return "♻️ Resultado em cache — zero pedidos adicionais.\n\n" + cache[arg]
         try:
             resposta = confrontar_betano(
                 self.odds, arg, self._quota_permite_captura,
