@@ -273,6 +273,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /lab_platt_prospectivo — teste da calibração pré-registada",
             "ℹ️ /odds_verificacao — EV/fixtures invulgares; /quota_plano — consumo diario",
             "ℹ️ /odds_rastreio_detalhe Estudiantes — origem do preço observado",
+            "ℹ️ /odds_confronto — verificar fixture+odds de um jogo visivel na Betano",
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
@@ -1066,6 +1067,33 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             )
         # Guardar inclusive falhas para impedir repetição involuntária da API.
         cache[chave] = resposta
+        return resposta
+
+    def _executar_odds_confronto(self, argumentos=""):
+        """Consulta OWNER por fixture anunciado na Betano; apenas diagnostico."""
+        from odds_confronto_betano import confrontar_betano
+        arg = str(argumentos or "").strip()
+        cache = getattr(self, "_odds_confronto_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._odds_confronto_cache = cache
+        if arg in cache:
+            return "♻️ Resultado em cache — zero pedidos adicionais.\\n\\n" + cache[arg]
+        try:
+            resposta = confrontar_betano(
+                self.odds, arg, self._quota_permite_captura,
+                agora=datetime.now(TZ_PORTUGAL),
+            )
+        except (requests.RequestException, OSError, RuntimeError, ValueError,
+                TypeError, KeyError, ArithmeticError) as exc:
+            from odds_betano import OddsBetano
+            resposta = (
+                "⚠️ Confronto OddsPapi indisponivel: "
+                + OddsBetano._motivo_excecao(exc)
+                + ". Sem alterar previsoes, odds ou CLV."
+            )
+        # Guardar inclusive falhas, para nao voltar a gastar quota por repeticao.
+        cache[arg] = resposta
         return resposta
 
     def _executar_odds_nomes(self, argumentos=""):
@@ -2116,6 +2144,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             if not owner_admin:
                 return
             self.enviar_mensagem(chat_id, self._executar_odds_mercados(argumentos))
+            return
+
+        if comando == "/odds_confronto":
+            if not owner_admin:
+                return
+            self.enviar_mensagem(chat_id, self._executar_odds_confronto(argumentos))
             return
 
         if comando == "/odds_nomes":
