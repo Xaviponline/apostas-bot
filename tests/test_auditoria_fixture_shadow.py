@@ -68,6 +68,55 @@ class AuditoriaFixtureShadowTest(unittest.TestCase):
         self.assertIn("FA Cup", texto)
         self.assertEqual(p, p_original)
 
+    def test_alias_liga_portugal_nao_gera_falso_alerta(self):
+        p = previsao(liga="Portuguese Primeira Liga")
+        original = copy.deepcopy(p)
+        with tempfile.TemporaryDirectory() as pasta:
+            path = self._ficheiro(pasta, [rastreio(
+                p, liga_fonte_fixture="Liga Portugal",
+                alertas_contexto=["competicao_divergente"]
+            )])
+            texto = relatorio_auditoria_fixture([p], path, agora=AGORA)
+        self.assertIn("Competicao divergente: 0", texto)
+        self.assertIn("Nomes alternativos conhecidos: 1", texto)
+        self.assertIn("Liga Portugal", texto)
+        self.assertEqual(p, original)
+
+    def test_alias_primera_lpf_nao_gera_falso_alerta(self):
+        p = previsao(liga="Argentine Liga Profesional")
+        with tempfile.TemporaryDirectory() as pasta:
+            path = self._ficheiro(pasta, [rastreio(
+                p, liga_fonte_fixture="Primera LPF",
+                alertas_contexto=["competicao_divergente"]
+            )])
+            texto = relatorio_auditoria_fixture([p], path, agora=AGORA)
+        self.assertIn("Competicao divergente: 0", texto)
+        self.assertIn("Nomes alternativos conhecidos: 1", texto)
+
+    def test_outra_liga_continua_alerta_sem_aceite_automatico(self):
+        p = previsao(liga="Portuguese Primeira Liga")
+        with tempfile.TemporaryDirectory() as pasta:
+            path = self._ficheiro(pasta, [rastreio(
+                p, liga_fonte_fixture="FA Cup",
+                alertas_contexto=["competicao_divergente"]
+            )])
+            texto = relatorio_auditoria_fixture([p], path, agora=AGORA)
+        self.assertIn("Competicao divergente: 1", texto)
+        self.assertIn("Nomes alternativos conhecidos: 0", texto)
+
+    def test_distingue_registo_sem_contexto_de_sucesso(self):
+        p = previsao()
+        with tempfile.TemporaryDirectory() as pasta:
+            path = self._ficheiro(pasta, [rastreio(
+                p, liga_fonte_fixture="", inicio_fonte_fixture=""
+            )])
+            texto = relatorio_auditoria_fixture([p], path, agora=AGORA)
+        self.assertIn("Com observacao associada: 1/1", texto)
+        self.assertIn("Com contexto do fixture: 0/1", texto)
+        self.assertIn("Sem contexto do fixture: 1", texto)
+        self.assertIn("SEM CONTEXTO EXTERNO REGISTADO", texto)
+        self.assertNotIn("✅ Sem divergencias", texto)
+
     def test_nao_associa_evento_proximo_apenas_por_clubes(self):
         p = previsao()
         with tempfile.TemporaryDirectory() as pasta:
