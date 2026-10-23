@@ -1,6 +1,7 @@
 """Arranque de produção com cobertura V1 e histórico híbrido de competições."""
 import logging
 import time
+import os
 
 import requests
 from collections import Counter
@@ -27,6 +28,7 @@ from backup_externo import BackupExterno
 from vigilancia_externa import VigilanciaExterna
 from rotinas_diarias import RotinasDiarias
 from alertas_prejogo import AlertasPreJogo
+from scout_shadow import ScoutShadow
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
@@ -69,6 +71,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             rastreio=self._rastreio_odds,
         )
         self._proximo_check_prejogo = 0.0
+        self._scout_shadow = ScoutShadow(pasta_estado / "scout_shadow.json" if pasta_estado else None)
+        self._proximo_scout_check = 0.0
 
     def _executar_analise(self, tecnica=False):
         """Analise normal intacta; export SHADOW best-effort depois do registo.
@@ -141,6 +145,46 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         # Independente da liquidação e do relatório diário: após polling
         # Telegram, o aviso é avaliado mesmo que a rotina ESPN falhe.
         self._avisar_prejogo_se_devido()
+        self._scout_auto_se_devido()
+
+    def _scout_auto_se_devido(self):
+        """Uma ronda diaria 10h–11h, se opt-in; isolada das rotinas oficiais."""
+        if os.getenv("SCOUT_SHADOW_AUTO", "0") != "1":
+            return
+        if not self.owner_id or not self.chat_id:
+            return
+        scout = getattr(self, "_scout_shadow", None)
+        if scout is None:
+            return
+        agora = datetime.now(TZ_PORTUGAL)
+        if agora.hour != 10:
+            return
+        atual = time.monotonic()
+        if atual < getattr(self, "_proximo_scout_check", 0):
+            return
+        self._proximo_scout_check = atual + 600
+        try:
+            fez, texto = scout.executar(self.previsoes.dados.get("previsoes", []))
+            if fez:
+                self.enviar_mensagem(self.chat_id, texto)
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError, requests.RequestException):
+            logging.warning("SCOUT_SHADOW | tentativa falhou; protocolo original intacto")
+
+    def _executar_scout_agora(self):
+        """OWNER-only: inicia a ronda limitada ou mostra estado se ja executou."""
+        scout = getattr(self, "_scout_shadow", None)
+        if scout is None:
+            return "SCOUT indisponivel neste processo."
+        _, resposta = scout.executar(self.previsoes.dados.get("previsoes", []))
+        return resposta
+
+    def _executar_scout_hoje(self):
+        """Leitura local, zero rede."""
+        return self._scout_shadow.hoje()
+
+    def _executar_scout_performance(self):
+        """Leitura da carteira de teste e das liquidacoes ja guardadas."""
+        return self._scout_shadow.desempenho(self.previsoes.dados.get("previsoes", []))
 
     def _ping_externo_se_devido(self):
         """So e chamado depois de polling Telegram e tarefas sem excecao."""
@@ -278,6 +322,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /fonte_alt — fonte alternativa manual em SHADOW (sem Betano PT)",
             "ℹ️ /mercado_ref — referencia multi-casa + minima ja congelada (SHADOW)",
             "ℹ️ /mercado_ref_diag — motivo da falta de ligacao ao modelo (zero HTTP)",
+            "ℹ️ /scout_agora — avaliacao multi-casa SHADOW, max 2 ligas/dia",
+            "ℹ️ /scout_hoje e /scout_performance — carteira prospetiva, zero HTTP",
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
@@ -2227,6 +2273,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             if not owner_admin:
                 return
             self.enviar_mensagem(chat_id, self._executar_odds_confronto(argumentos))
+            return
+
+        if comando in {"/scout_agora", "/scout_hoje", "/scout_performance"}:
+            if not owner_admin:
+                return
+            try:
+                if comando == "/scout_agora":
+                    resposta = self._executar_scout_agora()
+                elif comando == "/scout_hoje":
+                    resposta = self._executar_scout_hoje()
+                else:
+                    resposta = self._executar_scout_performance()
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError, requests.RequestException):
+                resposta = "⚠️ SCOUT indisponivel, sem tocar nas previsoes oficiais."
+            self.enviar_mensagem(chat_id, resposta)
             return
 
         if comando == "/mercado_ref_diag":
