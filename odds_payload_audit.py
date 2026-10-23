@@ -5,7 +5,6 @@ nao modifica os modelos, o catalogo, odds, VALUE ou CLV.
 Uma unica operacao /odds por comando (o cliente pode repetir HTTP 429).
 """
 from contextlib import nullcontext
-from math import isfinite
 import re
 
 from odds_auditoria import AuditoriaOdds
@@ -140,7 +139,7 @@ def auditar_payload_bruto(odds, fixture_id, permite):
         # Mostrar nomes/IDs do catalogo apenas; nunca JSON, selecoes ou precos.
         if isinstance(meta, dict) and len(exemplos) < 8:
             nome_meta = str(meta.get("name") or "")
-            if any(x in nome_meta.casefold() for x in ("goal", "result", "score", "match")):
+            if any(x in nome_meta.casefold() for x in ("goal", "result", "score", "match", "both teams", "over under full time")):
                 exemplos.append((
                     _curto(mid, 24), _curto(nome_meta, 48),
                     _curto(meta.get("handicap"), 8),
