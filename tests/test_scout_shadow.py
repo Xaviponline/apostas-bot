@@ -60,7 +60,7 @@ def fonte_com_dados():
     def get(sess, path, params):
         calls.append((path, dict(params)))
         if path == "/sports/":
-            return [{"key": SPORT, "active": True}], None, None
+            return [{"key": SPORT, "active": True}], None, {"x-requests-remaining": "496"}
         if path == f"/sports/{SPORT}/odds":
             return [evento()], None, {
                 "x-requests-last": "2", "x-requests-remaining": "492",
@@ -173,19 +173,43 @@ class ScoutTests(unittest.TestCase):
         calls = []
         def get(sess, path, params):
             calls.append(path)
-            return [{"key": SPORT, "active": False}], None, None
+            return [{"key": SPORT, "active": False}], None, {"x-requests-remaining": "496"}
         with patch("scout_shadow._get", side_effect=get):
             did, msg = self.scout.executar([snap()], agora=AGORA, chave="SEGREDO")
         self.assertTrue(did)
         self.assertEqual(calls, ["/sports/"])
         self.assertIn("liga_sem_odds_api=1", msg)
 
+    def test_quota_inicio_baixa_protege_sem_consultas_pagas(self):
+        calls = []
+        def get(sess, path, params):
+            calls.append(path)
+            return [{"key": SPORT, "active": True}], None, {
+                "x-requests-remaining": "99"
+            }
+        with patch("scout_shadow._get", side_effect=get):
+            did, msg = self.scout.executar([snap()], agora=AGORA, chave="SEGREDO")
+        self.assertTrue(did)
+        self.assertEqual(calls, ["/sports/"])
+        self.assertIn("reserva_quota", msg)
+
+    def test_sem_header_quota_falha_fechada(self):
+        calls = []
+        def get(sess, path, params):
+            calls.append(path)
+            return [{"key": SPORT, "active": True}], None, None
+        with patch("scout_shadow._get", side_effect=get):
+            did, msg = self.scout.executar([snap()], agora=AGORA, chave="SEGREDO")
+        self.assertTrue(did)
+        self.assertEqual(calls, ["/sports/"])
+        self.assertIn("quota_nao_confirmada", msg)
+
     def test_http_erro_termina_mas_nao_repete(self):
         calls = []
         def get(sess, path, params):
             calls.append(path)
             if path == "/sports/":
-                return [{"key": SPORT, "active": True}], None, None
+                return [{"key": SPORT, "active": True}], None, {"x-requests-remaining": "496"}
             return None, "HTTP 401", None
         with patch("scout_shadow._get", side_effect=get):
             did, msg = self.scout.executar([snap()], agora=AGORA, chave="SEGREDO")
@@ -222,6 +246,8 @@ class ScoutTests(unittest.TestCase):
         self.assertIn("Brier", perf)
         self.assertIn("ROI SIMULADO", perf)
         self.assertIn("Amostra insuficiente", perf)
+        self.assertIn("Baseline V1,2 Top5", perf)
+        self.assertIn("Por mercado", perf)
         perf = self.scout.desempenho([snap(resultado_binario=1, snapshot_hash="ALTERADO")])
         self.assertIn("Identidade invalida: 1", perf)
         self.assertNotIn("ROI SIMULADO", perf)
