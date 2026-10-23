@@ -237,7 +237,7 @@ class ScoutTests(unittest.TestCase):
     def test_wilson_intervalo_nao_usa_so_hit_rate(self):
         lo, hi = _wilson(10, 10)
         self.assertLess(lo, 1.0)
-        self.assertEqual(hi, 1.0)
+        self.assertAlmostEqual(hi, 1.0, places=12)
         self.assertIsNone(_wilson(0, 0))
 
     def test_comandos_owner_hoje_performance_e_executar(self):
