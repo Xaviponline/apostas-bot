@@ -191,6 +191,13 @@ def _registo(p, e, sport, agora):
     return resultado, None
 
 
+def _ranking_top5(p):
+    try:
+        return 1 <= int(p.get("ranking_modelo")) <= 5
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
 def _wilson(acertos, total):
     if not total:
         return None
@@ -291,16 +298,28 @@ class ScoutShadow:
         self._guardar(dados)
         sessao = self.session or requests.Session()
         try:
-            catalogo, erro, _ = _get(sessao, "/sports/", {"apiKey": key})
+            catalogo, erro, quota_catalogo = _get(sessao, "/sports/", {"apiKey": key})
             if erro:
                 dia["estado"] = "erro_catalogo"
                 dia["erro"] = erro
+                return True, self.relatorio_dia(dados, hoje)
+            try:
+                restantes_inicio = int(quota_catalogo["x-requests-remaining"])
+            except (TypeError, KeyError, ValueError):
+                restantes_inicio = None
+            if restantes_inicio is None:
+                dia["estado"] = "quota_nao_confirmada"
+                dia["descartes"]["sem_quota_verificavel"] = len(candidatos)
+                return True, self.relatorio_dia(dados, hoje)
+            if restantes_inicio < RESERVA_FORNECEDOR + 2:
+                dia["estado"] = "reserva_protegida"
+                dia["descartes"]["reserva_quota"] = len(candidatos)
                 return True, self.relatorio_dia(dados, hoje)
             disponiveis = {
                 s.get("key") for s in catalogo if isinstance(s, dict)
                 and s.get("active", True) is not False
             }
-            restantes = None
+            restantes = restantes_inicio
             for sport in ligas_ordenadas:
                 if sport not in disponiveis:
                     dia["descartes"]["liga_sem_odds_api"] = (
@@ -419,6 +438,39 @@ class ScoutShadow:
             else:
                 pendente += 1
         n = ganhou + perdeu
+        # Baseline da MESMA janela de dias do Scout, sem alterar o modelo.
+        # Nao e amostra pareada nem prova causal de melhoria.
+        dias_com_teste = {
+            data for data, obj in dados["dias"].items()
+            if isinstance(obj, dict) and obj.get("selecoes")
+        }
+        base = [
+            p for p in snapshots if isinstance(p, dict)
+            and p.get("data_jogo") in dias_com_teste
+            and type(p.get("resultado_binario")) is int
+            and p["resultado_binario"] in (0, 1)
+            and _val_ts(p.get("timestamp_jogo")) is not None
+            and _numero(p.get("probabilidade"), minimo=0, maximo=1.000001) is not None
+            and _ranking_top5(p)
+        ]
+        b_n = len(base)
+        b_w = sum(p["resultado_binario"] for p in base)
+        b_brier = (
+            sum((float(p["probabilidade"]) - p["resultado_binario"])**2 for p in base)
+            / b_n if b_n else None
+        )
+        segmentos = Counter()
+        acertos_segmento = Counter()
+        for _, item in registos:
+            p = index.get(item.get("chave"))
+            if (p and type(p.get("resultado_binario")) is int
+                    and p["resultado_binario"] in (0, 1)
+                    and (not item.get("snapshot_hash")
+                         or item["snapshot_hash"] == p.get("snapshot_hash"))
+                    and str(p.get("mercado") or "") == item.get("mercado")
+                    and _val_ts(p.get("timestamp_jogo")) == _val_ts(item.get("timestamp_jogo"))):
+                segmentos[item["mercado"]] += 1
+                acertos_segmento[item["mercado"]] += p["resultado_binario"]
         linhas = [
             "📊 SCOUT SHADOW — PERFORMANCE PROSPETIVA",
             f"📚 Sinais: {len(registos)} | Liquidados: {n} | Pendentes: {pendente}"
@@ -434,6 +486,17 @@ class ScoutShadow:
                 f"🧮 ROI SIMULADO a mediana: {100*pnl/n:+.1f}% "
                 "(nao e ROI apostavel)",
             ]
+        if b_n:
+            linhas.append(
+                f"📏 Baseline V1.2 Top5, nos dias de teste: {b_w}/{b_n} "
+                f"({100*b_w/b_n:.1f}% acerto) | Brier {b_brier:.4f}"
+            )
+            linhas.append("⚠️ Baseline descritivo, nao pareado: nao prova ganho estatistico.")
+        if segmentos:
+            linhas.append("📊 Por mercado: " + "; ".join(
+                f"{m} {acertos_segmento[m]}/{k}"
+                for m,k in sorted(segmentos.items())
+            ))
         if n < MIN_LIQUIDADAS or len(dias) < MIN_DIAS:
             linhas.append(
                 f"⚪ Amostra insuficiente: exigimos {MIN_LIQUIDADAS} sinais liquidados "
