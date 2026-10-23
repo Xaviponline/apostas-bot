@@ -274,6 +274,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /odds_verificacao — EV/fixtures invulgares; /quota_plano — consumo diario",
             "ℹ️ /odds_rastreio_detalhe Estudiantes — origem do preço observado",
             "ℹ️ /odds_confronto — verificar fixture+odds de um jogo visivel na Betano",
+            "ℹ️ /odds_payload_audit ID — motivos de exclusao no payload bruto",
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
@@ -1093,6 +1094,31 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 + ". Sem alterar previsoes, odds ou CLV."
             )
         # Guardar inclusive falhas, para nao voltar a gastar quota por repeticao.
+        cache[arg] = resposta
+        return resposta
+
+    def _executar_odds_payload_audit(self, argumentos=""):
+        """Diagnostico manual do /odds bruto; sem guardar ou divulgar precos."""
+        from odds_payload_audit import auditar_payload_bruto
+        arg = str(argumentos or "").strip()
+        cache = getattr(self, "_odds_payload_audit_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._odds_payload_audit_cache = cache
+        if arg in cache:
+            return "♻️ Auditoria em cache — zero novos pedidos.\n\n" + cache[arg]
+        if len(cache) >= 2:
+            return "⛔ Limite local de 2 fixtures distintos por processo; sem consulta."
+        try:
+            resposta = auditar_payload_bruto(self.odds, arg, self._quota_permite_captura)
+        except (requests.RequestException, RuntimeError, OSError, ValueError,
+                TypeError, KeyError, ArithmeticError) as exc:
+            from odds_betano import OddsBetano
+            resposta = (
+                "⚠️ Auditoria de payload indisponivel: "
+                + OddsBetano._motivo_excecao(exc)
+                + ". Sem alterar registos."
+            )
         cache[arg] = resposta
         return resposta
 
@@ -2150,6 +2176,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             if not owner_admin:
                 return
             self.enviar_mensagem(chat_id, self._executar_odds_confronto(argumentos))
+            return
+
+        if comando == "/odds_payload_audit":
+            if not owner_admin:
+                return
+            self.enviar_mensagem(chat_id, self._executar_odds_payload_audit(argumentos))
             return
 
         if comando == "/odds_nomes":
