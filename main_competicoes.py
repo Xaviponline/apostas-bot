@@ -276,6 +276,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /odds_confronto — verificar fixture+odds de um jogo visivel na Betano",
             "ℹ️ /odds_payload_audit ID — motivos de exclusao no payload bruto",
             "ℹ️ /fonte_alt — fonte alternativa manual em SHADOW (sem Betano PT)",
+            "ℹ️ /mercado_ref — referencia multi-casa + minima ja congelada (SHADOW)",
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
@@ -1095,6 +1096,27 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 + ". Sem alterar previsoes, odds ou CLV."
             )
         # Guardar inclusive falhas, para nao voltar a gastar quota por repeticao.
+        cache[arg] = resposta
+        return resposta
+
+    def _executar_mercado_ref(self, argumentos=""):
+        """Comparador apenas OWNER. Zero efeito sobre registos e picks Premium."""
+        from odds_referencia_shadow import comparar_odds_referencia
+        arg = str(argumentos or "").strip()
+        cache = getattr(self, "_mercado_ref_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._mercado_ref_cache = cache
+        if arg in cache:
+            return "♻️ Mercado em cache — zero chamadas externas.\n\n" + cache[arg]
+        if any("Creditos consumidos na chamada:" in txt for txt in cache.values()):
+            return "⛔ Limite de uma comparacao de odds por processo; sem novo gasto."
+        if len(cache) >= 4:
+            return "⛔ Limite de quatro tentativas manuais por processo; zero chamadas."
+        store = getattr(self, "previsoes", None)
+        dados = getattr(store, "dados", None)
+        snapshots = dados.get("previsoes", []) if isinstance(dados, dict) else []
+        resposta = comparar_odds_referencia(arg, snapshots=snapshots)
         cache[arg] = resposta
         return resposta
 
@@ -2197,6 +2219,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             if not owner_admin:
                 return
             self.enviar_mensagem(chat_id, self._executar_odds_confronto(argumentos))
+            return
+
+        if comando == "/mercado_ref":
+            if not owner_admin:
+                return
+            self.enviar_mensagem(chat_id, self._executar_mercado_ref(argumentos))
             return
 
         if comando == "/fonte_alt":
