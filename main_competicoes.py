@@ -275,6 +275,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /odds_rastreio_detalhe Estudiantes — origem do preço observado",
             "ℹ️ /odds_confronto — verificar fixture+odds de um jogo visivel na Betano",
             "ℹ️ /odds_payload_audit ID — motivos de exclusao no payload bruto",
+            "ℹ️ /fonte_alt — fonte alternativa manual em SHADOW (sem Betano PT)",
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
@@ -1094,6 +1095,26 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 + ". Sem alterar previsoes, odds ou CLV."
             )
         # Guardar inclusive falhas, para nao voltar a gastar quota por repeticao.
+        cache[arg] = resposta
+        return resposta
+
+    def _executar_fonte_alt(self, argumentos=""):
+        """Teste manual separado da fonte produtiva e de VALUE/CLV."""
+        from odds_alternativa_shadow import testar_fonte_alternativa
+        arg = str(argumentos or "").strip()
+        cache = getattr(self, "_fonte_alt_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._fonte_alt_cache = cache
+        if arg in cache:
+            return "♻️ Fonte alternativa em cache — zero novos pedidos.\n\n" + cache[arg]
+        # No maximo UMA consulta com consumo de creditos por processo.
+        if arg.startswith("odds ") and any(k.startswith("odds ") for k in cache):
+            return "⛔ Limite de um teste pago por processo. Zero pedidos."
+        # Catalogo e eventos nao descontam creditos; evitar chamadas repetidas.
+        if len(cache) >= 8:
+            return "⛔ Limite de testes manuais neste processo. Zero pedidos."
+        resposta = testar_fonte_alternativa(arg)
         cache[arg] = resposta
         return resposta
 
@@ -2176,6 +2197,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             if not owner_admin:
                 return
             self.enviar_mensagem(chat_id, self._executar_odds_confronto(argumentos))
+            return
+
+        if comando == "/fonte_alt":
+            if not owner_admin:
+                return
+            self.enviar_mensagem(chat_id, self._executar_fonte_alt(argumentos))
             return
 
         if comando == "/odds_payload_audit":
