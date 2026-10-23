@@ -277,6 +277,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /odds_payload_audit ID — motivos de exclusao no payload bruto",
             "ℹ️ /fonte_alt — fonte alternativa manual em SHADOW (sem Betano PT)",
             "ℹ️ /mercado_ref — referencia multi-casa + minima ja congelada (SHADOW)",
+            "ℹ️ /mercado_ref_diag — motivo da falta de ligacao ao modelo (zero HTTP)",
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
             "ℹ️ /v13_comercial — gate completo; /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
@@ -1098,6 +1099,13 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         # Guardar inclusive falhas, para nao voltar a gastar quota por repeticao.
         cache[arg] = resposta
         return resposta
+
+    def _executar_mercado_ref_diag(self, argumentos=""):
+        """Diagnostico de snapshots locais, sem HTTP nem mutacoes."""
+        from mercado_ref_diagnostico import diagnosticar_snapshot_mercado
+        dados = getattr(getattr(self, "previsoes", None), "dados", None)
+        snapshots = dados.get("previsoes", []) if isinstance(dados, dict) else []
+        return diagnosticar_snapshot_mercado(argumentos, snapshots)
 
     def _executar_mercado_ref(self, argumentos=""):
         """Comparador apenas OWNER. Zero efeito sobre registos e picks Premium."""
@@ -2219,6 +2227,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             if not owner_admin:
                 return
             self.enviar_mensagem(chat_id, self._executar_odds_confronto(argumentos))
+            return
+
+        if comando == "/mercado_ref_diag":
+            if not owner_admin:
+                return
+            self.enviar_mensagem(chat_id, self._executar_mercado_ref_diag(argumentos))
             return
 
         if comando == "/mercado_ref":
