@@ -46,7 +46,10 @@ def odds():
         book("casa_b", 1.90, 1.91),
         book("casa_c", 2.00, 1.93),
         book("casa_d", 8.00, 1.10, quando="2026-10-22T09:00:00Z"),
-        book("casa_e", 1.55, 5.5, linha=3.5),
+        {"key": "casa_e", "markets": [
+            {"key": "totals", "last_update": "2026-10-23T17:50:00Z",
+             "outcomes": [{"name": "Over", "point": 3.5, "price": 5.5}]}
+        ]},
     ]
     return [x]
 
@@ -83,7 +86,7 @@ class MercadoReferenciaTests(unittest.TestCase):
     def test_medianas_e_mercado_linha_exata(self):
         sess = FakeSession()
         txt = comparar_odds_referencia(CMD, chave="SEGREDO", session=sess, agora=AGORA)
-        self.assertIn("Mercado", txt.upper())
+        self.assertIn("MERCADO", txt.upper())
         self.assertIn("1 (Casa): mediana 1,90", txt)
         self.assertIn("1,80-2,00 | 3 casas", txt)
         self.assertIn("Mais 2,5: mediana 1,91", txt)
@@ -183,8 +186,9 @@ class MercadoReferenciaTests(unittest.TestCase):
         enviados = []
         bot.enviar_mensagem = lambda chat, txt: enviados.append(txt)
         with patch("odds_referencia_shadow.requests.Session", return_value=sess):
-            with patch("odds_referencia_shadow.datetime") as mock_dt:
-                mock_dt.now.return_value = AGORA
+            with patch("odds_referencia_shadow.comparar_odds_referencia",
+                       side_effect=lambda *a, **k: comparar_odds_referencia(
+                           *a, agora=AGORA, **k)):
                 with patch.dict("os.environ", {"THE_ODDS_API_KEY": "SEGREDO"}):
                     cmd = "/mercado_ref " + CMD
                     bot.processar_comando(52, cmd, user_id=52)
