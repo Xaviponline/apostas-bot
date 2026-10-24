@@ -76,9 +76,6 @@ class AuditoriaOdds:
         b_n = cls._canon_equipa(b)
         if not a_n or not b_n:
             return False
-        # Sufixos de categoria sao parte da identidade do clube, nunca aliases.
-        if equipas_categoria_incompativel(a, b):
-            return False
         if a_n == b_n:
             return True
 
@@ -350,8 +347,11 @@ class AuditoriaOdds:
         for evento in eventos or []:
             if not isinstance(evento, dict):
                 continue
-            if cls._nome_equipa_compativel(casa, evento.get("casa")) and cls._nome_equipa_compativel(
-                fora, evento.get("fora")
+            if (
+                not equipas_categoria_incompativel(casa, evento.get("casa"))
+                and not equipas_categoria_incompativel(fora, evento.get("fora"))
+                and cls._nome_equipa_compativel(casa, evento.get("casa"))
+                and cls._nome_equipa_compativel(fora, evento.get("fora"))
             ):
                 candidatos.append(evento)
         return candidatos
@@ -369,8 +369,11 @@ class AuditoriaOdds:
         fora_payload = str(dados.get("fora") or "").strip()
         if not casa_payload or not fora_payload:
             return True
-        return cls._nome_equipa_compativel(jogo.get("casa"), casa_payload) and cls._nome_equipa_compativel(
-            jogo.get("fora"), fora_payload
+        return (
+            not equipas_categoria_incompativel(jogo.get("casa"), casa_payload)
+            and not equipas_categoria_incompativel(jogo.get("fora"), fora_payload)
+            and cls._nome_equipa_compativel(jogo.get("casa"), casa_payload)
+            and cls._nome_equipa_compativel(jogo.get("fora"), fora_payload)
         )
 
     @classmethod
@@ -526,21 +529,20 @@ class AuditoriaOdds:
                 continue
 
             evento = candidatos[0]
-            # O ficheiro do fornecedor principal contem startTime. A sua
-            # ausencia ou divergencia impede associações comerciais novas.
-            # Fontes antigas/mocks sem hora mantêm a retrocompatibilidade;
-            # quando ambas as horas existem, aplica-se a regra universal.
-            hora_ok, motivo_hora = verificar_hora_fixture(
-                jogo.get("timestamp"), evento.get("data"),
-                exigir_hora=getattr(self.fonte, "provider", "") == "oddspapi",
-            )
-            if not hora_ok:
-                selecao.setdefault("_odds_alertas", []).append(
-                    "horario_divergente" if motivo_hora == "horario_fixture_incompativel"
-                    else "horario_nao_comprovado"
+            # As fontes produtivas identificadas devem provar data e hora
+            # antes de qualquer captura comercial. Diagnosticos antigos em
+            # fontes de testes/legadas sem provider mantêm a sua semantica.
+            if getattr(self.fonte, "provider", None) in ("oddspapi", "odds-api.io"):
+                hora_ok, motivo_hora = verificar_hora_fixture(
+                    jogo.get("timestamp"), evento.get("data"), exigir_hora=True,
                 )
-                self._registar_diagnostico(selecao, motivo_hora)
-                continue
+                if not hora_ok:
+                    selecao.setdefault("_odds_alertas", []).append(
+                        "horario_divergente" if motivo_hora == "horario_fixture_incompativel"
+                        else "horario_nao_comprovado"
+                    )
+                    self._registar_diagnostico(selecao, motivo_hora)
+                    continue
             try:
                 ts = float(jogo.get("timestamp"))
                 dia_pt = datetime.fromtimestamp(ts, timezone.utc).astimezone(
