@@ -96,6 +96,50 @@ class ScoutTests(unittest.TestCase):
         self.assertIn("zero pedidos API", message)
         self.assertFalse(self.path.exists())
 
+    def test_com_20_previsoes_sem_candidatos_guarda_estado_e_zero_http(self):
+        # Com analise V1.2 concluida, nao confundir sem candidatos com falha.
+        amostra = [
+            snap(chave=f"modelo-{i}", ranking_modelo=i, mercado="Ambas Marcam")
+            for i in range(1, 21)
+        ]
+        original = copy.deepcopy(amostra)
+        with patch("scout_shadow._get", side_effect=AssertionError("rede")):
+            fez, texto = self.scout.executar(amostra, agora=AGORA, chave="SEGREDO")
+        self.assertTrue(fez)
+        self.assertIn("20 previsoes de hoje analisadas", texto)
+        self.assertIn("mercado_nao_coberto=5", texto)
+        self.assertIn("fora_top5=15", texto)
+        self.assertEqual(amostra, original)
+        dados = json.loads(self.path.read_text(encoding="utf-8"))
+        entrada = dados["dias"]["2026-10-24"]
+        self.assertEqual(entrada["estado"], "sem_candidatos")
+        self.assertEqual(entrada["creditos_estimados_reservados"], 0)
+        self.assertEqual(entrada["snapshots_do_dia"], 20)
+        self.assertEqual(entrada["selecoes"], [])
+        self.assertIn("sem_candidatos", self.scout.hoje(agora=AGORA))
+
+    def test_dia_sem_candidatos_nao_repete_nem_apos_restart(self):
+        amostra = [snap(mercado="Ambas Marcam")]
+        with patch("scout_shadow._get", side_effect=AssertionError("rede")):
+            self.scout.executar(amostra, agora=AGORA, chave="SEGREDO")
+            repetido = ScoutShadow(self.path, session=object())
+            fez, resposta = repetido.executar(amostra, agora=AGORA, chave="SEGREDO")
+        self.assertFalse(fez)
+        self.assertIn("ja registado", resposta)
+        self.assertIn("sem_candidatos", resposta)
+
+    def test_sem_previsoes_antes_analise_nao_fecha_dia(self):
+        with patch("scout_shadow._get", side_effect=AssertionError("rede")):
+            primeiro, resposta = self.scout.executar([], agora=AGORA, chave="SEGREDO")
+            segundo, resposta2 = self.scout.executar(
+                [snap(mercado="Ambas Marcam")], agora=AGORA, chave="SEGREDO"
+            )
+        self.assertFalse(primeiro)
+        self.assertIn("Aguardar analise automatica", resposta)
+        self.assertTrue(segundo)
+        self.assertIn("sem_candidatos", resposta2)
+        self.assertEqual(len(json.loads(self.path.read_text())["dias"]), 1)
+
     def test_aceita_previsao_e_regista_auditavel(self):
         get, calls = fonte_com_dados()
         original = snap()
