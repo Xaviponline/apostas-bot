@@ -102,7 +102,12 @@ class IntegridadeOddsTests(unittest.TestCase):
         for nome in casos:
             with self.subTest(nome=nome):
                 self.assertTrue(equipas_categoria_incompativel("Arsenal", nome))
-                self.assertFalse(AuditoriaOdds._nome_equipa_compativel("Arsenal", nome))
+                self.assertEqual(
+                    AuditoriaOdds._candidatos_evento(
+                        [{"id": "juvenil", "casa": nome, "fora": "Chelsea"}],
+                        "Arsenal", "Chelsea",
+                    ), []
+                )
         self.assertTrue(AuditoriaOdds._nome_equipa_compativel("AFC Arsenal", "Arsenal"))
         self.assertTrue(AuditoriaOdds._nome_equipa_compativel("Arsenal U19", "Arsenal U19"))
         self.assertFalse(AuditoriaOdds._nome_equipa_compativel("Arsenal U19", "Arsenal U21"))
