@@ -96,13 +96,26 @@ class DiarioTentativasCLV:
                     motivo = "cotacao_sem_fecho_persistido"
                 else:
                     motivo = "motivo_nao_confirmado"
-            eventos.append({
+            item = {
                 "snapshot": indice,
                 "data_jogo": str(previsao.get("data_jogo") or ""),
                 "registado_em": instante,
                 "resultado": resultado,
                 "motivo": motivo,
-            })
+            }
+            # Contagens recebidas na mesma chamada de odds, sem consultas
+            # extras, sem guardar o payload da fonte ou credenciais.
+            if motivo == "mercado_nao_disponivel":
+                contexto = enriquecida.get("_odds_contexto_mercados")
+                if isinstance(contexto, dict):
+                    contagens = {}
+                    for campo in ("total", "compativeis", "sem_catalogo"):
+                        valor = contexto.get(campo)
+                        if isinstance(valor, int) and not isinstance(valor, bool) and 0 <= valor <= 999:
+                            contagens[campo] = valor
+                    if len(contagens) == 3:
+                        item["mercados_contexto"] = contagens
+            eventos.append(item)
         if not eventos:
             return 0
         dados = self._ler()
