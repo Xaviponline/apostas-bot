@@ -262,6 +262,31 @@ class AuditoriaOdds:
         )
 
     @classmethod
+    def _contexto_mercados_passivo(cls, dados, mercado_modelo):
+        """Conta mercados ja recebidos; zero pedidos extra e sem associar odds.
+
+        Diferencia payload sem mercados, mercados com catalogo incompleto
+        e mercados presentes mas nao compativeis. Apenas telemetria CLV.
+        """
+        if not isinstance(dados, dict) or not isinstance(dados.get("mercados"), list):
+            return None
+        mercados = [
+            m for m in dados["mercados"] if isinstance(m, dict)
+        ]
+        sem_catalogo = sum(
+            bool(re.fullmatch(r"market [0-9]+", str(m.get("name") or "").casefold()))
+            for m in mercados
+        )
+        return {
+            "total": min(len(mercados), 999),
+            "compativeis": min(sum(
+                cls._mercado_compativel(mercado_modelo, m)
+                for m in mercados
+            ), 999),
+            "sem_catalogo": min(sem_catalogo, 999),
+        }
+
+    @classmethod
     def _extrair_odd_diagnostico(cls, dados, mercado_modelo):
         if not isinstance(dados, dict):
             return None, "odds_evento_indisponiveis"
@@ -653,6 +678,13 @@ class AuditoriaOdds:
                 dados, str(selecao.get("mercado") or "")
             )
             if extraida is None:
+                if motivo == "mercado_nao_disponivel":
+                    contexto_mercados = self._contexto_mercados_passivo(
+                        dados, str(selecao.get("mercado") or "")
+                    )
+                    if contexto_mercados is not None:
+                        # Apenas na selecao transitoria; nunca no snapshot.
+                        selecao["_odds_contexto_mercados"] = contexto_mercados
                 self._registar_diagnostico(selecao, motivo or "odd_nao_extraida")
                 continue
 

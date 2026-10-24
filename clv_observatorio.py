@@ -115,6 +115,19 @@ class ObservatorioCLV:
                         f"Última: {ultimo.get('registado_em', '?')} | "
                         f"Diagnóstico: {ultimo.get('motivo', 'desconhecido')}"
                     )
+                    contexto = ultimo.get("mercados_contexto")
+                    if isinstance(contexto, dict) and all(
+                        isinstance(contexto.get(k), int)
+                        and not isinstance(contexto.get(k), bool)
+                        and 0 <= contexto[k] <= 999
+                        for k in ("total", "compativeis", "sem_catalogo")
+                    ):
+                        linhas.append(
+                            "  ↳ Mercados recebidos: "
+                            f"{contexto['total']} | compatíveis: "
+                            f"{contexto['compativeis']} | sem catálogo: "
+                            f"{contexto['sem_catalogo']}"
+                        )
                 else:
                     linhas.append("  ↳ Sem telemetria histórica: causa não confirmada.")
             if len(sem) > 6:
