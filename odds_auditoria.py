@@ -8,6 +8,9 @@ Se não houver correspondência segura, não guarda qualquer odd.
 import logging
 import re
 import unicodedata
+from zoneinfo import ZoneInfo
+
+from fixture_guard_shadow import categorias_incompativeis, juventude_confirmada_hoje
 from copy import deepcopy
 from datetime import datetime, timezone
 
@@ -386,6 +389,8 @@ class AuditoriaOdds:
         ignorar = {"league", "liga", "football", "futebol", "english", "england"}
         tokens_modelo = set(liga_modelo.split()) - ignorar
         tokens_fonte = set(liga_evento.split()) - ignorar
+        if categorias_incompativeis(jogo.get("liga"), (dados or {}).get("liga") or evento.get("liga")):
+            alertas.append("categoria_juvenil_incompativel")
         if (
             len(tokens_modelo) >= 1 and len(tokens_fonte) >= 1
             and not (tokens_modelo & tokens_fonte)
@@ -515,6 +520,19 @@ class AuditoriaOdds:
                 continue
 
             evento = candidatos[0]
+            try:
+                ts = float(jogo.get("timestamp"))
+                dia_pt = datetime.fromtimestamp(ts, timezone.utc).astimezone(
+                    ZoneInfo("Europe/Lisbon")
+                ).date().isoformat()
+            except (TypeError, ValueError, OverflowError, OSError):
+                dia_pt = ""
+            if juventude_confirmada_hoje({
+                "data_jogo": dia_pt, "casa": jogo.get("casa"),
+                "fora": jogo.get("fora"), "liga": jogo.get("liga"),
+            }):
+                self._registar_diagnostico(selecao, "fixture_u19_confirmado_tff")
+                continue
             # Metadados de contexto observados no fixture já associado.
             # Diagnóstico passivo: sem influenciar matches, odds ou snapshots.
             selecao["_odds_evento_contexto"] = {
@@ -545,6 +563,9 @@ class AuditoriaOdds:
                     jogo.get("fora") or "?",
                     ",".join(alertas_contexto),
                 )
+            if "categoria_juvenil_incompativel" in alertas_contexto:
+                self._registar_diagnostico(selecao, "liga_idade_incompativel")
+                continue
             event_id = evento.get("id")
             if event_id is None:
                 self._registar_diagnostico(selecao, "evento_sem_id")
@@ -598,6 +619,9 @@ class AuditoriaOdds:
                 selecao["_odds_alertas"] = sorted(set(
                     (selecao.get("_odds_alertas") or []) + adicionais
                 ))
+            if "categoria_juvenil_incompativel" in (selecao.get("_odds_alertas") or []):
+                self._registar_diagnostico(selecao, "liga_idade_incompativel")
+                continue
             if not self._payload_evento_compativel(dados, jogo, event_id):
                 self._registar_diagnostico(selecao, "odds_payload_evento_divergente")
                 continue

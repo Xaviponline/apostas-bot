@@ -5,6 +5,7 @@ from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
+from unittest.mock import patch
 
 from odds_confronto_betano import confrontar_betano
 from main_competicoes import BotPremiumDiarioCompeticoes
@@ -170,10 +171,16 @@ class ConfrontoOddsTests(unittest.TestCase):
         mensagens = []
         bot.enviar_mensagem = lambda chat, texto: mensagens.append(texto)
         comando = "/odds_confronto " + COMANDO
-        bot.processar_comando(52, comando, user_id=52)
-        self.assertEqual(mensagens, [])
-        bot.processar_comando(51, comando, user_id=51)
-        bot.processar_comando(51, comando, user_id=51)
+        class RelogioFixo:
+            @staticmethod
+            def now(tz=None):
+                return AGORA.astimezone(tz) if tz else AGORA
+
+        with patch("main_competicoes.datetime", RelogioFixo):
+            bot.processar_comando(52, comando, user_id=52)
+            self.assertEqual(mensagens, [])
+            bot.processar_comando(51, comando, user_id=51)
+            bot.processar_comando(51, comando, user_id=51)
         self.assertEqual(len(mensagens), 2)
         self.assertIn("CONFRONTO BETANO PT", mensagens[0])
         self.assertIn("cache", mensagens[1])

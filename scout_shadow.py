@@ -22,6 +22,7 @@ from odds_referencia_shadow import (
     _dt, _equipa, _mercado_modelo, _numero, _recolher, AJUSTE_KICKOFF_SEG
 )
 from odds_auditoria import AuditoriaOdds
+from fixture_guard_shadow import juventude_confirmada_hoje
 
 
 TZ_PT = ZoneInfo("Europe/Lisbon")
@@ -90,6 +91,9 @@ def _possiveis(snapshots, agora):
         if not isinstance(p, dict):
             continue
         if p.get("data_jogo") != hoje:
+            continue
+        if juventude_confirmada_hoje(p):
+            reasons["fixture_u19_confirmado_tff"] += 1
             continue
         if p.get("estado") != "pendente":
             reasons["nao_pendente"] += 1
