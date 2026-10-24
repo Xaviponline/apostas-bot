@@ -11,6 +11,9 @@ import unicodedata
 from zoneinfo import ZoneInfo
 
 from fixture_guard_shadow import categorias_incompativeis, juventude_confirmada_hoje
+from odds_identidade_guard import (
+    equipas_categoria_incompativel, verificar_hora_fixture, classificar_frescura,
+)
 from copy import deepcopy
 from datetime import datetime, timezone
 
@@ -72,6 +75,9 @@ class AuditoriaOdds:
         a_n = cls._canon_equipa(a)
         b_n = cls._canon_equipa(b)
         if not a_n or not b_n:
+            return False
+        # Sufixos de categoria sao parte da identidade do clube, nunca aliases.
+        if equipas_categoria_incompativel(a, b):
             return False
         if a_n == b_n:
             return True
@@ -520,6 +526,21 @@ class AuditoriaOdds:
                 continue
 
             evento = candidatos[0]
+            # O ficheiro do fornecedor principal contem startTime. A sua
+            # ausencia ou divergencia impede associações comerciais novas.
+            # Fontes antigas/mocks sem hora mantêm a retrocompatibilidade;
+            # quando ambas as horas existem, aplica-se a regra universal.
+            hora_ok, motivo_hora = verificar_hora_fixture(
+                jogo.get("timestamp"), evento.get("data"),
+                exigir_hora=getattr(self.fonte, "provider", "") == "oddspapi",
+            )
+            if not hora_ok:
+                selecao.setdefault("_odds_alertas", []).append(
+                    "horario_divergente" if motivo_hora == "horario_fixture_incompativel"
+                    else "horario_nao_comprovado"
+                )
+                self._registar_diagnostico(selecao, motivo_hora)
+                continue
             try:
                 ts = float(jogo.get("timestamp"))
                 dia_pt = datetime.fromtimestamp(ts, timezone.utc).astimezone(
@@ -634,6 +655,19 @@ class AuditoriaOdds:
                 continue
 
             odd_real, atualizada_em = extraida
+            # Medir frescura antes da congelação. Inicialmente só SHADOW:
+            # bloquear sem dados de campo poderia alterar a coorte V1.3
+            # enquanto o protocolo de 50 entradas está em curso.
+            alerta_frescura = classificar_frescura(
+                atualizada_em, datetime.now(timezone.utc),
+            )
+            if alerta_frescura:
+                selecao.setdefault("_odds_alertas", []).append(alerta_frescura)
+                logging.info(
+                    "ODDS_FRESCURA | %s vs %s | %s",
+                    jogo.get("casa") or "?", jogo.get("fora") or "?",
+                    alerta_frescura,
+                )
             try:
                 prob = float(selecao["probabilidade"])
             except (KeyError, TypeError, ValueError):
