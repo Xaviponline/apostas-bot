@@ -275,7 +275,7 @@ class ScoutShadow:
                 # Nunca fechar o dia antes de a analise automatica registar previsoes.
                 return False, (
                     f"🎯 SCOUT SHADOW — {hoje}\n"
-                    "⚪ Ainda nao existem snapshots do modelo hoje. Zero pedidos API.\n"
+                    "⚪ Ainda nao existem snapshots do modelo hoje; zero pedidos API.\n"
                     "Aguardar analise automatica; nao foi registada tentativa."
                 )
             # Dia com previsoes mas nenhum candidato: guardar o diagnostico e
