@@ -98,7 +98,11 @@ class VerificacaoOdds:
             jogo = s.get("jogo") or {}
             alertas = s.get("_odds_alertas") or []
             for alerta in alertas:
-                if alerta not in {"horario_divergente", "competicao_divergente"}:
+                if alerta not in {
+                    "horario_divergente", "horario_nao_comprovado",
+                    "competicao_divergente", "odd_desatualizada",
+                    "odd_sem_data_atualizacao", "odd_data_futura",
+                }:
                     continue
                 event_id = str(jogo.get("id") or "")
                 mercado = str(s.get("mercado") or "")
@@ -165,7 +169,12 @@ class VerificacaoOdds:
             if a["tipo"] == "odd_incomum":
                 linhas.append(f"   {titulo}: @{a['odd']:.2f} | minima {a['minima']:.2f} | EV modelo {a['ev']*100:+.1f}%")
             else:
-                linhas.append(f"   {titulo} — conferir torneio/horario do fornecedor")
+                sugestao = (
+                    "verificar a idade da cotacao no fornecedor"
+                    if a["tipo"] in {"odd_desatualizada", "odd_sem_data_atualizacao", "odd_data_futura"}
+                    else "conferir torneio/horario do fornecedor"
+                )
+                linhas.append(f"   {titulo} — {sugestao}")
         if len(alertas) > 8:
             linhas.append(f"+{len(alertas)-8} alertas adicionais")
         linhas.extend([
