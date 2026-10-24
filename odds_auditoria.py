@@ -11,6 +11,9 @@ import unicodedata
 from zoneinfo import ZoneInfo
 
 from fixture_guard_shadow import categorias_incompativeis, juventude_confirmada_hoje
+from odds_identidade_guard import (
+    equipas_categoria_incompativel, verificar_hora_fixture, classificar_frescura,
+)
 from copy import deepcopy
 from datetime import datetime, timezone
 
@@ -344,8 +347,11 @@ class AuditoriaOdds:
         for evento in eventos or []:
             if not isinstance(evento, dict):
                 continue
-            if cls._nome_equipa_compativel(casa, evento.get("casa")) and cls._nome_equipa_compativel(
-                fora, evento.get("fora")
+            if (
+                not equipas_categoria_incompativel(casa, evento.get("casa"))
+                and not equipas_categoria_incompativel(fora, evento.get("fora"))
+                and cls._nome_equipa_compativel(casa, evento.get("casa"))
+                and cls._nome_equipa_compativel(fora, evento.get("fora"))
             ):
                 candidatos.append(evento)
         return candidatos
@@ -363,8 +369,11 @@ class AuditoriaOdds:
         fora_payload = str(dados.get("fora") or "").strip()
         if not casa_payload or not fora_payload:
             return True
-        return cls._nome_equipa_compativel(jogo.get("casa"), casa_payload) and cls._nome_equipa_compativel(
-            jogo.get("fora"), fora_payload
+        return (
+            not equipas_categoria_incompativel(jogo.get("casa"), casa_payload)
+            and not equipas_categoria_incompativel(jogo.get("fora"), fora_payload)
+            and cls._nome_equipa_compativel(jogo.get("casa"), casa_payload)
+            and cls._nome_equipa_compativel(jogo.get("fora"), fora_payload)
         )
 
     @classmethod
@@ -520,6 +529,20 @@ class AuditoriaOdds:
                 continue
 
             evento = candidatos[0]
+            # As fontes produtivas identificadas devem provar data e hora
+            # antes de qualquer captura comercial. Diagnosticos antigos em
+            # fontes de testes/legadas sem provider mantêm a sua semantica.
+            if getattr(self.fonte, "provider", None) in ("oddspapi", "odds-api.io"):
+                hora_ok, motivo_hora = verificar_hora_fixture(
+                    jogo.get("timestamp"), evento.get("data"), exigir_hora=True,
+                )
+                if not hora_ok:
+                    selecao.setdefault("_odds_alertas", []).append(
+                        "horario_divergente" if motivo_hora == "horario_fixture_incompativel"
+                        else "horario_nao_comprovado"
+                    )
+                    self._registar_diagnostico(selecao, motivo_hora)
+                    continue
             try:
                 ts = float(jogo.get("timestamp"))
                 dia_pt = datetime.fromtimestamp(ts, timezone.utc).astimezone(
@@ -634,6 +657,19 @@ class AuditoriaOdds:
                 continue
 
             odd_real, atualizada_em = extraida
+            # Medir frescura antes da congelação. Inicialmente só SHADOW:
+            # bloquear sem dados de campo poderia alterar a coorte V1.3
+            # enquanto o protocolo de 50 entradas está em curso.
+            alerta_frescura = classificar_frescura(
+                atualizada_em, datetime.now(timezone.utc),
+            )
+            if alerta_frescura:
+                selecao.setdefault("_odds_alertas", []).append(alerta_frescura)
+                logging.info(
+                    "ODDS_FRESCURA | %s vs %s | %s",
+                    jogo.get("casa") or "?", jogo.get("fora") or "?",
+                    alerta_frescura,
+                )
             try:
                 prob = float(selecao["probabilidade"])
             except (KeyError, TypeError, ValueError):

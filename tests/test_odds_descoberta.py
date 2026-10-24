@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 
 from odds_auditoria import AuditoriaOdds
 from odds_betano import OddsBetano
@@ -153,7 +154,8 @@ class OddsDescobertaTests(unittest.TestCase):
             papi_key="teste", provider="oddspapi", session=SessaoPapiSemBetano()
         )
         selecoes = [{
-            "jogo": {"id": 1, "casa": "Fleetwood Town", "fora": "Sheffield United"},
+            "jogo": {"id": 1, "casa": "Fleetwood Town", "fora": "Sheffield United",
+                     "timestamp": datetime(2026, 9, 16, 18, 45, tzinfo=timezone.utc).timestamp()},
             "mercado": "Under 2.5 Golos",
             "probabilidade": 0.69,
         }]
