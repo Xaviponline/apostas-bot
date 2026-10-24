@@ -267,12 +267,31 @@ class ScoutShadow:
             return False, "♻️ SCOUT de hoje ja registado. Zero chamadas novas.\n" + self.relatorio_dia(dados, hoje)
         candidatos, motivos = _possiveis(snapshots, agora)
         if not candidatos:
-            return False, (
-                "🎯 SCOUT SHADOW — "
-                + hoje + "\n⚪ Sem snapshots Top5 elegiveis para hoje; zero pedidos API.\n"
-                + ("Filtros: " + ", ".join(f"{k}={v}" for k,v in motivos.most_common(5))
-                   if motivos else "Ainda nao existem snapshots de hoje.")
+            snapshots_hoje = sum(
+                1 for p in snapshots
+                if isinstance(p, dict) and p.get("data_jogo") == hoje
             )
+            if not snapshots_hoje:
+                # Nunca fechar o dia antes de a analise automatica registar previsoes.
+                return False, (
+                    f"🎯 SCOUT SHADOW — {hoje}\n"
+                    "⚪ Ainda nao existem snapshots do modelo hoje; zero pedidos API.\n"
+                    "Aguardar analise automatica; nao foi registada tentativa."
+                )
+            # Dia com previsoes mas nenhum candidato: guardar o diagnostico e
+            # enviar UMA mensagem OWNER. Sem HTTP e sem interferir com V1.3.
+            dados["dias"][hoje] = {
+                "estado": "sem_candidatos",
+                "criado_em": agora.isoformat(),
+                "creditos_estimados_reservados": 0,
+                "ligas": [],
+                "snapshots_do_dia": snapshots_hoje,
+                "candidatos_modelo": 0,
+                "descartes": dict(motivos),
+                "selecoes": [],
+            }
+            self._guardar(dados)
+            return True, self.relatorio_dia(dados, hoje)
         key = str(chave or os.getenv("THE_ODDS_API_KEY") or "").strip()
         if not key:
             return False, "⚪ The Odds API indisponivel; sem chamadas e sem alteracoes."
@@ -387,6 +406,11 @@ class ScoutShadow:
                 f" | Ref. {s['odd_mediana']:.2f} ({s['bookmakers']} casas)"
                 f" | Min. modelo {s['odd_minima_modelo']:.2f}",
             ]
+        if obj.get("estado") == "sem_candidatos":
+            linhas.append(
+                f"⚪ {obj.get('snapshots_do_dia', 0)} previsoes de hoje analisadas; "
+                "nenhuma elegivel. Zero pedidos API."
+            )
         if obj.get("descartes"):
             resumo = sorted(obj["descartes"].items(), key=lambda k: (-k[1], k[0]))
             linhas.append("🔎 Excluidas: " + ", ".join(f"{k}={v}" for k,v in resumo[:8]))
