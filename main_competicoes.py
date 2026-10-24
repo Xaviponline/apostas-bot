@@ -326,7 +326,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /scout_agora — avaliacao multi-casa SHADOW, max 2 ligas/dia",
             "ℹ️ /scout_hoje e /scout_performance — carteira prospetiva, zero HTTP",
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
-            "ℹ️ /v13_comercial — gate completo; /v13_qualidade — integridade da coorte",
+            "ℹ️ /v13_comercial — gate completo; /v13_calibracao — probabilidades vs acertos",
+            "ℹ️ /v13_qualidade — integridade da coorte",
             "ℹ️ /v13_idade_odds — comparar ultima mudanca e captura de preços (SHADOW)",
             "ℹ️ /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
@@ -2137,6 +2138,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível executar a Shadow Top 5. "
                     "O histórico e a V1.2 não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/v13_calibracao":
+            if not owner_admin:
+                return
+            try:
+                from v13_calibracao_shadow import relatorio_calibracao_v13
+                resposta = relatorio_calibracao_v13(self.previsoes)
+            except (ValueError, TypeError, KeyError, ArithmeticError, OSError,
+                    RuntimeError, IndexError, OverflowError):
+                resposta = (
+                    "⚠️ Calibracao V1.3 SHADOW indisponivel. "
+                    "Nenhum snapshot, odd, CLV, ROI ou gate foi alterado."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
