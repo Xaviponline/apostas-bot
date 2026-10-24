@@ -29,6 +29,7 @@ from vigilancia_externa import VigilanciaExterna
 from rotinas_diarias import RotinasDiarias
 from alertas_prejogo import AlertasPreJogo
 from scout_shadow import ScoutShadow
+from fixture_guard_shadow import juventude_confirmada_hoje
 
 
 class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
@@ -395,6 +396,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         data_iso = agora.strftime("%Y-%m-%d")
         agora_ts = agora.timestamp()
         previsoes = []
+        suspensas_u19 = 0
 
         def odd_valida(valor):
             try:
@@ -407,6 +409,9 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             if not isinstance(p, dict):
                 continue
             if p.get("data_jogo") != data_iso or p.get("estado") != "pendente":
+                continue
+            if juventude_confirmada_hoje(p):
+                suspensas_u19 += 1
                 continue
             ts = p.get("timestamp_jogo")
             if not isinstance(ts, (int, float)) or not isfinite(float(ts)) or ts <= agora_ts:
@@ -430,6 +435,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 f"🎯 PREMIUM PICKS — {agora.strftime('%d/%m/%Y')}\n\n"
                 "Ainda não existem picks Premium congeladas e por começar para hoje.\n"
                 "Quando forem publicadas, aparecerão aqui sem alterar o modelo."
+                + (f"\n⚠️ {suspensas_u19} previsao(oes) U19 confirmada(s) "
+                   "ocultada(s) da vitrine Premium." if suspensas_u19 else "")
             )
 
         grupos = {"value": [], "aguarda": [], "sem_valor": []}
@@ -459,6 +466,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             f"🔴 {n_sem_valor} sem VALUE / expiradas",
             "🔒 Previsões já congeladas pelo modelo",
         ]
+
+        if suspensas_u19:
+            linhas.append(
+                f"⚠️ {suspensas_u19} previsao(oes) U19 TFF ocultada(s) da vitrine; "
+                "snapshots e coorte V1.3 intactos."
+            )
 
         def cabecalho(texto, total):
             linhas.extend(["", "━━━━━━━━━━━━━━━━━━━━", f"{texto}  ({total})", "━━━━━━━━━━━━━━━━━━━━"])
