@@ -55,6 +55,12 @@ LIGAS = {
     "ligue 1": "soccer_france_ligue_one",
     "english league championship": "soccer_efl_champ",
     "efl championship": "soccer_efl_champ",
+    # Liga inglesa por código explícito; nunca aceitar "league one/two"
+    # isolado (ambíguo com ligas da Escócia e outros países).
+    "english league one": "soccer_england_league1",
+    "efl league one": "soccer_england_league1",
+    "english league two": "soccer_england_league2",
+    "efl league two": "soccer_england_league2",
     "uefa champions league": "soccer_uefa_champs_league",
     "uefa europa league": "soccer_uefa_europa_league",
 }

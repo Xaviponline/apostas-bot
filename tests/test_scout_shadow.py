@@ -10,7 +10,7 @@ from unittest.mock import patch
 from main_competicoes import BotPremiumDiarioCompeticoes
 from scout_shadow import (
     LIGAS, MAX_LIGAS_DIA, MIN_LIQUIDADAS, ScoutShadow, _possiveis,
-    _match, _registo, _wilson,
+    _match, _registo, _wilson, _liga,
 )
 
 AGORA = datetime(2026, 10, 24, 9, 5, tzinfo=timezone.utc)
@@ -336,6 +336,69 @@ class ScoutTests(unittest.TestCase):
             with patch("scout_shadow._get", side_effect=AssertionError("API")):
                 bot._scout_auto_se_devido()
         self.assertFalse(self.path.exists())
+
+    def test_league_one_two_inglesas_suportadas_por_chave_exata(self):
+        casos = {
+            "English League One": "soccer_england_league1",
+            "EFL League One": "soccer_england_league1",
+            "English League Two": "soccer_england_league2",
+            "EFL League Two": "soccer_england_league2",
+        }
+        for nome, codigo in casos.items():
+            with self.subTest(liga=nome):
+                self.assertEqual(_liga(snap(liga=nome)), codigo)
+        # Nunca supor que uma League One sem país é inglesa.
+        for ambigua in ("League One", "Scottish League One",
+                         "League Two", "Scottish League Two", "Turkish Super Lig"):
+            with self.subTest(liga_ambigua=ambigua):
+                self.assertIsNone(_liga(snap(liga=ambigua)))
+
+    def test_hoje_top5_league_one_substitui_so_bloqueio_mapeamento(self):
+        originais = [
+            snap(chave="4", ranking_modelo=4, liga="English League One",
+                 casa="AFC Wimbledon", fora="Wycombe Wanderers",
+                 mercado="Under 2.5 Golos"),
+            snap(chave="5", ranking_modelo=5, liga="English League One",
+                 casa="Oxford United", fora="Bradford City",
+                 mercado="Under 2.5 Golos"),
+        ]
+        antes = copy.deepcopy(originais)
+        candidatos, motivos = _possiveis(originais, AGORA)
+        self.assertEqual(len(candidatos), 2)
+        self.assertEqual(motivos["liga_sem_mapeamento"], 0)
+        self.assertTrue(all(c[0] == "soccer_england_league1" for c in candidatos))
+        self.assertEqual(originais, antes)
+
+    def test_liga_mapeada_mas_ausente_catalogo_zero_odds_pagas(self):
+        target = snap(chave="4", ranking_modelo=4, liga="English League One")
+        calls = []
+        def get(sess, path, params):
+            calls.append(path)
+            if path == "/sports/":
+                return [{"key": "soccer_epl", "active": True}], None, {
+                    "x-requests-remaining": "496"}
+            raise AssertionError("Nunca pedir odds para liga indisponivel")
+        with patch("scout_shadow._get", side_effect=get):
+            feito, mensagem = self.scout.executar(
+                [target], agora=AGORA, chave="SEGREDO")
+        self.assertTrue(feito)
+        self.assertEqual(calls, ["/sports/"])
+        self.assertIn("liga_sem_odds_api=1", mensagem)
+
+    def test_dia_guardado_sem_candidatos_nao_reabrir_apos_mapeamento(self):
+        self.path.write_text(json.dumps({"versao":1, "dias":{
+            "2026-10-24": {
+                "estado":"sem_candidatos", "creditos_estimados_reservados":0,
+                "ligas":[], "candidatos_modelo":0, "selecoes":[]
+            }
+        }}),encoding="utf-8")
+        with patch("scout_shadow._get", side_effect=AssertionError("rede")):
+            feito, txt = self.scout.executar(
+                [snap(liga="English League One", ranking_modelo=4)],
+                agora=AGORA, chave="SEGREDO")
+        self.assertFalse(feito)
+        self.assertIn("ja registado", txt)
+        self.assertIn("sem_candidatos", txt)
 
     def test_map_portugal_e_teto_duas_ligas(self):
         self.assertEqual(LIGAS["portuguese primeira liga"], SPORT)
