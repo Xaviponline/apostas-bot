@@ -269,13 +269,18 @@ class OddsAuditoriaTests(unittest.TestCase):
             "c",
         )
 
-    def test_fallback_ambiguo_continua_bloqueado(self):
+    def test_fallback_ignora_clube_b_e_preserva_ambiguidades_reais(self):
         eventos = [
             {"id": "a", "casa": "Deportivo La Coruna", "fora": "Sevilla"},
             {"id": "b", "casa": "Deportivo B", "fora": "Sevilla"},
         ]
         candidatos = AuditoriaOdds._candidatos_evento(eventos, "Deportivo", "Sevilla")
-        self.assertEqual(len(candidatos), 2)
+        self.assertEqual([x["id"] for x in candidatos], ["a"])
+        eventos.append(
+            {"id": "c", "casa": "Deportivo Tenerife", "fora": "Sevilla"}
+        )
+        candidatos = AuditoriaOdds._candidatos_evento(eventos, "Deportivo", "Sevilla")
+        self.assertEqual({x["id"] for x in candidatos}, {"a", "c"})
 
     def test_diagnostica_evento_nao_encontrado(self):
         selecoes = [
