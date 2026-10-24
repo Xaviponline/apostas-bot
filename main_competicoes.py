@@ -326,7 +326,8 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /scout_agora — avaliacao multi-casa SHADOW, max 2 ligas/dia",
             "ℹ️ /scout_hoje e /scout_performance — carteira prospetiva, zero HTTP",
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
-            "ℹ️ /v13_comercial — gate completo; /v13_qualidade — auditoria passiva de entradas",
+            "ℹ️ /v13_comercial — gate completo; /v13_qualidade — integridade da coorte",
+            "ℹ️ /v13_idade_odds — comparar ultima mudanca e captura de preços (SHADOW)",
             "ℹ️ /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
             "ℹ️ A consulta de conta nao desconta pedidos OddsPapi.",
@@ -2149,6 +2150,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "⚠️ Auditoria V1.3 Robustez indisponível. "
                     "Sem alterações às previsões, odds, gate ou histórico."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/v13_idade_odds":
+            if not owner_admin:
+                return
+            try:
+                from auditoria_idade_odds_v13_shadow import relatorio_idade_odds_v13
+                resposta = relatorio_idade_odds_v13(self.previsoes, argumento=argumentos)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError,
+                    ArithmeticError, IndexError, OverflowError):
+                resposta = (
+                    "⚠️ Diagnostico da idade das odds temporariamente indisponivel. "
+                    "Zero pedidos API; historico e V1.3 intactos."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
