@@ -458,7 +458,15 @@ class OddsBetano:
         if not isinstance(dados, dict):
             raise ValueError("Resposta OddsPapi inválida.")
         book = (dados.get("bookmakerOdds") or {}).get(self.papi_bookmaker)
-        if not isinstance(book, dict):
+        # A OddsPapi pode devolver precos historicos nos mercados mesmo com a
+        # bookmaker inteira suspensa/inativa. Nunca tratar esses preços como
+        # cotacoes novas disponiveis. So bloquear estados explicitos; campos
+        # ausentes mantem a retrocompatibilidade dos payloads antigos.
+        indisponivel = (
+            isinstance(book, dict)
+            and (book.get("bookmakerIsActive") is False or book.get("suspended") is True)
+        )
+        if not isinstance(book, dict) or indisponivel:
             return {
                 "id": dados.get("fixtureId"),
                 "casa": dados.get("participant1Name"),
