@@ -221,6 +221,13 @@ def run(previsoes, saida, rastreio=None, tentativas=None):
     }
     for filename, keys in group_specs.items():
         rows = grouped(normalized, keys) if keys else [metrics(normalized)]
+        if keys == ("faixa",):
+            present = {r["faixa"] for r in rows}
+            rows += [
+                {"faixa": label, **metrics([])}
+                for label in BIN_NAMES if label not in present
+            ]
+            rows.sort(key=lambda row: BIN_NAMES.index(row["faixa"]) if row["faixa"] in BIN_NAMES else 99)
         write_csv(dst / filename, list(keys)+m_cols, rows)
     write_csv(dst/"avisos_dados.csv", ("snapshot","causa","valor"), errors)
     obs, fails = market_evidence(rastreio, tentativas)
