@@ -383,6 +383,13 @@ class BotPremiumDiarioDiagnostico(BotPremiumDiario):
         total_selecao = sum(v["selecao"] for v in por_liga.values())
         fora = max(len(futuros) - total_cobertura, 0)
 
+        # Fases genericas nao sao nomes de provas: mostrar, nunca adivinhar.
+        nomes_fases = {"group stage", "league phase", "regular season", "semifinals"}
+        fases = [j for j in futuros if isinstance(j, dict)
+                 and resolver(j) is None
+                 and str(j.get("liga") or "").strip().casefold() in nomes_fases]
+        fases_com_slug = sum(bool(str(j.get("season_slug") or "").strip()) for j in fases)
+
         linhas = [
             f"🧭 COBERTURA V1 — {agora.strftime('%d/%m/%Y')}",
             f"📚 Jogos do dia: {len(jogos)} | Ainda por começar: {len(futuros)}",
@@ -409,6 +416,8 @@ class BotPremiumDiarioDiagnostico(BotPremiumDiario):
                 f"✅ Dentro da cobertura: {total_cobertura} | 🌍 Fora: {fora}",
                 f"🧪 Com dados suficientes: {total_dados}",
                 f"🎯 Seleção atual: {total_selecao}/{limite} máximo",
+                f"🔎 Fases genericas sem liga confirmada: {len(fases)} | slug ESPN presente: {fases_com_slug}",
+                "ℹ️ Fases ambiguas nao sao associadas a ligas por adivinhacao.",
                 "ℹ️ Este comando é diagnóstico: não grava previsões nem altera o V1.",
             ]
         )
