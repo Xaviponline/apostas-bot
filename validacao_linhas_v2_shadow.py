@@ -21,7 +21,11 @@ def validar_linha_totais(alvo, mercado, selecao):
     wanted, side = float(match.group(2)), match.group(1).lower()
     selection = str(selecao.get("seleção") or "")
     ref = str(selecao.get("ref") or "")
-    if side not in {s.lower() for s in _SIDE.findall(selection + " " + ref)}:
+    selection_sides = {s.lower() for s in _SIDE.findall(selection)}
+    ref_sides = {s.lower() for s in _SIDE.findall(ref)}
+    if (selection_sides and selection_sides != {side}) or (ref_sides and ref_sides != {side}):
+        return False, "lado_contraditorio"
+    if not selection_sides and not ref_sides:
         return False, "lado_incompativel"
     handicap = mercado.get("handicap")
     if handicap is not None:
