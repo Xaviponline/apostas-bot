@@ -36,4 +36,9 @@ class Tests(unittest.TestCase):
     def test_23_ref_line_with_other_side(self):self.no('Under 2.5 Golos',market(),'Under','12.5/over')
     def test_24_name_decimals_with_year(self):self.ok('Under 2.5 Golos',market(2.5,'Total Goals 2.5 Season 2026'),'Under')
 
+    def test_25_lado_over_contra_ref_under(self):self.no('Under 2.5 Golos',market(2.5),'Over','2.5/under')
+    def test_26_lado_under_contra_ref_over(self):self.no('Under 2.5 Golos',market(2.5),'Under','2.5/over')
+    def test_27_selecao_ambigua(self):self.no('Under 2.5 Golos',market(2.5),'Over Under')
+    def test_28_lado_apenas_na_ref(self):self.ok('Under 2.5 Golos',market(2.5),'','2.5/under')
+
 if __name__=='__main__':unittest.main(verbosity=2)
