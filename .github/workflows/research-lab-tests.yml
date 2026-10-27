@@ -1,6 +1,7 @@
 name: Research Lab unit tests
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
     paths:
