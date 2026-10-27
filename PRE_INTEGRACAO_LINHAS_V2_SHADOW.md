@@ -27,3 +27,18 @@ Em `odds_auditoria.py`, dentro de `AuditoriaOdds._item_compativel`, apenas no ra
 - Linhas decimais são detetadas em texto livre; números inteiros só contam como linha quando introduzidos por `line`, `linha` ou `handicap`. A cobertura de formatos reais deve ser confirmada.
 - Não há evidência de que as 323 ocorrências históricas `mercado_nao_disponivel` resultem desta falha.
 - Os testes unitários SHADOW não provam ROI nem CLV.
+
+## Fecho da revisão técnica SHADOW — 27/10/2026
+
+### Evidência CI após a última alteração
+- GitHub Actions Bot unit tests: **724 testes, OK**, run 40542445530, commit `d7b6dd2dd0dfb73d2717f6e44be1ba7220cb01ec`.
+- GitHub Actions Research Lab unit tests: **20 testes, OK**, run 40542445867, mesmo commit.
+- `tests/test_replay_fixture_papi_v2_shadow.py`: comparação do parser atual com V2 em fixture simulada do fornecedor, incluindo Under 2.5, Under 3.5, Over 2.5 e rejeição de 1.5. Incluído na suite do bot acima.
+- A V2 rejeita contradições Over/Under entre `seleção` e `ref`, e conflitos de linhas 12.5/2.5, mantendo as guardas de identidade, mercado e período fora do validador.
+
+### Limites da evidência e decisão
+- A fixture é **sintética** (`PapiLinhasSession`), não um conjunto histórico de payloads reais.
+- Não foi localizado um corpus histórico real adequado no código consultado; não declarar replay real executado, nem melhoria de cobertura, ROI ou CLV.
+- **Decisão: NÃO integrar ainda no `odds_auditoria.py`, não fazer merge e não fazer deploy.**
+- Próxima etapa segura: recolher/identificar payloads históricos já armazenados (sem chamar a API), comparar aceites/rejeitados antigo vs V2, rever falsos negativos e só então propor patch mínimo separado com aprovação explícita.
+- O PR #104 é um rascunho de validação, **não** um PR de promoção para produção.
