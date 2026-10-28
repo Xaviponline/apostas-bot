@@ -678,7 +678,7 @@ class AuditoriaOdds:
                 dados, str(selecao.get("mercado") or "")
             )
             if extraida is None:
-                if motivo == "mercado_nao_disponivel":
+                if motivo in {"mercado_nao_disponivel", "linha_ou_selecao_nao_disponivel"}:
                     contexto_mercados = self._contexto_mercados_passivo(
                         dados, str(selecao.get("mercado") or "")
                     )
