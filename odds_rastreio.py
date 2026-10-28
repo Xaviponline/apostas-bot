@@ -53,6 +53,9 @@ class RastreioOdds:
                     "mercados_sem_handicap", "lado_alvo_linha_alvo",
                     "lado_alvo_outra_linha", "lado_alvo_sem_handicap",
                     "lado_desconhecido_linha_alvo",
+                    "refs_lado_alvo_com_linha",
+                    "refs_alvo_handicap_divergente",
+                    "refs_outra_handicap_alvo",
                 )
                 for chave in contadores:
                     numero = origem_linha.get(chave)
@@ -63,6 +66,13 @@ class RastreioOdds:
                     from math import isfinite
                     resumo_linha["linhas_handicap"] = [
                         float(v) for v in valores_handicap[:8]
+                        if type(v) in (int, float) and isfinite(float(v)) and 0 <= float(v) <= 20
+                    ]
+                linhas_refs = origem_linha.get("linhas_ref_lado_alvo")
+                if isinstance(linhas_refs, list):
+                    from math import isfinite
+                    resumo_linha["linhas_ref_lado_alvo"] = [
+                        float(v) for v in linhas_refs[:8]
                         if type(v) in (int, float) and isfinite(float(v)) and 0 <= float(v) <= 20
                     ]
                 alvo = origem_linha.get("alvo")
@@ -319,6 +329,15 @@ class RastreioOdds:
                     f"Sem handicap: {contexto_linha.get('lado_alvo_sem_handicap', 0)} | "
                     f"Sem lado identificável no alvo: {contexto_linha.get('lado_desconhecido_linha_alvo', 0)}"
                 )
+                if "refs_lado_alvo_com_linha" in contexto_linha:
+                    refs = contexto_linha.get("linhas_ref_lado_alvo") or []
+                    texto_refs = ", ".join(str(x) for x in refs) if refs else "não identificadas"
+                    linhas.append(
+                        f"🔬 Linhas explícitas na referência da seleção: {texto_refs} | "
+                        f"Refs com linha: {contexto_linha.get('refs_lado_alvo_com_linha', 0)} | "
+                        f"Ref alvo / handicap diferente: {contexto_linha.get('refs_alvo_handicap_divergente', 0)} | "
+                        f"Ref diferente / handicap alvo: {contexto_linha.get('refs_outra_handicap_alvo', 0)}"
+                    )
         linhas.extend([
             "",
             "ℹ️ Campos 'não registado' não podem ser reconstruídos do histórico; "
