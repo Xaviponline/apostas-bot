@@ -233,23 +233,13 @@ class AuditoriaOdds:
             compactado = texto.replace(" ", "")
             return alvo in compactado
 
-        m = re.match(r"^(Over|Under) ([0-9]+(?:\.[0-9]+)?) Golos$", mercado_modelo)
+        m = re.fullmatch(r"(Over|Under) ([0-9]+(?:\.[0-9]+)?) Golos", mercado_modelo)
         if m:
-            lado = m.group(1).casefold()
-            linha_alvo = float(m.group(2))
-            escolha = cls._normalizar(
-                " ".join([str(odd.get("seleção") or ""), str(odd.get("ref") or "")])
-            )
-            if lado not in escolha:
-                return False
-
-            linha_mercado = cls._linha_numero(mercado.get("handicap"))
-            if linha_mercado is not None:
-                return abs(linha_mercado - linha_alvo) < 1e-9
-
-            linha_texto = cls._normalizar(m.group(2))
-            nome_mercado = cls._normalizar(mercado.get("name"))
-            return linha_texto in escolha or linha_texto in nome_mercado
+            # Exigir handicap e lado consistentes com a linha da seleção.
+            # Nunca aceitar Under 12.5 como Under 2.5 por substring.
+            from odds_linha_validacao import validar_linha_totais
+            valido, _motivo = validar_linha_totais(mercado_modelo, mercado, odd)
+            return valido
         return False
 
     @staticmethod
