@@ -25,6 +25,16 @@ def _lado_outcome(odd):
     return next(iter(encontrados)) if len(encontrados) == 1 else None
 
 
+def _linha_ref_bookmaker(odd):
+    """Extrai apenas formatos inequívocos como 2.5/over, sem guardar o ID."""
+    valor = str((odd or {}).get("ref") or "").strip()
+    m = re.fullmatch(r"([0-9]{1,2}(?:[.,][0-9]+)?)/(over|under)", valor, re.I)
+    if not m:
+        return None, None
+    numero = _handicap(m.group(1).replace(",", "."))
+    return (numero, m.group(2).lower()) if numero is not None else (None, None)
+
+
 def resumo_linha_shadow(mercados, mercado_modelo, compativel, odd_valida):
     """Conta apenas provas observadas nos mercados compatíveis já normalizados.
 
@@ -40,7 +50,11 @@ def resumo_linha_shadow(mercados, mercado_modelo, compativel, odd_valida):
         if isinstance(m, dict) and compativel(mercado_modelo, m)
     ]
     linhas = set()
+    linhas_ref = set()
     contagem = {
+        "refs_lado_alvo_com_linha": 0,
+        "refs_alvo_handicap_divergente": 0,
+        "refs_outra_handicap_alvo": 0,
         "mercados_linha_alvo": 0,
         "mercados_outra_linha": 0,
         "mercados_sem_handicap": 0,
@@ -64,6 +78,14 @@ def resumo_linha_shadow(mercados, mercado_modelo, compativel, odd_valida):
             if not isinstance(odd, dict) or odd_valida(odd.get("odd")) is None:
                 continue
             lado_observado = _lado_outcome(odd)
+            ref_linha, ref_lado = _linha_ref_bookmaker(odd)
+            if ref_linha is not None and ref_lado == lado:
+                linhas_ref.add(ref_linha)
+                contagem["refs_lado_alvo_com_linha"] += 1
+                if handicap is not None and abs(ref_linha - linha) < 1e-9 and abs(handicap - linha) >= 1e-9:
+                    contagem["refs_alvo_handicap_divergente"] += 1
+                if handicap is not None and abs(ref_linha - linha) >= 1e-9 and abs(handicap - linha) < 1e-9:
+                    contagem["refs_outra_handicap_alvo"] += 1
             if lado_observado == lado:
                 contagem["lado_alvo_" + classe] += 1
             elif lado_observado is None and classe == "linha_alvo":
@@ -71,5 +93,6 @@ def resumo_linha_shadow(mercados, mercado_modelo, compativel, odd_valida):
     return {
         "alvo": linha,
         "linhas_handicap": sorted(linhas)[:8],
+        "linhas_ref_lado_alvo": sorted(linhas_ref)[:8],
         **{k: min(v, 999) for k, v in contagem.items()},
     }
