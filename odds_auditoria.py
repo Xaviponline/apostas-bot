@@ -679,12 +679,22 @@ class AuditoriaOdds:
             )
             if extraida is None:
                 if motivo in {"mercado_nao_disponivel", "linha_ou_selecao_nao_disponivel"}:
+                    mercado_modelo = str(selecao.get("mercado") or "")
                     contexto_mercados = self._contexto_mercados_passivo(
-                        dados, str(selecao.get("mercado") or "")
+                        dados, mercado_modelo
                     )
                     if contexto_mercados is not None:
                         # Apenas na selecao transitoria; nunca no snapshot.
                         selecao["_odds_contexto_mercados"] = contexto_mercados
+                    if motivo == "linha_ou_selecao_nao_disponivel":
+                        from odds_linha_diagnostico_shadow import resumo_linha_shadow
+                        contexto_linha = resumo_linha_shadow(
+                            dados.get("mercados"), mercado_modelo,
+                            self._mercado_compativel, self._odd_numero,
+                        )
+                        if contexto_linha is not None:
+                            # Apenas para rastreio; não altera a decisão de odds.
+                            selecao["_odds_contexto_linha"] = contexto_linha
                 self._registar_diagnostico(selecao, motivo or "odd_nao_extraida")
                 continue
 

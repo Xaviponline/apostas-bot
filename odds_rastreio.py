@@ -44,6 +44,32 @@ class RastreioOdds:
                     numero = contexto_mercados.get(chave)
                     if isinstance(numero, int) and not isinstance(numero, bool) and 0 <= numero <= 999:
                         contagens_mercados[chave] = numero
+            # Contagens de linhas já observadas, sem odds, IDs ou payloads.
+            origem_linha = s.get("_odds_contexto_linha")
+            resumo_linha = {}
+            if isinstance(origem_linha, dict):
+                contadores = (
+                    "mercados_linha_alvo", "mercados_outra_linha",
+                    "mercados_sem_handicap", "lado_alvo_linha_alvo",
+                    "lado_alvo_outra_linha", "lado_alvo_sem_handicap",
+                    "lado_desconhecido_linha_alvo",
+                )
+                for chave in contadores:
+                    numero = origem_linha.get(chave)
+                    if isinstance(numero, int) and not isinstance(numero, bool) and 0 <= numero <= 999:
+                        resumo_linha[chave] = numero
+                valores_handicap = origem_linha.get("linhas_handicap")
+                if isinstance(valores_handicap, list):
+                    from math import isfinite
+                    resumo_linha["linhas_handicap"] = [
+                        float(v) for v in valores_handicap[:8]
+                        if type(v) in (int, float) and isfinite(float(v)) and 0 <= float(v) <= 20
+                    ]
+                alvo = origem_linha.get("alvo")
+                if type(alvo) in (int, float):
+                    from math import isfinite
+                    if isfinite(float(alvo)) and 0 <= float(alvo) <= 20:
+                        resumo_linha["alvo"] = float(alvo)
             pistas = s.get("_odds_descoberta")
             pistas = pistas if isinstance(pistas, dict) and pistas.get("versao") == 1 else {}
             resumo_pistas = {}
@@ -93,6 +119,7 @@ class RastreioOdds:
                 "odd_observada": s.get("odd_real"),
                 "diagnostico": str(diag or "")[:64],
                 "contexto_mercados": contagens_mercados,
+                "contexto_linha": resumo_linha,
                 "fonte": str(s.get("odds_fonte") or "")[:80],
                 "fixture_id_fonte": str(s.get("odds_event_id") or "")[:64],
                 "odds_atualizada_em": str(s.get("odds_atualizada_em") or "")[:64],
@@ -248,6 +275,7 @@ class RastreioOdds:
             if not isinstance(alertas, list):
                 alertas = []
             contexto_mercados = item.get("contexto_mercados")
+            contexto_linha = item.get("contexto_linha")
             linhas.extend([
                 "",
                 "━━━━━━━━━━━━━━━━━━━━",
@@ -276,10 +304,26 @@ class RastreioOdds:
                     f"Compatíveis: {contexto_mercados['compativeis']} | "
                     f"Sem catálogo: {contexto_mercados['sem_catalogo']}"
                 )
+            if isinstance(contexto_linha, dict) and "mercados_linha_alvo" in contexto_linha:
+                vistos = contexto_linha.get("linhas_handicap") or []
+                vistos_txt = ", ".join(str(v).rstrip("0").rstrip(".") if "." in str(v) else str(v) for v in vistos) or "não observadas"
+                linhas.append(
+                    f"🔎 Linhas handicap observadas: {vistos_txt} | "
+                    f"Mercados no alvo: {contexto_linha.get('mercados_linha_alvo', 0)} | "
+                    f"Noutra linha: {contexto_linha.get('mercados_outra_linha', 0)} | "
+                    f"Sem handicap: {contexto_linha.get('mercados_sem_handicap', 0)}"
+                )
+                linhas.append(
+                    f"   Seleção-alvo no handicap certo: {contexto_linha.get('lado_alvo_linha_alvo', 0)} | "
+                    f"Noutra linha: {contexto_linha.get('lado_alvo_outra_linha', 0)} | "
+                    f"Sem handicap: {contexto_linha.get('lado_alvo_sem_handicap', 0)} | "
+                    f"Sem lado identificável no alvo: {contexto_linha.get('lado_desconhecido_linha_alvo', 0)}"
+                )
         linhas.extend([
             "",
             "ℹ️ Campos 'não registado' não podem ser reconstruídos do histórico; "
             "competições e horas da fonte passam a ser guardadas em futuras recolhas.",
+            "ℹ️ Linhas observadas são metadados passivos; a ausência não prova falta de oferta na Betano.",
             "ℹ️ Mercados recebidos e catalogados são contagens, não prova de ausência na Betano.",
             "🔒 Dados locais, sem nova chamada OddsPapi, sem validação independente Betano e sem alterar apostas.",
         ])
