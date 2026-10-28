@@ -58,11 +58,11 @@ class RastreioOdds:
                     numero = origem_linha.get(chave)
                     if isinstance(numero, int) and not isinstance(numero, bool) and 0 <= numero <= 999:
                         resumo_linha[chave] = numero
-                linhas = origem_linha.get("linhas_handicap")
-                if isinstance(linhas, list):
+                valores_handicap = origem_linha.get("linhas_handicap")
+                if isinstance(valores_handicap, list):
                     from math import isfinite
                     resumo_linha["linhas_handicap"] = [
-                        float(v) for v in linhas[:8]
+                        float(v) for v in valores_handicap[:8]
                         if type(v) in (int, float) and isfinite(float(v)) and 0 <= float(v) <= 20
                     ]
                 alvo = origem_linha.get("alvo")
