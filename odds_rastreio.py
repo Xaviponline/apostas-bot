@@ -35,6 +35,15 @@ class RastreioOdds:
             # integral da API, credenciais ou identificadores de clientes.
             if not meta and not diag:
                 continue
+            # Guardar somente contagens de mercados já recebidos em memória.
+            # Nem payload, nem odds alternativas, nem novos pedidos à API.
+            contexto_mercados = s.get("_odds_contexto_mercados")
+            contagens_mercados = {}
+            if isinstance(contexto_mercados, dict):
+                for chave in ("total", "compativeis", "sem_catalogo"):
+                    numero = contexto_mercados.get(chave)
+                    if isinstance(numero, int) and not isinstance(numero, bool) and 0 <= numero <= 999:
+                        contagens_mercados[chave] = numero
             pistas = s.get("_odds_descoberta")
             pistas = pistas if isinstance(pistas, dict) and pistas.get("versao") == 1 else {}
             resumo_pistas = {}
@@ -83,6 +92,7 @@ class RastreioOdds:
                 "timestamp_jogo": jogo.get("timestamp"),
                 "odd_observada": s.get("odd_real"),
                 "diagnostico": str(diag or "")[:64],
+                "contexto_mercados": contagens_mercados,
                 "fonte": str(s.get("odds_fonte") or "")[:80],
                 "fixture_id_fonte": str(s.get("odds_event_id") or "")[:64],
                 "odds_atualizada_em": str(s.get("odds_atualizada_em") or "")[:64],
@@ -237,6 +247,7 @@ class RastreioOdds:
             alertas = item.get("alertas_contexto") or []
             if not isinstance(alertas, list):
                 alertas = []
+            contexto_mercados = item.get("contexto_mercados")
             linhas.extend([
                 "",
                 "━━━━━━━━━━━━━━━━━━━━",
@@ -256,10 +267,20 @@ class RastreioOdds:
                 f"🕒 Atualização odd: {campo(item, 'odds_atualizada_em')}",
                 f"⚠️ Diagnóstico: {campo(item, 'diagnostico')} | Contexto: {', '.join(str(a) for a in alertas) if alertas else 'sem alerta registado'}",
             ])
+            if (isinstance(contexto_mercados, dict) and
+                all(isinstance(contexto_mercados.get(k), int) and
+                    not isinstance(contexto_mercados.get(k), bool)
+                    for k in ("total", "compativeis", "sem_catalogo"))):
+                linhas.append(
+                    f"🧮 Mercados recebidos: {contexto_mercados['total']} | "
+                    f"Compatíveis: {contexto_mercados['compativeis']} | "
+                    f"Sem catálogo: {contexto_mercados['sem_catalogo']}"
+                )
         linhas.extend([
             "",
             "ℹ️ Campos 'não registado' não podem ser reconstruídos do histórico; "
             "competições e horas da fonte passam a ser guardadas em futuras recolhas.",
+            "ℹ️ Mercados recebidos e catalogados são contagens, não prova de ausência na Betano.",
             "🔒 Dados locais, sem nova chamada OddsPapi, sem validação independente Betano e sem alterar apostas.",
         ])
         return "\n".join(linhas)
