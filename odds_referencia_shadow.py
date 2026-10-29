@@ -60,12 +60,14 @@ def _selecao(mercado, outcome, casa, fora):
             linha = float(outcome.get("point"))
         except (TypeError, ValueError, OverflowError):
             return None
-        if not math.isfinite(linha) or abs(linha - 2.5) > 0.00001:
+        # Só linhas exatas explicitamente suportadas. Nunca inferir 3.5
+        # a partir de preços de 2.5, ou vice-versa.
+        if not math.isfinite(linha) or linha not in (2.5, 3.5):
             return None
         if nome.casefold() == "over":
-            return "Over 2.5 Golos"
+            return f"Over {linha:.1f} Golos"
         if nome.casefold() == "under":
-            return "Under 2.5 Golos"
+            return f"Under {linha:.1f} Golos"
     return None
 
 
@@ -112,7 +114,7 @@ def _mercado_modelo(snapshot):
     nome = str(snapshot.get("mercado") or "")
     if nome in {"Vitória Casa", "Vitória Fora"}:
         return nome
-    if re.fullmatch(r"(Over|Under) 2[.,]5 Golos", nome):
+    if re.fullmatch(r"(Over|Under) [23][.,]5 Golos", nome):
         return nome.replace(",", ".")
     if nome == "Empate":
         return nome
