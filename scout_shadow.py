@@ -63,6 +63,25 @@ LIGAS = {
     "efl league two": "soccer_england_league2",
     "uefa champions league": "soccer_uefa_champs_league",
     "uefa europa league": "soccer_uefa_europa_league",
+    # Novos mapeamentos EXPLÍCITOS. Não aceitar nomes ambíguos de taças
+    # ou rótulos "Serie B" sem país (também existe no Brasil).
+    "swedish allsvenskan": "soccer_sweden_allsvenskan",
+    "sweden allsvenskan": "soccer_sweden_allsvenskan",
+    "allsvenskan sweden": "soccer_sweden_allsvenskan",
+    "swedish superettan": "soccer_sweden_superettan",
+    "sweden superettan": "soccer_sweden_superettan",
+    "superettan sweden": "soccer_sweden_superettan",
+    "italian serie b": "soccer_italy_serie_b",
+    "italy serie b": "soccer_italy_serie_b",
+    "serie b italy": "soccer_italy_serie_b",
+    "brazilian serie a": "soccer_brazil_campeonato",
+    "brazil serie a": "soccer_brazil_campeonato",
+    "brazil serie a betano": "soccer_brazil_campeonato",
+    "campeonato brasileiro serie a": "soccer_brazil_campeonato",
+    "brazilian serie b": "soccer_brazil_serie_b",
+    "brazil serie b": "soccer_brazil_serie_b",
+    "scottish premiership": "soccer_spl",
+    "scotland premiership": "soccer_spl",
 }
 
 
