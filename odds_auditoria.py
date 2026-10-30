@@ -693,6 +693,21 @@ class AuditoriaOdds:
                     if contexto_mercados is not None:
                         # Apenas na selecao transitoria; nunca no snapshot.
                         selecao["_odds_contexto_mercados"] = contexto_mercados
+                    if motivo == "mercado_nao_disponivel":
+                        # Quando existem mercados mas nenhum e reconhecido,
+                        # guardar apenas pistas de NOMES e periodos ja recebidos.
+                        # Nunca influencia a extracao da odd nem faz novo HTTP.
+                        try:
+                            from odds_catalogo_clv_shadow import resumo_catalogo_sem_match
+                            pistas = resumo_catalogo_sem_match(
+                                dados.get("mercados"), mercado_modelo,
+                                self._periodo_compativel,
+                            )
+                            if pistas is not None:
+                                selecao["_odds_catalogo_clv_shadow"] = pistas
+                        except (ValueError, TypeError, OverflowError):
+                            # A telemetria passiva nunca pode impedir um CLV.
+                            pass
                     if motivo == "linha_ou_selecao_nao_disponivel":
                         from odds_linha_diagnostico_shadow import resumo_linha_shadow
                         contexto_linha = resumo_linha_shadow(

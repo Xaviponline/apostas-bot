@@ -128,6 +128,35 @@ class ObservatorioCLV:
                             f"{contexto['compativeis']} | sem catálogo: "
                             f"{contexto['sem_catalogo']}"
                         )
+                    # Apenas material sanitizado de consultas CLV ja efetuadas.
+                    # Nunca inferir odd de fecho de uma pista do catalogo.
+                    pistas = ultimo.get("catalogo_shadow")
+                    if isinstance(pistas, dict):
+                        potenciais = pistas.get("potenciais")
+                        fora_periodo = pistas.get("potenciais_outro_periodo")
+                        if (
+                            isinstance(potenciais, int) and not isinstance(potenciais, bool)
+                            and isinstance(fora_periodo, int) and not isinstance(fora_periodo, bool)
+                        ):
+                            linhas.append(
+                                f"  ↳ Pistas no catalogo (nao sao odds): {potenciais}"
+                                f" | periodos nao-FT: {fora_periodo}"
+                            )
+                        amostra = pistas.get("amostra")
+                        if isinstance(amostra, list):
+                            for entrada in amostra[:2]:
+                                if not isinstance(entrada, dict):
+                                    continue
+                                nome = str(entrada.get("nome") or "")[:64]
+                                if not nome or not nome.isascii() or not nome.isprintable():
+                                    continue
+                                mid = str(entrada.get("id") or "?")[:18]
+                                periodo = str(entrada.get("periodo") or "?")[:22]
+                                linha = str(entrada.get("linha") or "?")[:12]
+                                linhas.append(
+                                    f"  ↳ Mercado #{mid}: {nome} "
+                                    f"| periodo {periodo} | linha {linha}"
+                                )
                 else:
                     linhas.append("  ↳ Sem telemetria histórica: causa não confirmada.")
             if len(sem) > 6:
