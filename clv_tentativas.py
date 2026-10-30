@@ -38,8 +38,8 @@ def _catalogo_sanitizado(catalogo):
                 and isinstance(periodo, str) and 1 <= len(periodo) <= 22
                 and re.fullmatch(r"[A-Za-z0-9 ._-]+", periodo)
                 and isinstance(linha, str) and 1 <= len(linha) <= 12
-                and re.fullmatch(r"[0-9.]+|\\?", linha)
-                and isinstance(mid, str) and re.fullmatch(r"[0-9]{1,18}|\\?", mid)
+                and re.fullmatch(r"[0-9.]+|\?", linha)
+                and isinstance(mid, str) and re.fullmatch(r"[0-9]{1,18}|\?", mid)
                 and pista in perfis):
             return None
         cont["amostra"].append({
