@@ -75,7 +75,7 @@ class ImpactoFrescuraShadowTests(unittest.TestCase):
         self.assertIn("✅ 0/1 | P/L -1,00u | ROI -100,0%", r)
         self.assertIn("Sem timestamps comparaveis: 1 entradas | 1 liquidadas", r)
         self.assertIn("CLV com fecho: 1/2", r)
-        self.assertIn("CLV com fecho: 0/2", r)
+        self.assertEqual(r.count("CLV com fecho: 1/2"), 2)
         self.assertIn("Zero HTTP", r)
         self.assertEqual(dados.dados, antigo)
         self.assertEqual(dados.metricas, coh)
