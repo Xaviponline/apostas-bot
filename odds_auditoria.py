@@ -425,10 +425,17 @@ class AuditoriaOdds:
         tokens_fonte = set(liga_evento.split()) - ignorar
         if categorias_incompativeis(jogo.get("liga"), (dados or {}).get("liga") or evento.get("liga")):
             alertas.append("categoria_juvenil_incompativel")
+        # Correspondência EXATA documentada para a 1.ª divisão da Argentina.
+        # Não generalizar "LPF" a taças, reservas, feminino ou escalões U19.
+        # É apenas uma correção de telemetria; nunca autoriza uma odd.
+        mesma_lpf_argentina = {liga_modelo, liga_evento} == {
+            "argentine liga profesional", "primera lpf"
+        }
         if (
             len(tokens_modelo) >= 1 and len(tokens_fonte) >= 1
             and not (tokens_modelo & tokens_fonte)
             and liga_modelo != "competicao" and liga_evento != "competicao"
+            and not mesma_lpf_argentina
         ):
             alertas.append("competicao_divergente")
         return alertas
