@@ -14,7 +14,7 @@ def _texto_seguro(valor, limite=64):
     s = unicodedata.normalize("NFKD", str(valor or ""))
     s = "".join(c for c in s if ord(c) < 128 and
                 (c.isalnum() or c in " ._-"))
-    return re.sub(r"\\s+", " ", s).strip()[:limite]
+    return re.sub(r"\s+", " ", s).strip()[:limite]
 
 
 def _linha_segura(valor):
@@ -49,7 +49,7 @@ def resumo_catalogo_sem_match(mercados, mercado_modelo, periodo_compativel):
     """Só apura hipóteses; jamais devolve uma odd ou um objeto de mercado."""
     if not isinstance(mercados, list):
         return None
-    if not re.fullmatch(r"(?:Over|Under) [0-9]+(?:\\.[0-9]+)? Golos",
+    if not re.fullmatch(r"(?:Over|Under) [0-9]+(?:\.[0-9]+)? Golos",
                         str(mercado_modelo or "")):
         return None
     candidatos = []
