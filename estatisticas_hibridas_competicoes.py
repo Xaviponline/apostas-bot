@@ -33,6 +33,10 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "uefa.champions",
         "uefa.europa",
         "uefa.nations",
+        # 14/10/2026: 31/31 blocos historicos ESPN rejeitados com HTTP 400.
+        # Não repetir centenas de pedidos antes de tentar a fonte alternativa.
+        "uefa.champions",
+        "por.taca.portugal",
     }
     # IDs públicos e estáveis das provas no SofaScore. Evita depender da agenda
     # diária, que em produção devolveu HTTP 404 mesmo com as provas existentes.
@@ -43,6 +47,10 @@ class EstatisticasHibridasCompeticoes(EstatisticasESPNCompeticoes):
         "uefa.champions": 7,
         "uefa.europa": 679,
         "uefa.nations": 10783,
+        # Identificadores confirmados nas paginas oficiais SofaScore.
+        # A epoca e sempre descoberta por year, nunca presumida pelo ID.
+        "uefa.champions": 7,
+        "por.taca.portugal": 336,
     }
     SOFA_ANO_CALENDARIO = {"arg.copa"}
     SOFA_EPOCA_ANTERIOR_BIENAL = {"uefa.nations"}

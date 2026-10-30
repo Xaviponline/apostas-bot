@@ -1,0 +1,99 @@
+"""Verificacao SHADOW das fontes publicas de historico de Champions/Taca.
+
+SEM TOKEN, SEM ODDS, SEM Railway, SEM escrita de snapshots, SEM apostas.
+Nao altera filtros, modelo ou programa de producao.
+"""
+import sys
+import re
+from collections import Counter
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from estatisticas_forma_web import EstatisticasFormaWeb
+from main_enriquecido import BuscadorJogosEnriquecido
+
+
+def main():
+    agora = datetime(2026, 10, 14, 12, 0, tzinfo=ZoneInfo("Europe/Lisbon"))
+    fonte = EstatisticasFormaWeb()
+    buscador = BuscadorJogosEnriquecido()
+    casos = [
+        ("uefa.champions", "Liga dos Campeoes", 9),
+        ("por.taca.portugal", "Taca de Portugal", 1),
+    ]
+    print("SHADOW | 14/10/2026 | baseline /cobertura de producao: 10 jogos cobertos, 0 com historico")
+    print("SHADOW | so consulta duas competicoes publicas, sem acesso a producao ou ficheiros de cliente")
+    sem_validacao = 0
+    for codigo, nome, cobertos in casos:
+        try:
+            try:
+                eventos = buscador._get_espn(codigo, "20261014")
+                ident = set()
+                for evento in eventos:
+                    jogo = buscador._normalizar_evento_com_codigo(evento, codigo)
+                    if not jogo:
+                        continue
+                    for campo in ("casa_id", "fora_id"):
+                        tid = jogo.get(campo)
+                        if isinstance(tid, int) and tid > 0:
+                            ident.add(tid)
+                fonte._equipas_contexto_liga[codigo] = ident
+                print(f"SHADOW | {nome} | IDs ESPN de equipas = {len(ident)}")
+            except Exception:
+                print(f"SHADOW | {nome} | calendario ESPN indisponivel; sem IDs validados")
+            base = fonte._fetch_liga(codigo, agora)
+            diag = fonte.diagnostico_base.get(codigo) or {}
+            quantidade = len(base)
+            procedencia = diag.get("fonte", "nao especificada")
+            print(
+                f"SHADOW | {nome} | jogos na agenda base={cobertos} | "
+                f"historico={quantidade} | fonte={procedencia} | minimo={fonte.MIN_JOGOS_BASE}"
+            )
+            if quantidade < fonte.MIN_JOGOS_BASE:
+                sem_validacao += 1
+                print("SHADOW | historico insuficiente; nenhuma entrada comercial autorizada")
+        except Exception as exc:
+            sem_validacao += 1
+            if codigo == "por.taca.portugal":
+                slugs = Counter()
+                estados = Counter()
+                for tid in sorted(fonte._equipas_contexto_liga.get(codigo) or []):
+                    for season in (2025, 2026):
+                        try:
+                            jogos = fonte._eventos_equipa_temporada(tid, season)
+                        except Exception:
+                            continue
+                        for evento in jogos:
+                            season_meta = evento.get("season") or {}
+                            league_meta = evento.get("league") or {}
+                            slug = (
+                                str(season_meta.get("slug") or "").strip()
+                                or str(league_meta.get("slug") or "").strip()
+                                or "[sem_slug]"
+                            )
+                            slug = re.sub(r"[^a-zA-Z0-9_./-]", "", slug)[:70]
+                            slugs[slug] += 1
+                            estado = fonte._status_forma(evento)
+                            estados[str(estado.get("state") or "?")[:20]] += 1
+                print(f"SHADOW | Taca | metadados de calendario: {slugs.most_common(7)}")
+                print(f"SHADOW | Taca | estados retornados: {estados.most_common(4)}")
+            # So um motivo curto: remover URLs e sequencias longas do provider.
+            diag = fonte.diagnostico_base.get(codigo) or {}
+            motivo = str(diag.get("motivo") or "sem detalhe")
+            motivo = re.sub(r"https?://[^\s]+", "[URL]", motivo)[:160]
+            print(
+                f"SHADOW | {nome} | SEM VALIDACAO REAL | "
+                f"fonte={diag.get('fonte','indisponivel')} | "
+                f"erro={type(exc).__name__} | motivo={motivo}"
+            )
+    print("SHADOW | FIM | teste diagnostico: nao promove modelos nem altera coorte")
+    if sem_validacao:
+        print(f"SHADOW | BLOQUEADO: {sem_validacao}/{len(casos)} fontes nao validadas; nao promover")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
