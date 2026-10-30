@@ -329,6 +329,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /v13_comercial — gate completo; /v13_calibracao — probabilidades vs acertos",
             "ℹ️ /v13_qualidade — integridade da coorte",
             "ℹ️ /v13_idade_odds — comparar ultima mudanca e captura de preços (SHADOW)",
+            "ℹ️ /v13_impacto_frescura — ROI e CLV por idade da ultima alteracao (SHADOW)",
             "ℹ️ /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
             "ℹ️ A consulta de conta nao desconta pedidos OddsPapi.",
@@ -2196,6 +2197,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "⚠️ Auditoria de qualidade V1.3 indisponivel. "
                     "Zero HTTP, sem alterar modelo, snapshots, odds ou CLV."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/v13_impacto_frescura":
+            if not owner_admin:
+                return
+            try:
+                from auditoria_impacto_frescura_v13_shadow import relatorio_impacto_frescura_v13
+                resposta = relatorio_impacto_frescura_v13(self.previsoes)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError,
+                    ArithmeticError, IndexError, OverflowError):
+                resposta = (
+                    "⚠️ Comparacao da idade das odds indisponivel. "
+                    "Zero HTTP; V1.3 e historico intactos."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
