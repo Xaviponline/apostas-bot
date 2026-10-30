@@ -25,7 +25,7 @@ def mercado(mid, nome, periodo="fulltime", handicap=None, ref=""):
 
 
 def mercados_31():
-    itens = [mercado(999, "Total Match Goals", handicap=2.5, ref="outcome-segredo")]
+    itens = [mercado(999, "Full Time Goals Total", handicap=2.5, ref="outcome-segredo")]
     itens += [mercado(1000+i, "Full Time Result") for i in range(28)]
     itens += [mercado(222, "Total Corners", handicap=2.5)]
     itens += [mercado(333, "Team 1 Total Goals", handicap=2.5)]
@@ -104,7 +104,7 @@ class CatalogoCLVShadowTests(unittest.TestCase):
         pista = saida[0]["_odds_catalogo_clv_shadow"]
         self.assertEqual(pista["potenciais"], 1)
         self.assertEqual(pista["potenciais_outro_periodo"], 0)
-        self.assertEqual(pista["amostra"][0]["nome"], "Total Match Goals")
+        self.assertEqual(pista["amostra"][0]["nome"], "Full Time Goals Total")
         self.assertEqual(pista["amostra"][0]["linha"], "2.5")
         self.assertNotIn("odd_real", saida[0])
         self.assertNotIn("outcome-segredo", json.dumps(pista))
@@ -126,7 +126,7 @@ class CatalogoCLVShadowTests(unittest.TestCase):
             self.assertEqual(leitura["catalogo_shadow"]["amostra"][0]["id"], "999")
             texto = ObservatorioCLV().relatorio(reg, agora=INICIO + timedelta(hours=2))
             self.assertIn("Pistas no catalogo", texto)
-            self.assertIn("Total Match Goals", texto)
+            self.assertIn("Full Time Goals Total", texto)
             self.assertIn("linha 2.5", texto)
             self.assertNotIn("1.85", diario.path.read_text(encoding="utf-8"))
             self.assertNotIn("ref-segredo", diario.path.read_text(encoding="utf-8"))
