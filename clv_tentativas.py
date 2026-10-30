@@ -4,6 +4,49 @@ from pathlib import Path
 import json
 import os
 import tempfile
+import re
+
+
+def _catalogo_sanitizado(catalogo):
+    """Nunca persistir payload/odds, outcome IDs, nomes de jogadores ou URLs."""
+    if not isinstance(catalogo, dict):
+        return None
+    cont = {}
+    for chave in ("potenciais", "potenciais_outro_periodo", "sem_nome"):
+        n = catalogo.get(chave)
+        if isinstance(n, bool) or not isinstance(n, int) or not 0 <= n <= 999:
+            return None
+        cont[chave] = n
+    amostra = catalogo.get("amostra")
+    if not isinstance(amostra, list) or len(amostra) > 4:
+        return None
+    cont["amostra"] = []
+    perfis = {
+        "potencial_total_golos", "golos_nome_incompleto",
+        "total_generico_sem_golos", "outro_mercado",
+    }
+    for bruto in amostra:
+        if not isinstance(bruto, dict):
+            return None
+        nome = bruto.get("nome")
+        periodo = bruto.get("periodo")
+        linha = bruto.get("linha")
+        mid = bruto.get("id")
+        pista = bruto.get("pista")
+        if not (isinstance(nome, str) and 1 <= len(nome) <= 64
+                and re.fullmatch(r"[A-Za-z0-9 ._-]+", nome)
+                and isinstance(periodo, str) and 1 <= len(periodo) <= 22
+                and re.fullmatch(r"[A-Za-z0-9 ._-]+", periodo)
+                and isinstance(linha, str) and 1 <= len(linha) <= 12
+                and re.fullmatch(r"[0-9.]+|\\?", linha)
+                and isinstance(mid, str) and re.fullmatch(r"[0-9]{1,18}|\\?", mid)
+                and pista in perfis):
+            return None
+        cont["amostra"].append({
+            "id": mid, "nome": nome,
+            "periodo": periodo, "linha": linha, "pista": pista,
+        })
+    return cont
 
 
 class DiarioTentativasCLV:
@@ -115,6 +158,14 @@ class DiarioTentativasCLV:
                             contagens[campo] = valor
                     if len(contagens) == 3:
                         item["mercados_contexto"] = contagens
+                # Telemetria opcional e estritamente limitada: apenas nomes de
+                # mercados/periodos/handicaps ja recebidos, sem precos ou IDs
+                # de outcomes. Nao altera qualquer estado de entrada.
+                pistas = _catalogo_sanitizado(
+                    enriquecida.get("_odds_catalogo_clv_shadow")
+                )
+                if pistas is not None:
+                    item["catalogo_shadow"] = pistas
             eventos.append(item)
         if not eventos:
             return 0
