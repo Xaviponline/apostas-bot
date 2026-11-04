@@ -14,6 +14,7 @@ from fixture_guard_shadow import categorias_incompativeis, juventude_confirmada_
 from odds_identidade_guard import (
     equipas_categoria_incompativel, verificar_hora_fixture, classificar_frescura,
 )
+from odds_horario_shadow import detalhe_horario_shadow
 from copy import deepcopy
 from datetime import datetime, timezone
 
@@ -573,6 +574,14 @@ class AuditoriaOdds:
                         "horario_divergente" if motivo_hora == "horario_fixture_incompativel"
                         else "horario_nao_comprovado"
                     )
+                    # Só telemetria derivada do fixture JÁ recebido: nenhuma
+                    # consulta, mudança do matching, odds ou snapshot.
+                    if motivo_hora == "horario_fixture_incompativel":
+                        detalhe = detalhe_horario_shadow(
+                            jogo.get("timestamp"), evento.get("data"),
+                        )
+                        if detalhe is not None:
+                            selecao["_odds_horario_shadow"] = detalhe
                     self._registar_diagnostico(selecao, motivo_hora)
                     continue
             try:

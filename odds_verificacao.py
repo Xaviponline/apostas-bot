@@ -11,6 +11,8 @@ import json
 import os
 import tempfile
 
+from odds_horario_shadow import normalizar_detalhe_horario_shadow
+
 
 TZ = ZoneInfo("Europe/Lisbon")
 
@@ -109,13 +111,22 @@ class VerificacaoOdds:
                 if not event_id or not mercado:
                     continue
                 chave = f"{event_id}|{mercado}|{alerta}"
-                candidatos.append((chave, {
+                item = {
                     "tipo": alerta,
                     "jogo": f"{jogo.get('casa') or '?'} vs {jogo.get('fora') or '?'}",
                     "mercado": mercado,
                     "data": datetime.fromtimestamp(float(jogo.get("timestamp") or 0), timezone.utc).astimezone(TZ).date().isoformat(),
                     "inicio": jogo.get("timestamp"),
-                }))
+                }
+                if alerta == "horario_divergente":
+                    # Reconstrói apenas timestamps canónicos de observação
+                    # NOVA. Nunca altera odds, snapshots nem alertas antigos.
+                    detalhe = normalizar_detalhe_horario_shadow(
+                        s.get("_odds_horario_shadow"), jogo.get("timestamp"),
+                    )
+                    if detalhe is not None:
+                        item["horario_shadow"] = detalhe
+                candidatos.append((chave, item))
         if not candidatos:
             return 0
         dados = self._ler()
@@ -175,6 +186,27 @@ class VerificacaoOdds:
                     else "conferir torneio/horario do fornecedor"
                 )
                 linhas.append(f"   {titulo} — {sugestao}")
+                if a["tipo"] == "horario_divergente":
+                    detalhe = normalizar_detalhe_horario_shadow(
+                        a.get("horario_shadow")
+                    )
+                    if detalhe is None:
+                        linhas.append(
+                            "   Horarios detalhados nao registados nesta observacao."
+                        )
+                    else:
+                        linhas.append(
+                            f"   Modelo PT: {detalhe['modelo_pt']} | "
+                            f"Fornecedor PT: {detalhe['fornecedor_pt']}"
+                        )
+                        linhas.append(
+                            f"   Desvio fornecedor - modelo: "
+                            f"{detalhe['desvio_min']:+g} min"
+                        )
+                        linhas.append(
+                            f"   UTC modelo: {detalhe['modelo_utc']} | "
+                            f"UTC fornecedor: {detalhe['fornecedor_utc']}"
+                        )
         if len(alertas) > 8:
             linhas.append(f"+{len(alertas)-8} alertas adicionais")
         linhas.extend([
