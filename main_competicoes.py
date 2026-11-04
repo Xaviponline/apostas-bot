@@ -327,6 +327,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /scout_hoje e /scout_performance — carteira prospetiva, zero HTTP",
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
             "ℹ️ /v13_comercial — gate completo; /v13_calibracao — probabilidades vs acertos",
+            "ℹ️ /v13_mercados — ROI, Brier e CLV por mercado da mesma coorte (SHADOW)",
             "ℹ️ /v13_qualidade — integridade da coorte",
             "ℹ️ /v13_idade_odds — comparar ultima mudanca e captura de preços (SHADOW)",
             "ℹ️ /v13_impacto_frescura — ROI e CLV por idade da ultima alteracao (SHADOW)",
@@ -2154,6 +2155,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "⚠️ Calibracao V1.3 SHADOW indisponivel. "
                     "Nenhum snapshot, odd, CLV, ROI ou gate foi alterado."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/v13_mercados":
+            if not owner_admin:
+                return
+            try:
+                from v13_mercados_shadow import relatorio_mercados_v13
+                resposta = relatorio_mercados_v13(self.previsoes)
+            except (ValueError, TypeError, KeyError, ArithmeticError, OSError,
+                    RuntimeError, IndexError, OverflowError):
+                resposta = (
+                    "⚠️ Auditoria de mercados V1.3 SHADOW indisponivel. "
+                    "Nenhuma odd, CLV, previsao ou gate foi alterado."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
