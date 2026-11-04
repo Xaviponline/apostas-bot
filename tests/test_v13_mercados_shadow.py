@@ -88,7 +88,6 @@ class MercadosV13ShadowTests(unittest.TestCase):
         r = construir(cases)
         rep = relatorio_mercados_v13(r)
         self.assertIn("Under 2.5 Golos: 10 entradas, 10 liquidadas", rep)
-        self.assertNotIn("Under 2.5 Golos: 10 entradas, 10 liquidadas\\n  Acertos 5/10", "")
         self.assertIn("n calib 10", rep)
         self.assertIn("SHADOW", rep)
 
