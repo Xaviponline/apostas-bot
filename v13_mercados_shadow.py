@@ -64,8 +64,9 @@ def _add(g, p, item):
         g["brier_soma"] += (prob - int(y)) ** 2
 
 
-def _percent(p):
-    return f"{p * 100:+.1f}%".replace(".", ",")
+def _percent(p, sinal=True):
+    formato = "+.1f" if sinal else ".1f"
+    return f"{format(p * 100, formato)}%".replace(".", ",")
 
 
 def _fmt(x, casas=2):
@@ -88,8 +89,8 @@ def _linha(titulo, g):
     )
     if g["cal_n"]:
         partes.append(
-            f"  Prev {_percent(g['previstas'] / g['cal_n'])}"
-            f" | real {_percent(g['reais'] / g['cal_n'])}"
+            f"  Prev {_percent(g['previstas'] / g['cal_n'], False)}"
+            f" | real {_percent(g['reais'] / g['cal_n'], False)}"
             f" | gap {_fmt(100 * (g['reais'] - g['previstas']) / g['cal_n'], 1)}pp"
             f" | Brier {_fmt(g['brier_soma'] / g['cal_n'], 4)}"
             f" | n calib {g['cal_n']}"
