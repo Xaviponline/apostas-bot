@@ -261,6 +261,35 @@ def comparar_odds_referencia(argumentos="", snapshots=None, chave=None,
         f"mercados antigos {antigas}, sem data {desconhecidas}, duplicados {duplicadas}.",
         "⌛ Apenas mercados atualizados nas ultimas 6 horas; jogos ainda por comecar.",
     ])
+    # Diagnostico multicasa apenas para a selecao exata ja registada.
+    # Nao inferir Under 3.5 a partir de Under 2.5 nem publicar picks.
+    selecoes_modelo = []
+    for p in snapshots if isinstance(snapshots, list) else []:
+        if not isinstance(p, dict) or p.get("estado") != "pendente":
+            continue
+        if not (_equipa(p.get("casa"), jogo.get("home_team"))
+                and _equipa(p.get("fora"), jogo.get("away_team"))):
+            continue
+        try:
+            instante = float(p["timestamp_jogo"])
+        except (ValueError, TypeError, KeyError, OverflowError):
+            continue
+        if not math.isfinite(instante) or abs(instante - _dt(jogo["commence_time"]).timestamp()) > AJUSTE_KICKOFF_SEG:
+            continue
+        mercado_exato = _mercado_modelo(p)
+        if mercado_exato and mercado_exato not in selecoes_modelo:
+            selecoes_modelo.append(mercado_exato)
+    if selecoes_modelo:
+        linhas.extend(["", "🔎 LINHAS EXATAS DO MODELO — MULTICASA SHADOW"])
+        for selecao in selecoes_modelo[:3]:
+            casas = cotacoes.get(selecao, {})
+            if not casas:
+                linhas.append(f"• {selecao}: nenhuma cotacao exata recente (nao substituir linha).")
+                continue
+            linhas.append(f"• {selecao}: {len(casas)} casas com cotacao recente.")
+            for casa_key, preco in sorted(casas.items(), key=lambda item: (-item[1], item[0]))[:5]:
+                linhas.append(f"  {_seguro(casa_key, 35)}: {preco:.2f}")
+            linhas.append("  ⚠️ Apenas referencia SHADOW; verificar disponibilidade na casa.")
     do_modelo = _resumo_modelo(snapshots, jogo, cotacoes, agora)
     if do_modelo:
         linhas += ["", "🧠 MODELO JA REGISTADO — somente leitura:", *do_modelo]
