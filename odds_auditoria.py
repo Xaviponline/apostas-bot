@@ -702,6 +702,15 @@ class AuditoriaOdds:
                     if contexto_mercados is not None:
                         # Apenas na selecao transitoria; nunca no snapshot.
                         selecao["_odds_contexto_mercados"] = contexto_mercados
+                        # Telemetria agregada, sem IDs, nomes de equipas, precos ou HTTP.
+                        # Ajuda a separar payload vazio de catalogo nao reconhecido.
+                        logging.info(
+                            "ODDS_MERCADOS_SHADOW | motivo=%s | total=%s | "
+                            "compativeis=%s | sem_catalogo=%s",
+                            motivo, contexto_mercados["total"],
+                            contexto_mercados["compativeis"],
+                            contexto_mercados["sem_catalogo"],
+                        )
                     if motivo == "mercado_nao_disponivel":
                         # Quando existem mercados mas nenhum e reconhecido,
                         # guardar apenas pistas de NOMES e periodos ja recebidos.
