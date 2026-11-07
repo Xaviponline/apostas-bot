@@ -76,6 +76,69 @@ def testar_fonte_alternativa(argumentos="", chave=None, session=None):
             "• /fonte_alt odds soccer_portugal_primeira_liga — UMA consulta h2h+totals, regiao eu (ate 2 creditos)\n"
             "🔒 Nao utiliza Betano PT nem altera picks/odds de producao."
         )
+    # Descoberta explicita de mercados alternativos: 1 chamada /markets por evento.
+    # Sem odds, sem picks e sem alteracoes no pipeline de producao.
+    if str(argumentos or "").strip().casefold().startswith("mercados "):
+        from odds_referencia_shadow import _dt, _equipa
+        from datetime import timezone
+        partes = [p.strip() for p in str(argumentos).strip()[len("mercados "):].split("|")]
+        if (len(partes) != 3 or not SPORT.fullmatch(partes[0])
+                or not all(2 <= len(p) <= 65 and p.isprintable() for p in partes[1:])
+                or _equipa(partes[1], partes[2])):
+            return "Formato: /fonte_alt mercados soccer_liga | Equipa Casa | Equipa Fora. Zero chamadas."
+        valor = str(chave or os.getenv("THE_ODDS_API_KEY") or "").strip()
+        if not valor:
+            return "⚪ THE_ODDS_API_KEY nao configurada. Zero chamadas."
+        sessao = session or requests.Session()
+        sport, casa, fora = partes
+        eventos, erro, _ = _get(sessao, f"/sports/{sport}/events", {"apiKey": valor})
+        if erro:
+            return "⚠️ Eventos: " + erro
+        agora = datetime.now(timezone.utc)
+        candidatos = [
+            e for e in eventos if isinstance(e, dict)
+            and _equipa(e.get("home_team"), casa) and _equipa(e.get("away_team"), fora)
+            and _dt(e.get("commence_time")) is not None
+            and _dt(e.get("commence_time")) > agora
+            and isinstance(e.get("id"), str)
+            and re.fullmatch(r"[A-Za-z0-9]{8,80}", e["id"])
+        ]
+        if len(candidatos) != 1:
+            return ("⚪ Jogo futuro nao encontrado de forma unica. "
+                    "Confirma nomes em /fonte_alt jogos " + sport
+                    + ". Zero creditos de mercados consumidos.")
+        evento = candidatos[0]
+        dados, erro, quota = _get(
+            sessao, f"/sports/{sport}/events/{evento['id']}/markets",
+            {"apiKey": valor, "regions": "eu"},
+        )
+        if erro:
+            return "⚠️ Mercados do evento: " + erro
+        # O endpoint pode devolver objetos por bookmaker ou mercados diretamente.
+        # Nunca declarar disponibilidade se o formato nao for reconhecido.
+        mercados = set()
+        casas = 0
+        for item in dados:
+            if not isinstance(item, dict):
+                continue
+            if isinstance(item.get("markets"), list):
+                casas += 1
+                for m in item["markets"]:
+                    if isinstance(m, dict) and isinstance(m.get("key"), str):
+                        mercados.add(m["key"])
+            elif isinstance(item.get("key"), str):
+                mercados.add(item["key"])
+        alternativos = sorted(k for k in mercados if k == "alternate_totals")
+        linhas = [
+            "🔎 MERCADOS DISPONIVEIS — SHADOW",
+            f"⚽ {_seguro(evento.get('home_team'))} vs {_seguro(evento.get('away_team'))}",
+            f"🕘 {_hora(evento.get('commence_time'))} | regiao EU",
+            f"🏦 Blocos de casas: {casas} | mercados distintos: {len(mercados)}",
+            "🎯 alternate_totals: " + ("identificado" if alternativos else "nao identificado nesta resposta"),
+            "ℹ️ Esta consulta verifica chaves de mercado, nao odds nem linhas 3.5.",
+            "🔒 Sem picks, CLV, V1.2/V1.3 ou escrita de dados.",
+        ]
+        return "\n".join(linhas) + _quota_txt(quota)
     operacao = args[0].casefold()
     if operacao not in {"ligas", "jogos", "odds"}:
         return "⚠️ Operacao desconhecida. Usa /fonte_alt."
