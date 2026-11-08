@@ -159,7 +159,7 @@ def testar_fonte_alternativa(argumentos="", chave=None, session=None):
                 for nome, preco in sorted(amostra)[:3]:
                     linhas.append(f"  {_seguro(nome, 30)}: {preco:.2f}")
         linhas.append("🔒 Nao e Betano PT; sem picks, apostas, CLV ou alteracoes de producao.")
-        return "\\n".join(linhas) + _quota_txt(quota)
+        return "\n".join(linhas) + _quota_txt(quota)
 
     # Descoberta explicita de mercados alternativos: 1 chamada /markets por evento.
     # Sem odds, sem picks e sem alteracoes no pipeline de producao.
