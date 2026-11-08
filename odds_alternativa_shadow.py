@@ -33,7 +33,7 @@ def _hora(valor):
         return "hora indisponivel"
 
 
-def _get(session, path, parametros):
+def _get(session, path, parametros, aceitar_objeto=False):
     """Nunca devolver excecoes HTTP/URL com chave em query string."""
     try:
         resposta = session.get(BASE + path, params=parametros, timeout=(5, 20))
@@ -41,7 +41,7 @@ def _get(session, path, parametros):
         if code != 200:
             return None, f"HTTP {code} (credenciais/plano/fonte a verificar)", None
         dados = resposta.json()
-        if not isinstance(dados, list):
+        if not isinstance(dados, list) and not (aceitar_objeto and isinstance(dados, dict)):
             return None, "formato de resposta inesperado", None
         headers = resposta.headers or {}
         quota = {
@@ -110,7 +110,7 @@ def testar_fonte_alternativa(argumentos="", chave=None, session=None):
         evento = candidatos[0]
         dados, erro, quota = _get(
             sessao, f"/sports/{sport}/events/{evento['id']}/markets",
-            {"apiKey": valor, "regions": "eu"},
+            {"apiKey": valor, "regions": "eu"}, aceitar_objeto=True,
         )
         if erro:
             return "⚠️ Mercados do evento: " + erro
@@ -118,7 +118,17 @@ def testar_fonte_alternativa(argumentos="", chave=None, session=None):
         # Nunca declarar disponibilidade se o formato nao for reconhecido.
         mercados = set()
         casas = 0
-        for item in dados:
+        # O endpoint de mercados pode devolver {"data": [bookmakers]}.
+        if isinstance(dados, dict):
+            itens = dados.get("data")
+            if not isinstance(itens, list):
+                itens = dados.get("bookmakers")
+            if not isinstance(itens, list):
+                return ("⚠️ Estrutura de mercados desconhecida (objeto sem lista "
+                        "data/bookmakers)." + _quota_txt(quota))
+        else:
+            itens = dados
+        for item in itens:
             if not isinstance(item, dict):
                 continue
             if isinstance(item.get("markets"), list):
