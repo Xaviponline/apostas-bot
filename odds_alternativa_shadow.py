@@ -76,6 +76,91 @@ def testar_fonte_alternativa(argumentos="", chave=None, session=None):
             "• /fonte_alt odds soccer_portugal_primeira_liga — UMA consulta h2h+totals, regiao eu (ate 2 creditos)\n"
             "🔒 Nao utiliza Betano PT nem altera picks/odds de producao."
         )
+    # Consulta manual de uma unica partida, apenas linhas exatas 2.5/3.5.
+    if str(argumentos or "").strip().casefold().startswith("linhas "):
+        from odds_referencia_shadow import _dt, _equipa, _numero
+        partes = [p.strip() for p in str(argumentos).strip()[len("linhas "):].split("|")]
+        if (len(partes) != 3 or not SPORT.fullmatch(partes[0])
+                or not all(2 <= len(p) <= 65 and p.isprintable() for p in partes[1:])
+                or _equipa(partes[1], partes[2])):
+            return "Formato: /fonte_alt linhas soccer_liga | Equipa Casa | Equipa Fora."
+        valor = str(chave or os.getenv("THE_ODDS_API_KEY") or "").strip()
+        if not valor:
+            return "⚪ THE_ODDS_API_KEY nao configurada. Zero chamadas."
+        sport, casa, fora = partes
+        sessao = session or requests.Session()
+        eventos, erro, _ = _get(sessao, f"/sports/{sport}/events", {"apiKey": valor})
+        if erro:
+            return "⚠️ Eventos: " + erro
+        agora = datetime.now(timezone.utc)
+        candidatos = [e for e in eventos if isinstance(e, dict)
+                      and _equipa(e.get("home_team"), casa)
+                      and _equipa(e.get("away_team"), fora)
+                      and _dt(e.get("commence_time")) is not None
+                      and _dt(e.get("commence_time")) > agora
+                      and isinstance(e.get("id"), str)
+                      and re.fullmatch(r"[A-Za-z0-9]{8,80}", e["id"])]
+        if len(candidatos) != 1:
+            return "⚪ Jogo futuro nao encontrado de forma unica. Zero consultas pagas."
+        evento = candidatos[0]
+        dados, erro, quota = _get(
+            sessao, f"/sports/{sport}/events/{evento['id']}/odds",
+            {"apiKey": valor, "regions": "eu", "markets": "alternate_totals",
+             "oddsFormat": "decimal", "dateFormat": "iso"}, aceitar_objeto=True)
+        if erro:
+            return "⚠️ Odds de linhas alternativas: " + erro
+        if not isinstance(dados, dict):
+            return "⚠️ Resposta de odds por evento inesperada." + _quota_txt(quota)
+        if (dados.get("id") != evento["id"]
+                or not _equipa(dados.get("home_team"), casa)
+                or not _equipa(dados.get("away_team"), fora)
+                or _dt(dados.get("commence_time")) != _dt(evento.get("commence_time"))):
+            return "⚠️ Identidade ou horario do jogo divergente. Sem odds." + _quota_txt(quota)
+        cotacoes = {}
+        rejeitadas = 0
+        for book in dados.get("bookmakers") or []:
+            if not isinstance(book, dict) or not book.get("key"):
+                continue
+            casa_id = _seguro(book["key"], 45)
+            for market in book.get("markets") or []:
+                if not isinstance(market, dict) or market.get("key") != "alternate_totals":
+                    continue
+                atualizado = _dt(market.get("last_update") or book.get("last_update"))
+                if atualizado is None or not (-300 <= (agora-atualizado).total_seconds() <= 21600):
+                    rejeitadas += 1
+                    continue
+                for outcome in market.get("outcomes") or []:
+                    if not isinstance(outcome, dict):
+                        continue
+                    try:
+                        ponto = float(outcome.get("point"))
+                    except (TypeError, ValueError, OverflowError):
+                        continue
+                    sentido = str(outcome.get("name") or "").casefold()
+                    preco = _numero(outcome.get("price"))
+                    if ponto not in (2.5, 3.5) or sentido not in ("over", "under") or preco is None:
+                        continue
+                    chave = (casa_id, sentido, ponto)
+                    # Duplicados na mesma casa/linha sao ambiguos; nao publicar.
+                    if chave in cotacoes:
+                        cotacoes[chave] = None
+                    else:
+                        cotacoes[chave] = preco
+        linhas = ["🎯 LINHAS EXATAS — MULTICASA SHADOW",
+                  f"⚽ {_seguro(casa)} vs {_seguro(fora)}",
+                  f"🕘 {_hora(evento.get('commence_time'))} | EU",
+                  f"🏦 Casas com cotacoes: {len(set(k[0] for k,v in cotacoes.items() if v is not None))}",
+                  f"⏳ Mercados sem atualizacao valida: {rejeitadas}"]
+        for ponto in (2.5, 3.5):
+            for sentido in ("under", "over"):
+                amostra = [(k[0], v) for k,v in cotacoes.items()
+                           if k[1] == sentido and k[2] == ponto and v is not None]
+                linhas.append(f"• {sentido.title()} {ponto:.1f}: {len(amostra)} casas")
+                for nome, preco in sorted(amostra)[:3]:
+                    linhas.append(f"  {_seguro(nome, 30)}: {preco:.2f}")
+        linhas.append("🔒 Nao e Betano PT; sem picks, apostas, CLV ou alteracoes de producao.")
+        return "\n".join(linhas) + _quota_txt(quota)
+
     # Descoberta explicita de mercados alternativos: 1 chamada /markets por evento.
     # Sem odds, sem picks e sem alteracoes no pipeline de producao.
     if str(argumentos or "").strip().casefold().startswith("mercados "):
