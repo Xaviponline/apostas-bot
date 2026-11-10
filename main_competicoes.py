@@ -2618,10 +2618,19 @@ def main():
             analisador=analisador,
             previsoes=RegistoPrevisoesDiario(),
         ).buscar_atualizacoes()
-    except Exception:
+    except Exception as erro:
+        # Apenas classe da excecao e localizacao do codigo; nunca valores,
+        # argumentos, caminhos completos ou traceback com credenciais.
+        import traceback
+        from pathlib import PurePath
+        frames = traceback.extract_tb(erro.__traceback__)
+        local = frames[-1] if frames else None
+        ficheiro = PurePath(local.filename).name if local else "desconhecido"
+        linha = local.lineno if local else 0
         logging.error(
-            "Arranque ou escrita interrompidos. Verifica configuração, histórico "
-            "e permissões; detalhes omitidos para proteger credenciais."
+            "Arranque interrompido | tipo=%s | modulo=%s | linha=%s "
+            "| detalhes omitidos para proteger credenciais.",
+            type(erro).__name__, ficheiro, linha,
         )
         raise SystemExit(1)
 
