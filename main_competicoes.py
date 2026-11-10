@@ -1203,9 +1203,12 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self._fonte_alt_cache = cache
         if arg in cache:
             return "♻️ Fonte alternativa em cache — zero novos pedidos.\n\n" + cache[arg]
-        # No maximo UMA consulta com consumo de creditos por processo.
-        if arg.startswith("odds ") and any(k.startswith("odds ") for k in cache):
-            return "⛔ Limite de um teste pago por processo. Zero pedidos."
+        # Consultas pagas SHADOW: no maximo UMA por processo, incluindo
+        # linhas e mercados. Impede gastos repetidos durante diagnosticos.
+        def _paga(comando):
+            return comando.startswith(("odds ", "linhas ", "mercados "))
+        if _paga(arg) and any(_paga(k) for k in cache):
+            return "⛔ Limite de um teste pago SHADOW por processo. Zero pedidos."
         # Catalogo e eventos nao descontam creditos; evitar chamadas repetidas.
         if len(cache) >= 8:
             return "⛔ Limite de testes manuais neste processo. Zero pedidos."
