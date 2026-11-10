@@ -1208,7 +1208,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         def _paga(comando):
             return comando.startswith(("odds ", "linhas ", "mercados "))
         if _paga(arg) and any(_paga(k) for k in cache):
-            return "⛔ Limite de uma consulta paga SHADOW por processo. Zero pedidos."
+            return "⛔ Limite de um teste pago SHADOW por processo. Zero pedidos."
         # Catalogo e eventos nao descontam creditos; evitar chamadas repetidas.
         if len(cache) >= 8:
             return "⛔ Limite de testes manuais neste processo. Zero pedidos."
