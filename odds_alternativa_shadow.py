@@ -73,7 +73,9 @@ def testar_fonte_alternativa(argumentos="", chave=None, session=None):
             "• /fonte_alt ligas — listar ligas de futebol (zero creditos)\n"
             "• /fonte_alt ligas portugal — procurar uma liga (zero creditos)\n"
             "• /fonte_alt jogos soccer_portugal_primeira_liga — eventos (zero creditos)\n"
-            "• /fonte_alt odds soccer_portugal_primeira_liga — UMA consulta h2h+totals, regiao eu (ate 2 creditos)\n"
+            "• /fonte_alt linhas soccer_epl | Manchester City | Fulham — Under/Over 2.5 e 3.5 por casa (consulta paga)\n"
+            "• /fonte_alt mercados soccer_epl | Manchester City | Fulham — catalogo por jogo (consulta paga)\n"
+            "• /fonte_alt odds soccer_portugal_primeira_liga — h2h+totals, regiao EU (consulta paga)\n"
             "🔒 Nao utiliza Betano PT nem altera picks/odds de producao."
         )
     # Consulta manual de uma unica partida, apenas linhas exatas 2.5/3.5.
