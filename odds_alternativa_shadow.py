@@ -165,7 +165,6 @@ def testar_fonte_alternativa(argumentos="", chave=None, session=None):
     # Sem odds, sem picks e sem alteracoes no pipeline de producao.
     if str(argumentos or "").strip().casefold().startswith("mercados "):
         from odds_referencia_shadow import _dt, _equipa
-        from datetime import timezone
         partes = [p.strip() for p in str(argumentos).strip()[len("mercados "):].split("|")]
         if (len(partes) != 3 or not SPORT.fullmatch(partes[0])
                 or not all(2 <= len(p) <= 65 and p.isprintable() for p in partes[1:])
