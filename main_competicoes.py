@@ -1244,7 +1244,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             try:
                 from shadow_coverage_store import registar_linhas
                 registar_linhas(arg, resposta)
-            except (OSError, ValueError, RuntimeError):
+            except Exception:
                 # Falha no registo nao pode afetar o comando nem o bot.
                 pass
         return resposta
