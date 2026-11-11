@@ -1201,6 +1201,29 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         if not isinstance(cache, dict):
             cache = {}
             self._fonte_alt_cache = cache
+        if arg == "cobertura":
+            # Apenas diagnostico da cache em memoria; sem HTTP, nem mutacoes.
+            linhas = [(k, v) for k, v in cache.items() if k.startswith("linhas ")]
+            validas = [v for _, v in linhas if "🎯 LINHAS EXATAS" in v]
+            mercados = ("Under 2.5", "Over 2.5", "Under 3.5", "Over 3.5")
+            resumo = [
+                "📊 COBERTURA THE ODDS API — SHADOW (CACHE LOCAL)",
+                f"• Consultas de linhas na cache: {len(linhas)}",
+                f"• Jogos com resposta de linhas: {len(validas)}",
+            ]
+            for mercado in mercados:
+                import re
+                contagens = [
+                    int(m.group(1)) for v in validas
+                    if (m := re.search(r"(?m)^• " + re.escape(mercado)
+                                      + r": (\\d+) casas$", v))
+                ]
+                resumo.append(f"• {mercado}: {sum(n > 0 for n in contagens)}/{len(validas)} jogos com cotacoes")
+            resumo.extend([
+                "ℹ️ Apenas testes manuais deste processo; reinicios apagam a cache.",
+                "🔒 Zero pedidos externos, zero creditos, sem alterar picks/CLV.",
+            ])
+            return "\\n".join(resumo)
         if arg in cache:
             return "♻️ Fonte alternativa em cache — zero novos pedidos.\n\n" + cache[arg]
         # Consultas pagas SHADOW: no maximo UMA por processo, incluindo
