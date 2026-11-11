@@ -1216,14 +1216,14 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 contagens = [
                     int(m.group(1)) for v in validas
                     if (m := re.search(r"(?m)^• " + re.escape(mercado)
-                                      + r": (\\d+) casas$", v))
+                                      + r": (\d+) casas$", v))
                 ]
                 resumo.append(f"• {mercado}: {sum(n > 0 for n in contagens)}/{len(validas)} jogos com cotacoes")
             resumo.extend([
                 "ℹ️ Apenas testes manuais deste processo; reinicios apagam a cache.",
                 "🔒 Zero pedidos externos, zero creditos, sem alterar picks/CLV.",
             ])
-            return "\\n".join(resumo)
+            return "\n".join(resumo)
         if arg in cache:
             return "♻️ Fonte alternativa em cache — zero novos pedidos.\n\n" + cache[arg]
         # Consultas pagas SHADOW: no maximo UMA por processo, incluindo
