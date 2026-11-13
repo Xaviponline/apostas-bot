@@ -147,6 +147,26 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         # Telegram, o aviso é avaliado mesmo que a rotina ESPN falhe.
         self._avisar_prejogo_se_devido()
         self._scout_auto_se_devido()
+        self._fonte_alt_auto_se_devido()
+
+    def _fonte_alt_auto_se_devido(self):
+        """Uma ronda SHADOW por dia, sem alterar pipeline de apostas."""
+        if os.getenv("FONTE_ALT_AUTO", "0") != "1":
+            return
+        agora = datetime.now(TZ_PORTUGAL)
+        if agora.hour != 11:
+            return
+        atual = time.monotonic()
+        if atual < getattr(self, "_fonte_alt_auto_next_check", 0):
+            return
+        self._fonte_alt_auto_next_check = atual + 900
+        try:
+            from shadow_auto_collector import executar
+            fez, texto = executar()
+            if fez and self.owner_id and self.chat_id:
+                self.enviar_mensagem(self.chat_id, texto)
+        except Exception:
+            logging.warning("FONTE_ALT_AUTO | erro isolado; producao intacta")
 
     def _scout_auto_se_devido(self):
         """Uma ronda diaria 10h–11h, se opt-in; isolada das rotinas oficiais."""
@@ -1201,6 +1221,9 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         if not isinstance(cache, dict):
             cache = {}
             self._fonte_alt_cache = cache
+        if arg == "auto_estado":
+            from shadow_auto_collector import estado
+            return estado()
         if arg == "historico":
             from shadow_coverage_store import historico_cobertura
             return historico_cobertura()
