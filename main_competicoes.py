@@ -1201,6 +1201,9 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         if not isinstance(cache, dict):
             cache = {}
             self._fonte_alt_cache = cache
+        if arg == "historico":
+            from shadow_coverage_store import historico_cobertura
+            return historico_cobertura()
         if arg == "cobertura":
             # Apenas diagnostico da cache em memoria; sem HTTP, nem mutacoes.
             linhas = [(k, v) for k, v in cache.items() if k.startswith("linhas ")]
@@ -1237,6 +1240,13 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             return "⛔ Limite de testes manuais neste processo. Zero pedidos."
         resposta = testar_fonte_alternativa(arg)
         cache[arg] = resposta
+        if arg.startswith("linhas ") and "🎯 LINHAS EXATAS" in resposta:
+            try:
+                from shadow_coverage_store import registar_linhas
+                registar_linhas(arg, resposta)
+            except Exception:
+                # Falha no registo nao pode afetar o comando nem o bot.
+                pass
         return resposta
 
     def _executar_odds_payload_audit(self, argumentos=""):
