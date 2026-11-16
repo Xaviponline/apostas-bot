@@ -291,6 +291,14 @@ class ScoutShadow:
         if hoje in dados["dias"]:
             return False, "♻️ SCOUT de hoje ja registado. Zero chamadas novas.\n" + self.relatorio_dia(dados, hoje)
         candidatos, motivos = _possiveis(snapshots, agora)
+        # Diagnostico somente de leitura: revelar nomes reais sem inferir ligas.
+        ligas_sem_mapa = Counter()
+        for p in snapshots:
+            if not isinstance(p, dict) or p.get("data_jogo") != hoje:
+                continue
+            if _liga(p) is None and p.get("liga"):
+                ligas_sem_mapa[str(p["liga"]).strip()[:100]] += 1
+
         if not candidatos:
             snapshots_hoje = sum(
                 1 for p in snapshots
@@ -313,6 +321,7 @@ class ScoutShadow:
                 "snapshots_do_dia": snapshots_hoje,
                 "candidatos_modelo": 0,
                 "descartes": dict(motivos),
+                "ligas_sem_mapeamento_diagnostico": dict(ligas_sem_mapa),
                 "selecoes": [],
             }
             self._guardar(dados)
@@ -339,6 +348,7 @@ class ScoutShadow:
             "ligas": ligas_ordenadas,
             "candidatos_modelo": len(candidatos),
             "descartes": dict(motivos),
+            "ligas_sem_mapeamento_diagnostico": dict(ligas_sem_mapa),
             "selecoes": [],
         }
         # Escrever antes de qualquer chamada. Reinicio NAO repete gastos.
@@ -436,6 +446,9 @@ class ScoutShadow:
                 f"⚪ {obj.get('snapshots_do_dia', 0)} previsoes de hoje analisadas; "
                 "nenhuma elegivel. Zero pedidos API."
             )
+        if obj.get("ligas_sem_mapeamento_diagnostico"):
+            nomes = sorted(obj["ligas_sem_mapeamento_diagnostico"].items(), key=lambda x: (-x[1], x[0]))
+            linhas.append("🗺️ Ligas sem mapeamento (diagnostico, todas as previsoes do dia): " + "; ".join(f"{nome} ({n})" for nome, n in nomes[:10]))
         if obj.get("descartes"):
             resumo = sorted(obj["descartes"].items(), key=lambda k: (-k[1], k[0]))
             linhas.append("🔎 Excluidas: " + ", ".join(f"{k}={v}" for k,v in resumo[:8]))
