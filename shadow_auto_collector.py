@@ -4,6 +4,7 @@ Uma chamada paga por dia (reserva de 10 creditos), apenas quando explicitamente
 ativada. Persistencia SQLite em DATA_DIR; falha fechada sem volume/sem chave.
 """
 import os
+import json
 import re
 import sqlite3
 from datetime import datetime, timezone
@@ -57,6 +58,40 @@ def estado():
         return "⚠️ SHADOW AUTO: monitorizacao indisponivel. Zero pedidos."
 
 
+def _scout_prioridade(now):
+    """Ler apenas selecoes SHADOW guardadas, sem consultas ou alteracoes."""
+    from pathlib import Path
+    from scout_shadow import _val_ts
+    path = Path(os.getenv("DATA_DIR", "/data")) / "scout_shadow.json"
+    try:
+        dados = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(dados, dict) or dados.get("versao") != 1:
+            return None
+        candidatos = []
+        for dia in dados.get("dias", {}).values():
+            if not isinstance(dia, dict):
+                continue
+            for item in dia.get("selecoes", []):
+                if not isinstance(item, dict):
+                    continue
+                ts = _val_ts(item.get("timestamp_jogo"))
+                sport = item.get("sport")
+                if (ts is not None and ts > now.timestamp()
+                        and isinstance(sport, str) and re.fullmatch(r"soccer_[a-z0-9_]{2,60}", sport)
+                        and all(isinstance(item.get(k), str) and 2 <= len(item[k]) <= 65
+                                and "|" not in item[k] for k in ("casa", "fora"))):
+                    candidatos.append((int(item.get("ranking", 99)), ts, sport, item["casa"], item["fora"]))
+        return sorted(candidatos)[0] if candidatos else None
+    except (OSError, ValueError, TypeError, KeyError, OverflowError):
+        return None
+
+
+def _historico_fixture(db, day):
+    return {row[0] for row in db.execute(
+        "SELECT fixture FROM shadow_auto_runs WHERE day<? AND fixture IS NOT NULL", (day,)
+    )}
+
+
 def executar(now=None, session=None):
     """Uma tentativa/dia; nao repete em erros/reinicios. Retorna (fez, texto)."""
     now = now or datetime.now(_LISBON)
@@ -91,7 +126,9 @@ def executar(now=None, session=None):
             return False, "SHADOW AUTO ja reservado hoje; zero pedidos."
         import requests
         sess = session or requests.Session()
-        events, error, _ = _get(sess, "/sports/soccer_epl/events", {"apiKey": key})
+        prioridade = _scout_prioridade(now)
+        sport = prioridade[2] if prioridade else "soccer_epl"
+        events, error, _ = _get(sess, f"/sports/{sport}/events", {"apiKey": key})
         if error or not isinstance(events, list):
             db.execute("UPDATE shadow_auto_runs SET status='events_error' WHERE day=?", (day,))
             db.close()
@@ -112,8 +149,21 @@ def executar(now=None, session=None):
             db.execute("UPDATE shadow_auto_runs SET status='no_events' WHERE day=?", (day,))
             db.close()
             return True, "SHADOW AUTO: sem jogos futuros; zero consultas pagas."
-        game = future[0]
-        command = f"linhas soccer_epl | {game['home_team']} | {game['away_team']}"
+        from odds_referencia_shadow import _equipa
+        if prioridade:
+            matches = [e for e in future if _equipa(e["home_team"], prioridade[3])
+                       and _equipa(e["away_team"], prioridade[4])
+                       and abs(_dt(e["commence_time"]).timestamp() - prioridade[1]) <= 7200]
+            if len(matches) != 1:
+                db.execute("UPDATE shadow_auto_runs SET status='scout_fixture_unmatched' WHERE day=?", (day,))
+                db.close()
+                return True, "SHADOW AUTO: candidato SCOUT nao confirmado; zero consultas pagas."
+            game = matches[0]
+        else:
+            anteriores = _historico_fixture(db, day)
+            game = next((e for e in future if
+                         f"linhas {sport} | {e['home_team']} | {e['away_team']}" not in anteriores), future[0])
+        command = f"linhas {sport} | {game['home_team']} | {game['away_team']}"
         db.execute("UPDATE shadow_auto_runs SET fixture=?, status='requested' WHERE day=?",
                    (command[:220], day))
         response = testar_fonte_alternativa(command, chave=key, session=sess)
