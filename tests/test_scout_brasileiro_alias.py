@@ -6,8 +6,8 @@ class LigaBrasileiraTests(unittest.TestCase):
     def test_nome_do_relatorio(self):
         self.assertEqual(_liga({"liga": "Brasileiro Serie A"}), "soccer_brazil_campeonato")
 
-    def test_nome_ambiguo_nao_e_aceite(self):
-        self.assertIsNone(_liga({"liga": "Serie A"}))
+    def test_mapeamento_italiano_existente_preservado(self):
+        self.assertEqual(_liga({"liga": "Serie A"}), "soccer_italy_serie_a")
 
 if __name__ == "__main__":
     unittest.main()
