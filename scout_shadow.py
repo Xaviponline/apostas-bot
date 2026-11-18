@@ -75,6 +75,7 @@ LIGAS = {
     "italy serie b": "soccer_italy_serie_b",
     "serie b italy": "soccer_italy_serie_b",
     "brazilian serie a": "soccer_brazil_campeonato",
+    "brasileiro serie a": "soccer_brazil_campeonato",
     "brazil serie a": "soccer_brazil_campeonato",
     "brazil serie a betano": "soccer_brazil_campeonato",
     "campeonato brasileiro serie a": "soccer_brazil_campeonato",
