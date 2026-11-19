@@ -219,6 +219,31 @@ class RastreioOdds:
         except (ValueError, TypeError, OverflowError, OSError):
             return "data inválida"
 
+    @classmethod
+    def _frescura_shadow(cls, item):
+        """Classificacao historica passiva, no instante da observacao.
+
+        O timestamp do fornecedor pode indicar a ultima mudanca de preco,
+        nao a ultima confirmacao de disponibilidade na casa de apostas.
+        """
+        from odds_identidade_guard import MAX_IDADE_ODD_SEG, MAX_FUTURO_ODD_SEG
+        from math import isfinite
+
+        observado = cls._instante(item.get("observado_em"))
+        atualizado = cls._instante(item.get("odds_atualizada_em"))
+        if observado is None:
+            return "indeterminada (hora de observacao ausente)"
+        if atualizado is None:
+            return "sem data de atualizacao comprovada"
+        idade = observado - atualizado
+        if not isfinite(idade):
+            return "indeterminada (timestamp invalido)"
+        if idade < -MAX_FUTURO_ODD_SEG:
+            return "data futura no fornecedor"
+        if idade > MAX_IDADE_ODD_SEG:
+            return f"antiga no registo ({idade / 3600:.1f} h)"
+        return f"dentro do limiar no registo ({max(idade, 0) / 3600:.1f} h)"
+
     def detalhe(self, termo):
         """Pesquisa local por jogo/fixture e mostra provas existentes.
 
@@ -303,6 +328,7 @@ class RastreioOdds:
                 f"🎯 Seleção fonte: {campo(item, 'selecao_nome_fonte')} | Ref: {campo(item, 'outcome_ref_fonte')}",
                 f"🔗 Associação: {campo(item, 'resultado_associacao')}",
                 f"🕒 Atualização odd: {campo(item, 'odds_atualizada_em')}",
+                f"🔬 Frescura SHADOW à recolha: {self._frescura_shadow(item)}",
                 f"⚠️ Diagnóstico: {campo(item, 'diagnostico')} | Contexto: {', '.join(str(a) for a in alertas) if alertas else 'sem alerta registado'}",
             ])
             if (isinstance(contexto_mercados, dict) and
@@ -342,6 +368,7 @@ class RastreioOdds:
             "",
             "ℹ️ Campos 'não registado' não podem ser reconstruídos do histórico; "
             "competições e horas da fonte passam a ser guardadas em futuras recolhas.",
+            "ℹ️ Frescura SHADOW compara timestamps históricos; não confirma disponibilidade atual nem distingue mudança de preço de atualização do fornecedor.",
             "ℹ️ Linhas observadas são metadados passivos; a ausência não prova falta de oferta na Betano.",
             "ℹ️ Mercados recebidos e catalogados são contagens, não prova de ausência na Betano.",
             "🔒 Dados locais, sem nova chamada OddsPapi, sem validação independente Betano e sem alterar apostas.",
