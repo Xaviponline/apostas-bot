@@ -5,7 +5,6 @@ não altera seleção, odds, probabilidades, CLV ou histórico oficial.
 """
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from estatisticas_espn import EstatisticasESPN
@@ -14,7 +13,7 @@ from estatisticas_espn import EstatisticasESPN
 def _chave(jogo):
     # IDs estáveis: evitar colisões entre equipas e datas.
     return "|".join(str(jogo.get(k, "")) for k in
-                    ("id", "data", "casa_id", "fora_id", "liga_codigo"))
+                    ("id", "timestamp", "casa_id", "fora_id", "liga_codigo"))
 
 
 def criar_registo(analise):
@@ -30,8 +29,8 @@ def criar_registo(analise):
     return {
         "versao": 1,
         "capturado_em_utc": datetime.now(timezone.utc).isoformat(),
-        "chave": _chave(jogo),
-        "jogo": {k: jogo.get(k) for k in ("id","data","casa_id","fora_id","casa","fora","liga_codigo")},
+        "chave": str(analise.get("liga_codigo") or "") + "|" + _chave(jogo),
+        "jogo": {k: jogo.get(k) for k in ("id","timestamp","horario","casa_id","fora_id","casa","fora","liga_codigo")},
         "liga_codigo": analise.get("liga_codigo"),
         "lambda_casa": lc, "lambda_fora": lf,
         "media_liga_casa": bc, "media_liga_fora": bf,
