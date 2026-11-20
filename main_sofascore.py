@@ -577,6 +577,9 @@ class BotPremiumReal:
                 resposta = self._executar_analise(tecnica=True)
             elif comando == '/analise_auto_status':
                 resposta = self._agenda_analise_diaria.relatorio()
+            elif comando == '/scout_modelo_auditoria':
+                from scout_modelo_diagnostico import relatorio_scout_modelo
+                resposta = relatorio_scout_modelo(self.previsoes.dados)
             elif comando == '/modelo_snapshot':
                 from modelo_snapshot_shadow import diagnostico_snapshot
                 resposta = diagnostico_snapshot(self.previsoes.dados, argumentos)
