@@ -238,6 +238,16 @@ class BotPremiumReal:
         if not jogos:
             return self.buscador.formatar_jogos(jogos)
         selecoes = self.analisador.gerar_todas_apostas(jogos)
+        # Registo SHADOW de todos os jogos analisados, incluindo não selecionados.
+        # Nunca interrompe a análise nem consulta APIs adicionais.
+        try:
+            from lambda_prospectivo_shadow import registar_seguro
+            caminho = getattr(self.previsoes, "path", None)
+            if caminho:
+                registar_seguro(Path(caminho).with_name("lambda_prospectivo_shadow.jsonl"),
+                               getattr(self.analisador, "ultimas_analises_shadow", []))
+        except (OSError, RuntimeError, ValueError, TypeError):
+            logging.warning("LAMBDA_SHADOW | registo prospetivo indisponivel")
         try:
             selecoes = self._enriquecer_com_cobertura(selecoes)
         except (RuntimeError, ValueError, TypeError):
