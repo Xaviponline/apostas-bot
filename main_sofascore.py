@@ -577,6 +577,9 @@ class BotPremiumReal:
                 resposta = self._executar_analise(tecnica=True)
             elif comando == '/analise_auto_status':
                 resposta = self._agenda_analise_diaria.relatorio()
+            elif comando == '/modelo_snapshot':
+                from modelo_snapshot_shadow import diagnostico_snapshot
+                resposta = diagnostico_snapshot(self.previsoes.dados, argumentos)
             elif comando == '/performance':
                 liquidadas = self.previsoes.atualizar_pendentes()
                 resposta = self.previsoes.relatorio()
