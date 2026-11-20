@@ -577,6 +577,9 @@ class BotPremiumReal:
                 resposta = self._executar_analise(tecnica=True)
             elif comando == '/analise_auto_status':
                 resposta = self._agenda_analise_diaria.relatorio()
+            elif comando == '/lambda_shadow':
+                from lambda_counterfactual_shadow import relatorio_lambda_shadow
+                resposta = relatorio_lambda_shadow(self.previsoes.dados)
             elif comando == '/vitorias_shadow':
                 from vitorias_diagnostico_shadow import relatorio_vitorias_shadow
                 resposta = relatorio_vitorias_shadow(self.previsoes.dados)
