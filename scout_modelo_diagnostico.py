@@ -46,7 +46,7 @@ def relatorio_scout_modelo(dados, agora=None):
     validos = []
     golos = []
     for p in snapshots:
-        if not isinstance(p, dict) or p.get("estado") != "liquidada":
+        if not isinstance(p, dict) or p.get("resultado_binario") not in (0, 1):
             continue
         prob = _numero(p.get("probabilidade"))
         resultado = p.get("resultado_binario")
