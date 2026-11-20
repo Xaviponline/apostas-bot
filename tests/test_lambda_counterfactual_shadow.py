@@ -17,7 +17,11 @@ def test_contrafactuais_nao_modificam_entrada():
     out=relatorio_lambda_shadow({"previsoes":rows})
     assert "LAMBDA SHADOW" in out
     assert "Corte" in out
-    assert "Amostra insuficiente" in out
+    assert "EXPLORATÓRIO" in out
+    assert "sem escolha de variante" in out
+    assert "20% médias liga" in out
+    assert "diferença λ −30%" in out
+    assert "Δ " in out
     assert repr(rows)==original
 
 

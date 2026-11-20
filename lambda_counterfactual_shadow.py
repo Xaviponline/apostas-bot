@@ -2,7 +2,6 @@
 
 Não altera o motor, previsões, ranking, odds ou snapshots.
 """
-from collections import defaultdict
 from datetime import date
 from math import isfinite
 from estatisticas_espn import EstatisticasESPN
@@ -85,7 +84,16 @@ def relatorio_lambda_shadow(dados):
         b=[r for r in teste if r["mercado"]==mercado]
         linhas.append(f"🎯 {mercado}: treino {len(a)} | teste {len(b)}")
         if len(a)<30 or len(b)<20:
-            linhas.append("• Amostra insuficiente para selecionar e validar variante.")
+            linhas.append("• ⚠️ EXPLORATÓRIO: amostra insuficiente; sem escolha de variante.")
+            for rotulo, grupo in (("treino",a),("teste",b)):
+                if not grupo:
+                    linhas.append(f"• {rotulo}: sem observações")
+                    continue
+                base=_brier(grupo,lambda r:r["p"])
+                linhas.append(f"• {rotulo} | original Brier {base:.3f} | real {sum(r['y'] for r in grupo)/len(grupo)*100:.1f}% | previsto {sum(r['p'] for r in grupo)/len(grupo)*100:.1f}%")
+                for v in variantes:
+                    valor=_brier(grupo,lambda r:_prob(r,v))
+                    linhas.append(f"  · {nomes[v]}: Brier {valor:.3f} | Δ {valor-base:+.3f}")
             continue
         # Selecionar variante exclusivamente no treino, incluindo base (sem mudança).
         candidatos=("base",)+variantes
