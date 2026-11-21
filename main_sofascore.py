@@ -243,11 +243,19 @@ class BotPremiumReal:
         try:
             from lambda_prospectivo_shadow import registar_seguro
             caminho = getattr(self.previsoes, "path", None)
+            analises_shadow = getattr(self.analisador, "ultimas_analises_shadow", [])
             if caminho:
-                registar_seguro(Path(caminho).with_name("lambda_prospectivo_shadow.jsonl"),
-                               getattr(self.analisador, "ultimas_analises_shadow", []))
+                destino_shadow = Path(caminho).with_name("lambda_prospectivo_shadow.jsonl")
+                gravados_shadow = registar_seguro(destino_shadow, analises_shadow)
+                logging.info(
+                    "LAMBDA_SHADOW | analises=%s | gravados=%s | existe=%s | diretorio=%s",
+                    len(analises_shadow), gravados_shadow,
+                    destino_shadow.exists(), destino_shadow.parent,
+                )
+            else:
+                logging.warning("LAMBDA_SHADOW | caminho do historico indisponivel")
         except (OSError, RuntimeError, ValueError, TypeError):
-            logging.warning("LAMBDA_SHADOW | registo prospetivo indisponivel")
+            logging.exception("LAMBDA_SHADOW | registo prospetivo indisponivel")
         try:
             selecoes = self._enriquecer_com_cobertura(selecoes)
         except (RuntimeError, ValueError, TypeError):
