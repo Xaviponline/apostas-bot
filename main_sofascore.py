@@ -587,6 +587,13 @@ class BotPremiumReal:
                 resposta = self._executar_analise(tecnica=True)
             elif comando == '/analise_auto_status':
                 resposta = self._agenda_analise_diaria.relatorio()
+            elif comando == '/lambda_prospectivo':
+                from lambda_prospectivo_relatorio import relatorio_prospectivo
+                caminho = getattr(self.previsoes, "path", None)
+                resposta = (relatorio_prospectivo(
+                    Path(caminho).with_name("lambda_prospectivo_shadow.jsonl"),
+                    self.previsoes.dados,
+                ) if caminho else "📭 Sem caminho persistente para Lambda Shadow.")
             elif comando == '/lambda_shadow':
                 from lambda_counterfactual_shadow import relatorio_lambda_shadow
                 resposta = relatorio_lambda_shadow(self.previsoes.dados)
