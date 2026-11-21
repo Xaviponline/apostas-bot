@@ -20,11 +20,16 @@ def criar_registo(analise):
     jogo = analise.get("jogo") or {}
     if not isinstance(jogo, dict):
         return None
+    campos = ("lambda_casa", "lambda_fora", "media_liga_casa", "media_liga_fora", "probabilidades")
+    if any(analise.get(campo) is None for campo in campos):
+        return None
     lc, lf = float(analise["lambda_casa"]), float(analise["lambda_fora"])
     bc, bf = float(analise["media_liga_casa"]), float(analise["media_liga_fora"])
     if min(lc, lf, bc, bf) <= 0:
         return None
     atual = analise["probabilidades"]
+    if not isinstance(atual, dict) or any(k not in atual for k in ("Vitória Casa", "Empate", "Vitória Fora")):
+        return None
     novo = EstatisticasESPN._probabilidades(.6*lc+.4*bc, .6*lf+.4*bf)
     return {
         "versao": 1,
@@ -44,6 +49,9 @@ def guardar_registos(caminho, analises):
     """Append-only, deduplicado; falhas são isoladas da análise principal."""
     destino = Path(caminho)
     novos = [r for a in analises if (r := criar_registo(a)) is not None]
+    ignorados = len(analises) - len(novos)
+    if ignorados:
+        logging.info("LAMBDA_SHADOW | snapshots_incompletos_ignorados=%s | validos=%s", ignorados, len(novos))
     if not novos:
         return 0
     destino.parent.mkdir(parents=True, exist_ok=True)
