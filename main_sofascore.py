@@ -270,11 +270,11 @@ class BotPremiumReal:
         agora = datetime.now(ZoneInfo('Europe/Lisbon'))
         agora_ts = agora.timestamp()
         limite_ts = agora_ts + self.ODDS_AUTO_JANELA_SEG
-        data_iso = agora.strftime('%Y-%m-%d')
         selecoes = []
 
         for p in self.previsoes.dados.get('previsoes', []):
-            if p.get('data_jogo') != data_iso or p.get('estado') != 'pendente':
+            # Timestamp absoluto permite jogos após a meia-noite local.
+            if p.get('estado') != 'pendente':
                 continue
             if self.previsoes._odd_real_valida(p.get('odd_real')) is not None:
                 continue
