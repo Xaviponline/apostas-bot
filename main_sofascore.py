@@ -595,6 +595,27 @@ class BotPremiumReal:
                 resposta = self._executar_analise(tecnica=True)
             elif comando == '/analise_auto_status':
                 resposta = self._agenda_analise_diaria.relatorio()
+            elif comando == '/lambda_guardar':
+                from lambda_prospectivo_shadow import guardar_registos
+                caminho = getattr(self.previsoes, "path", None)
+                analises = getattr(self.analisador, "ultimas_analises_shadow", [])
+                if not caminho:
+                    resposta = "🧪 LAMBDA SHADOW: sem caminho persistente."
+                elif not analises:
+                    resposta = "🧪 LAMBDA SHADOW: sem análises em memória; executa /analisa primeiro."
+                else:
+                    destino = Path(caminho).with_name("lambda_prospectivo_shadow.jsonl")
+                    try:
+                        gravados = guardar_registos(destino, analises)
+                        resposta = (
+                            f"🧪 LAMBDA SHADOW\nAnálises em memória: {len(analises)}\n"
+                            f"Novos registos gravados: {gravados}\n"
+                            f"Ficheiro existente: {destino.is_file()}\n"
+                            "🔒 Apenas SHADOW; zero APIs, previsões oficiais intactas."
+                        )
+                    except (OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
+                        logging.exception("LAMBDA_SHADOW | gravacao manual falhou")
+                        resposta = f"⚠️ LAMBDA SHADOW: falha de gravação ({type(exc).__name__})."
             elif comando == '/lambda_diagnostico':
                 from lambda_prospectivo_shadow import criar_registo
                 caminho = getattr(self.previsoes, "path", None)
