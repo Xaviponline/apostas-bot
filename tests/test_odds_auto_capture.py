@@ -99,6 +99,16 @@ class OddsAutoCaptureTests(unittest.TestCase):
             previsoes=reg,
         )
 
+    def test_selecao_apos_meia_noite_usa_timestamp_e_nao_data_de_hoje(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            snapshot = self._snapshot(reg, inicio_seg=3600)
+            # Simula data do jogo diferente da data local atual,
+            # mantendo o início dentro da janela de captura.
+            snapshot["data_jogo"] = "2099-01-01"
+            bot = self._bot(reg)
+            self.assertEqual(len(bot._selecoes_sem_odd_proximas()), 1)
+
     def test_captura_primeira_odd_antes_do_jogo(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")

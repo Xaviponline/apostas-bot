@@ -102,6 +102,7 @@ class AnalisadorInteligente:
         self.estatisticas = estatisticas or EstatisticasESPN()
         self.ultimo_resumo = {"jogos": 0, "com_dados": 0, "selecoes": 0}
         self.ultimas_selecoes = []
+        self.ultimas_analises_shadow = []
 
     @property
     def data_hoje(self):
@@ -201,6 +202,7 @@ class AnalisadorInteligente:
         suportados = [j for j in jogos if self.estatisticas.resolver_liga(j)]
         self.ultimo_resumo = {"jogos": len(jogos), "com_dados": 0, "selecoes": 0}
         self.ultimas_selecoes = []
+        self.ultimas_analises_shadow = []
         if not suportados:
             return []
 
@@ -214,6 +216,7 @@ class AnalisadorInteligente:
             if analise is None:
                 continue
             com_dados += 1
+            self.ultimas_analises_shadow.append(analise)
             melhor = self._melhor_selecao(analise)
             if melhor is not None:
                 selecoes.append(melhor)

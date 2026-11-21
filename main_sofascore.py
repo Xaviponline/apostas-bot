@@ -238,6 +238,16 @@ class BotPremiumReal:
         if not jogos:
             return self.buscador.formatar_jogos(jogos)
         selecoes = self.analisador.gerar_todas_apostas(jogos)
+        # Registo SHADOW de todos os jogos analisados, incluindo não selecionados.
+        # Nunca interrompe a análise nem consulta APIs adicionais.
+        try:
+            from lambda_prospectivo_shadow import registar_seguro
+            caminho = getattr(self.previsoes, "path", None)
+            if caminho:
+                registar_seguro(Path(caminho).with_name("lambda_prospectivo_shadow.jsonl"),
+                               getattr(self.analisador, "ultimas_analises_shadow", []))
+        except (OSError, RuntimeError, ValueError, TypeError):
+            logging.warning("LAMBDA_SHADOW | registo prospetivo indisponivel")
         try:
             selecoes = self._enriquecer_com_cobertura(selecoes)
         except (RuntimeError, ValueError, TypeError):
@@ -260,11 +270,11 @@ class BotPremiumReal:
         agora = datetime.now(ZoneInfo('Europe/Lisbon'))
         agora_ts = agora.timestamp()
         limite_ts = agora_ts + self.ODDS_AUTO_JANELA_SEG
-        data_iso = agora.strftime('%Y-%m-%d')
         selecoes = []
 
         for p in self.previsoes.dados.get('previsoes', []):
-            if p.get('data_jogo') != data_iso or p.get('estado') != 'pendente':
+            # Timestamp absoluto permite jogos após a meia-noite local.
+            if p.get('estado') != 'pendente':
                 continue
             if self.previsoes._odd_real_valida(p.get('odd_real')) is not None:
                 continue
