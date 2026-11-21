@@ -597,11 +597,10 @@ class BotPremiumReal:
                 resposta = self._agenda_analise_diaria.relatorio()
             elif comando == '/lambda_diagnostico':
                 from lambda_prospectivo_shadow import criar_registo
-                import json
                 caminho = getattr(self.previsoes, "path", None)
                 analises = getattr(self.analisador, "ultimas_analises_shadow", [])
                 if not caminho:
-                    resposta = "🧪 LAMBDA DIAGNÓSTICO\\nSem caminho de histórico."
+                    resposta = "🧪 LAMBDA DIAGNÓSTICO\nSem caminho de histórico."
                 else:
                     destino = Path(caminho).with_name("lambda_prospectivo_shadow.jsonl")
                     try:
@@ -609,16 +608,16 @@ class BotPremiumReal:
                         quantidade = sum(1 for _ in destino.open(encoding="utf-8")) if existe else 0
                         teste = criar_registo(analises[0]) if analises else None
                         resposta = (
-                            "🧪 LAMBDA DIAGNÓSTICO\\n"
-                            f"Análises em memória: {len(analises)}\\n"
-                            f"Snapshot válido: {teste is not None}\\n"
-                            f"Ficheiro existente: {existe}\\n"
-                            f"Linhas no ficheiro: {quantidade}\\n"
-                            f"Diretório persistente: {destino.parent}\\n"
+                            "🧪 LAMBDA DIAGNÓSTICO\n"
+                            f"Análises em memória: {len(analises)}\n"
+                            f"Snapshot válido: {teste is not None}\n"
+                            f"Ficheiro existente: {existe}\n"
+                            f"Linhas no ficheiro: {quantidade}\n"
+                            f"Diretório persistente: {destino.parent}\n"
                             "🔒 Apenas leitura, sem APIs."
                         )
                     except (OSError, ValueError, TypeError, KeyError) as exc:
-                        resposta = f"🧪 LAMBDA DIAGNÓSTICO\\nFalha: {type(exc).__name__}: {str(exc)[:120]}"
+                        resposta = f"🧪 LAMBDA DIAGNÓSTICO\nFalha: {type(exc).__name__}: {str(exc)[:120]}"
             elif comando == '/lambda_prospectivo':
                 from lambda_prospectivo_relatorio import relatorio_prospectivo
                 caminho = getattr(self.previsoes, "path", None)
