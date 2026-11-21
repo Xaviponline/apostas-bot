@@ -255,7 +255,7 @@ class BotPremiumReal:
             else:
                 logging.warning("LAMBDA_SHADOW | caminho do historico indisponivel")
         except (OSError, RuntimeError, ValueError, TypeError):
-            logging.warning("LAMBDA_SHADOW | registo prospetivo indisponivel")
+            logging.exception("LAMBDA_SHADOW | registo prospetivo indisponivel")
         try:
             selecoes = self._enriquecer_com_cobertura(selecoes)
         except (RuntimeError, ValueError, TypeError):
