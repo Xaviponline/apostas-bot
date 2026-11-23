@@ -53,6 +53,7 @@ def guardar_registos(caminho, analises):
     if ignorados:
         logging.info("LAMBDA_SHADOW | snapshots_incompletos_ignorados=%s | validos=%s", ignorados, len(novos))
     if not novos:
+        logging.info("LAMBDA_SHADOW | recebidos=%s | validos=0 | incompletos=%s | duplicados=0 | gravados=0", len(analises), ignorados)
         return 0
     destino.parent.mkdir(parents=True, exist_ok=True)
     existentes = set()
@@ -65,13 +66,16 @@ def guardar_registos(caminho, analises):
                 except (ValueError,TypeError):
                     continue
     gravados=0
+    duplicados=0
     with destino.open("a",encoding="utf-8") as f:
         for reg in novos:
             if reg["chave"] in existentes:
+                duplicados += 1
                 continue
             f.write(json.dumps(reg,ensure_ascii=False,allow_nan=False)+"\n")
             existentes.add(reg["chave"])
             gravados+=1
+    logging.info("LAMBDA_SHADOW | recebidos=%s | validos=%s | incompletos=%s | duplicados=%s | gravados=%s | destino=%s", len(analises), len(novos), ignorados, duplicados, gravados, destino)
     return gravados
 
 
