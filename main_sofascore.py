@@ -627,13 +627,32 @@ class BotPremiumReal:
                     try:
                         existe = destino.is_file()
                         quantidade = sum(1 for _ in destino.open(encoding="utf-8")) if existe else 0
+                        import json
                         teste = criar_registo(analises[0]) if analises else None
+                        chaves_ficheiro = set()
+                        ultima_captura = "sem registos"
+                        if existe:
+                            with destino.open(encoding="utf-8") as ficheiro:
+                                for linha in ficheiro:
+                                    try:
+                                        registo = json.loads(linha)
+                                        chaves_ficheiro.add(registo.get("chave"))
+                                        data_captura = registo.get("capturado_em_utc")
+                                        if data_captura and (ultima_captura == "sem registos" or data_captura > ultima_captura):
+                                            ultima_captura = data_captura
+                                    except (ValueError, TypeError, AttributeError):
+                                        continue
+                        validos_memoria = [reg for a in analises if (reg := criar_registo(a)) is not None]
+                        por_gravar = sum(reg["chave"] not in chaves_ficheiro for reg in validos_memoria)
                         resposta = (
                             "🧪 LAMBDA DIAGNÓSTICO\n"
                             f"Análises em memória: {len(analises)}\n"
                             f"Snapshot válido: {teste is not None}\n"
                             f"Ficheiro existente: {existe}\n"
                             f"Linhas no ficheiro: {quantidade}\n"
+                            f"Última captura UTC: {ultima_captura}\n"
+                            f"Válidos em memória: {len(validos_memoria)}\n"
+                            f"Por gravar (memória): {por_gravar}\n"
                             f"Diretório persistente: {destino.parent}\n"
                             "🔒 Apenas leitura, sem APIs."
                         )
