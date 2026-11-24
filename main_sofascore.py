@@ -233,29 +233,28 @@ class BotPremiumReal:
             logging.warning("ODDS_COBERTURA | registo local indisponivel")
         return saida
 
+    def _guardar_lambda_memoria(self):
+        from lambda_prospectivo_shadow import guardar_registos
+        caminho = getattr(self.previsoes, "path", None)
+        analises = getattr(self.analisador, "ultimas_analises_shadow", [])
+        if not caminho:
+            raise ValueError("Sem caminho persistente Lambda")
+        destino = Path(caminho).with_name("lambda_prospectivo_shadow.jsonl")
+        return guardar_registos(destino, analises)
+
+    def _guardar_lambda_auto(self):
+        try:
+            gravados = self._guardar_lambda_memoria()
+            logging.info("LAMBDA_SHADOW | auto | gravados=%s", gravados)
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError, OverflowError, AttributeError):
+            logging.exception("LAMBDA_SHADOW | falha automatica")
+
     def _executar_analise(self, tecnica=False):
         jogos = self._jogos_hoje_portugal()
         if not jogos:
             return self.buscador.formatar_jogos(jogos)
         selecoes = self.analisador.gerar_todas_apostas(jogos)
-        # Registo SHADOW de todos os jogos analisados, incluindo não selecionados.
-        # Nunca interrompe a análise nem consulta APIs adicionais.
-        try:
-            from lambda_prospectivo_shadow import registar_seguro
-            caminho = getattr(self.previsoes, "path", None)
-            analises_shadow = getattr(self.analisador, "ultimas_analises_shadow", [])
-            if caminho:
-                destino_shadow = Path(caminho).with_name("lambda_prospectivo_shadow.jsonl")
-                gravados_shadow = registar_seguro(destino_shadow, analises_shadow)
-                logging.info(
-                    "LAMBDA_SHADOW | analises=%s | gravados=%s | existe=%s | diretorio=%s",
-                    len(analises_shadow), gravados_shadow,
-                    destino_shadow.exists(), destino_shadow.parent,
-                )
-            else:
-                logging.warning("LAMBDA_SHADOW | caminho do historico indisponivel")
-        except (OSError, RuntimeError, ValueError, TypeError):
-            logging.exception("LAMBDA_SHADOW | registo prospetivo indisponivel")
+        self._guardar_lambda_auto()
         try:
             selecoes = self._enriquecer_com_cobertura(selecoes)
         except (RuntimeError, ValueError, TypeError):
@@ -545,6 +544,8 @@ class BotPremiumReal:
         def tarefa():
             antes = len(self.previsoes.dados.get("previsoes", []))
             self._executar_analise(tecnica=False)
+            # Segunda tentativa idempotente após a análise diária.
+            self._guardar_lambda_auto()
             depois = len(self.previsoes.dados.get("previsoes", []))
             logging.info("ANALISE_AUTO | %s novo(s) snapshot(s)", max(depois - antes, 0))
 
@@ -606,7 +607,7 @@ class BotPremiumReal:
                 else:
                     destino = Path(caminho).with_name("lambda_prospectivo_shadow.jsonl")
                     try:
-                        gravados = guardar_registos(destino, analises)
+                        gravados = self._guardar_lambda_memoria()
                         resposta = (
                             f"🧪 LAMBDA SHADOW\nAnálises em memória: {len(analises)}\n"
                             f"Novos registos gravados: {gravados}\n"
