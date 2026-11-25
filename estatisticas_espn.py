@@ -220,6 +220,7 @@ class EstatisticasESPN:
                 "fora": str(fora_team.get("displayName") or fora_team.get("name") or "").strip(),
                 "golos_casa": gc,
                 "golos_fora": gf,
+                "final_regulamentar_shadow": status.get("name") == "STATUS_FINAL" and status.get("completed") is True,
             }
         except (KeyError, TypeError, ValueError):
             return None
