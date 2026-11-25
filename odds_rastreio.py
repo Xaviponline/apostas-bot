@@ -220,6 +220,31 @@ class RastreioOdds:
             return "data inválida"
 
     @classmethod
+    def _classificar_frescura_shadow(cls, item):
+        """Classificação passiva; não confirma disponibilidade nem altera filtros."""
+        from odds_identidade_guard import MAX_IDADE_ODD_SEG, MAX_FUTURO_ODD_SEG
+        from math import isfinite
+
+        observado = cls._instante(item.get("observado_em"))
+        odd = cls._instante(item.get("odds_atualizada_em"))
+        mercado = cls._instante(item.get("market_updated_at"))
+        if observado is None or odd is None:
+            return "indeterminada"
+        idade = observado - odd
+        if not isfinite(idade) or idade < -MAX_FUTURO_ODD_SEG:
+            return "indeterminada"
+        if idade <= MAX_IDADE_ODD_SEG:
+            return "timestamp odd recente"
+        if mercado is None:
+            return "indeterminada (odd antiga, mercado sem data)"
+        idade_mercado = observado - mercado
+        if not isfinite(idade_mercado) or idade_mercado < -MAX_FUTURO_ODD_SEG:
+            return "indeterminada"
+        if idade_mercado <= MAX_IDADE_ODD_SEG:
+            return "odd antiga, mercado recente"
+        return "odd e mercado antigos"
+
+    @classmethod
     def _frescura_shadow(cls, item):
         """Classificacao historica passiva, no instante da observacao.
 
@@ -332,6 +357,7 @@ class RastreioOdds:
                 f"🕒 Atualização odd (UTC): {campo(item, 'odds_atualizada_em')}",
                 f"🕒 Atualização odd (Portugal): {self._hora_portugal(item.get('odds_atualizada_em'))}",
                 f"🔬 Frescura SHADOW à recolha: {self._frescura_shadow(item)}",
+                f"🔬 Classe SHADOW: {self._classificar_frescura_shadow(item)}",
                 f"🕒 Mudança bookmaker (UTC): {campo(item, 'bookmaker_changed_at')}",
                 f"🕒 Atualização mercado (UTC): {campo(item, 'market_updated_at')}",
                 f"📏 Limiar atual de antiguidade: {MAX_IDADE_ODD_SEG / 60:g} min",
