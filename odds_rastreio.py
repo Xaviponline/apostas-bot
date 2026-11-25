@@ -169,12 +169,16 @@ class RastreioOdds:
             return "🔎 RASTREIO ODDS — ficheiro inseguro."
         total = com_ref = anomalias = 0
         ultimos = []
+        classes = {}
         with self.path.open("r", encoding="utf-8") as f:
             for linha in f:
                 if not linha.strip():
                     continue
                 item = json.loads(linha)
                 total += 1
+                if item.get("odd_observada") is not None:
+                    classe = self._classificar_frescura_shadow(item)
+                    classes[classe] = classes.get(classe, 0) + 1
                 if item.get("mercado_id_fonte") and item.get("outcome_ref_fonte"):
                     com_ref += 1
                 if item.get("diagnostico") or item.get("alertas_contexto"):
@@ -190,6 +194,9 @@ class RastreioOdds:
             "",
             "ULTIMAS COTACOES COM REFERENCIAS:",
         ]
+        linhas[5:5] = ["FRESCURA SHADOW (observações com preço, todo o histórico):"] + [
+            f"• {classe}: {numero}" for classe, numero in sorted(classes.items())
+        ] + ["Contagens de observações, não jogos únicos; sem confirmação de disponibilidade.", ""]
         for a in reversed(ultimos):
             linhas.append(f"• {a['jogo']} | {a['mercado_modelo']} @{a['odd_observada']}")
             linhas.append(f"  fixture={a['fixture_id_fonte']} | mercado={a['mercado_id_fonte']} | selecao={a['outcome_ref_fonte']}")
