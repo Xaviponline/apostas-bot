@@ -290,6 +290,8 @@ class RastreioOdds:
                 "ℹ️ Não foram feitas novas consultas à OddsPapi."
             )
 
+        from odds_identidade_guard import MAX_IDADE_ODD_SEG
+
         def campo(item, chave):
             valor = item.get(chave)
             return str(valor) if valor not in (None, "") else "não registado"
@@ -330,6 +332,9 @@ class RastreioOdds:
                 f"🕒 Atualização odd (UTC): {campo(item, 'odds_atualizada_em')}",
                 f"🕒 Atualização odd (Portugal): {self._hora_portugal(item.get('odds_atualizada_em'))}",
                 f"🔬 Frescura SHADOW à recolha: {self._frescura_shadow(item)}",
+                f"🕒 Mudança bookmaker (UTC): {campo(item, 'bookmaker_changed_at')}",
+                f"🕒 Atualização mercado (UTC): {campo(item, 'market_updated_at')}",
+                f"📏 Limiar atual de antiguidade: {MAX_IDADE_ODD_SEG / 60:g} min",
                 f"⚠️ Diagnóstico: {campo(item, 'diagnostico')} | Contexto: {', '.join(str(a) for a in alertas) if alertas else 'sem alerta registado'}",
             ])
             if (isinstance(contexto_mercados, dict) and
