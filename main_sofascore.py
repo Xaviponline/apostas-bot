@@ -249,12 +249,26 @@ class BotPremiumReal:
         except (OSError, RuntimeError, ValueError, TypeError, KeyError, OverflowError, AttributeError):
             logging.exception("LAMBDA_SHADOW | falha automatica")
 
+    def _guardar_lambda_resultados_auto(self):
+        try:
+            from lambda_resultados_shadow import guardar_resultados
+            caminho = Path(self.previsoes.path)
+            n = guardar_resultados(
+                caminho.with_name("lambda_prospectivo_shadow.jsonl"),
+                caminho.with_name("lambda_prospectivo_resultados.jsonl"),
+                getattr(self.analisador, "ultimos_historicos_shadow", {}),
+            )
+            logging.info("LAMBDA_RESULTADOS_SHADOW | gravados=%s", n)
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError, OverflowError, AttributeError):
+            logging.exception("LAMBDA_RESULTADOS_SHADOW | falha isolada")
+
     def _executar_analise(self, tecnica=False):
         jogos = self._jogos_hoje_portugal()
         if not jogos:
             return self.buscador.formatar_jogos(jogos)
         selecoes = self.analisador.gerar_todas_apostas(jogos)
         self._guardar_lambda_auto()
+        self._guardar_lambda_resultados_auto()
         try:
             selecoes = self._enriquecer_com_cobertura(selecoes)
         except (RuntimeError, ValueError, TypeError):

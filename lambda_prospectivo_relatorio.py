@@ -61,5 +61,39 @@ def relatorio_prospectivo(caminho, previsoes):
                        "⚠️ Subconjunto com previsões oficiais liquidadas; não representa todos os jogos analisados."])
     else:
         linhas.append("⏳ Ainda sem resultados oficiais associados; aguardar liquidação.")
-    linhas.append("ℹ️ Não promover variantes com esta amostra; resultados não selecionados ainda não estão disponíveis.")
+    from lambda_resultados_shadow import ler, identidade
+    independentes = {}
+    conflitos = set()
+    for r in ler(path.with_name("lambda_prospectivo_resultados.jsonl")):
+        try:
+            k = (r["chave"], identidade(r["jogo"], r["liga_codigo"]))
+            gc, gf = r["golos_casa"], r["golos_fora"]
+            if k[1] is None or r.get("fonte") != "ESPN_STATUS_FINAL" or type(gc) is not int or type(gf) is not int or min(gc,gf)<0:
+                continue
+            if k in independentes and independentes[k] != (gc,gf):
+                conflitos.add(k)
+            independentes[k] = (gc,gf)
+        except (KeyError, TypeError, ValueError):
+            continue
+    amostra = []
+    vistos = set()
+    for r in registos:
+        try:
+            k = (r["chave"], identidade(r["jogo"], r["liga_codigo"]))
+            if k in vistos or k in conflitos or k not in independentes:
+                continue
+            gc,gf = independentes[k]
+            y = (1.,0.,0.) if gc>gf else ((0.,1.,0.) if gc==gf else (0.,0.,1.))
+            a,b = ([float(r[c][m]) for m in MERCADOS] for c in ("original_1x2","alternativa_1x2"))
+            if any(not 0<=v<=1 for v in a+b) or abs(sum(a)-1)>.02 or abs(sum(b)-1)>.02:
+                continue
+            amostra.append((sum((v-t)**2 for v,t in zip(a,y))/3,sum((v-t)**2 for v,t in zip(b,y))/3))
+            vistos.add(k)
+        except (KeyError,TypeError,ValueError):
+            continue
+    linhas.append(f"📚 Amostra independente ESPN: {len(amostra)} snapshots válidos (inclui jogos não selecionados quando disponíveis).")
+    if amostra:
+        a,b = (sum(v[i] for v in amostra)/len(amostra) for i in (0,1))
+        linhas.append(f"📊 Brier ESPN: original {a:.4f} | alternativa {b:.4f} | Δ {b-a:+.4f}")
+    linhas.append("ℹ️ Amostras separadas, não somar; cobertura ESPN parcial. Não promover variantes sem validação.")
     return "\n".join(linhas)

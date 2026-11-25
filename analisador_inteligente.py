@@ -203,10 +203,12 @@ class AnalisadorInteligente:
         self.ultimo_resumo = {"jogos": len(jogos), "com_dados": 0, "selecoes": 0}
         self.ultimas_selecoes = []
         self.ultimas_analises_shadow = []
+        self.ultimos_historicos_shadow = {}
         if not suportados:
             return []
 
         historicos = self.estatisticas.carregar_historicos(suportados)
+        self.ultimos_historicos_shadow = historicos
         selecoes = []
         com_dados = 0
         for jogo in suportados:
