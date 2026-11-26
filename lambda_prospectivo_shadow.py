@@ -48,7 +48,22 @@ def criar_registo(analise):
 def guardar_registos(caminho, analises):
     """Append-only, deduplicado; falhas são isoladas da análise principal."""
     destino = Path(caminho)
-    novos = [r for a in analises if (r := criar_registo(a)) is not None]
+    from collections import Counter
+    motivos = Counter()
+    novos = []
+    for a in analises:
+        try:
+            r = criar_registo(a)
+            if r is not None:
+                novos.append(r)
+                continue
+            ausentes = [k for k in ("lambda_casa", "lambda_fora", "media_liga_casa", "media_liga_fora", "probabilidades") if a.get(k) is None]
+            motivo = "ausentes:" + ",".join(ausentes) if ausentes else "dados_invalidos"
+        except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+            motivo = "formato_invalido"
+        motivos[motivo] += 1
+    if motivos:
+        logging.info("LAMBDA_SHADOW | motivos_incompletos=%s", dict(sorted(motivos.items())))
     ignorados = len(analises) - len(novos)
     if ignorados:
         logging.info("LAMBDA_SHADOW | snapshots_incompletos_ignorados=%s | validos=%s", ignorados, len(novos))
