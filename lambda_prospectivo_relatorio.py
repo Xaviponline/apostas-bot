@@ -76,6 +76,8 @@ def relatorio_prospectivo(caminho, previsoes):
         except (KeyError, TypeError, ValueError):
             continue
     amostra = []
+    por_liga = {}
+    por_classe = {m: [] for m in MERCADOS}
     vistos = set()
     for r in registos:
         try:
@@ -87,7 +89,11 @@ def relatorio_prospectivo(caminho, previsoes):
             a,b = ([float(r[c][m]) for m in MERCADOS] for c in ("original_1x2","alternativa_1x2"))
             if any(not 0<=v<=1 for v in a+b) or abs(sum(a)-1)>.02 or abs(sum(b)-1)>.02:
                 continue
-            amostra.append((sum((v-t)**2 for v,t in zip(a,y))/3,sum((v-t)**2 for v,t in zip(b,y))/3))
+            par = (sum((v-t)**2 for v,t in zip(a,y))/3,sum((v-t)**2 for v,t in zip(b,y))/3)
+            amostra.append(par)
+            por_liga.setdefault(str(r["liga_codigo"]), []).append(par)
+            for i, m in enumerate(MERCADOS):
+                por_classe[m].append(((a[i]-y[i])**2, (b[i]-y[i])**2))
             vistos.add(k)
         except (KeyError,TypeError,ValueError):
             continue
@@ -95,5 +101,14 @@ def relatorio_prospectivo(caminho, previsoes):
     if amostra:
         a,b = (sum(v[i] for v in amostra)/len(amostra) for i in (0,1))
         linhas.append(f"📊 Brier ESPN: original {a:.4f} | alternativa {b:.4f} | Δ {b-a:+.4f}")
+    if amostra:
+        linhas.append("📊 Por liga ESPN (Brier 1X2; descritivo):")
+        for liga, pares in sorted(por_liga.items(), key=lambda x: (-len(x[1]), x[0]))[:10]:
+            a,b = (sum(v[i] for v in pares)/len(pares) for i in (0,1))
+            linhas.append(f"{liga}: n={len(pares)} | {a:.4f} → {b:.4f} | Δ {b-a:+.4f}")
+        linhas.append("📊 Por classe 1X2 (Brier binário):")
+        for m, pares in por_classe.items():
+            a,b = (sum(v[i] for v in pares)/len(pares) for i in (0,1))
+            linhas.append(f"{m}: n={len(pares)} | {a:.4f} → {b:.4f} | Δ {b-a:+.4f}")
     linhas.append("ℹ️ Amostras separadas, não somar; cobertura ESPN parcial. Não promover variantes sem validação.")
     return "\n".join(linhas)
