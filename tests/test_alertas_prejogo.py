@@ -49,11 +49,13 @@ class AlertaPreJogoTests(unittest.TestCase):
         mensagens = []
         self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 1)
         self.assertEqual(len(mensagens), 1)
-        for esperado in ("17:00", "RANKING #3", "Peterborough United",
-                         "Under 2.5 Golos", "69,6%", "2,02", "Mín. 1,51",
-                         "Odd justa 1,44", "100/100", "RISCO MUITO ELEVADO",
-                         "EV do modelo"):
+        for esperado in ("17:00", "Ranking #3", "Peterborough United",
+                         "Under 2.5 Golos", "69,6%", "2,02", "Mínima 1,51",
+                         "ODD INVULGAR", "EV teórico"):
             self.assertIn(esperado, mensagens[0])
+        self.assertNotIn("Odd justa", mensagens[0])
+        self.assertNotIn("100/100", mensagens[0])
+        self.assertLess(len(mensagens[0]), 600)
         self.assertEqual(dados, original)
         self.assertEqual(
             AlertasPreJogo(self.path).avisar(
@@ -89,10 +91,10 @@ class AlertaPreJogoTests(unittest.TestCase):
         mens = []
         self.assertEqual(self.alertas.avisar([d1, d2, d3], mens.append, agora=AGORA), 3)
         texto = mens[0]
-        self.assertIn("sem odd registada", texto)
-        self.assertIn("inferior à mínima", texto)
-        self.assertIn("VALUE histórico expirado", texto)
-        self.assertIn("não são em direto", texto) if "não são em direto" in texto else None
+        self.assertIn("SEM ODD", texto)
+        self.assertIn("odd abaixo da mínima", texto)
+        self.assertIn("VALUE EXPIRADO", texto)
+        self.assertIn("Odds históricas/ausentes", texto)
 
     def test_falha_envio_nao_marca_e_permite_nova_tentativa(self):
         dados = [snapshot()]
@@ -128,8 +130,8 @@ class AlertaPreJogoTests(unittest.TestCase):
         self.assertEqual(len(mensagens), 2)  # 4 cartões por mensagem
         corpo = "\n".join(mensagens)
         for rank in rankings:
-            self.assertIn(f"RANKING #{rank}", corpo)
-        self.assertIn("máx. 20", corpo)
+            self.assertIn(f"Ranking #{rank}", corpo)
+        self.assertNotIn("máx. 20", corpo)  # detalhe operacional fora do cartão
         self.assertNotIn("Top 5 congeladas", corpo)
         relatorio = self.alertas.relatorio(dados, agora=AGORA)
         self.assertIn("Ranking #1–#20", relatorio)
@@ -170,16 +172,16 @@ class AlertaPreJogoTests(unittest.TestCase):
         self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 6)
         tudo = "\n".join(mensagens)
         for ranking in (5, 13, 14, 17, 19):
-            self.assertIn(f"RANKING #{ranking}", tudo)
-        self.assertIn("sem odd registada", tudo)
-        self.assertIn("inferior à mínima", tudo)
+            self.assertIn(f"Ranking #{ranking}", tudo)
+        self.assertIn("SEM ODD", tudo)
+        self.assertIn("odd abaixo da mínima", tudo)
 
     def test_ranking_vinte_um_nao_enviado(self):
         dados = [snapshot(100, rank=20), snapshot(101, rank=21)]
         mensagens = []
         self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 1)
-        self.assertIn("RANKING #20", mensagens[0])
-        self.assertNotIn("RANKING #21", mensagens[0])
+        self.assertIn("Ranking #20", mensagens[0])
+        self.assertNotIn("Ranking #21", mensagens[0])
 
     def test_estado_read_only_e_guardado_na_reinicializacao(self):
         self.alertas.avisar([snapshot()], lambda msg: None, agora=AGORA)
@@ -223,20 +225,20 @@ class AlertaPreJogoTests(unittest.TestCase):
         enviados = []
         self.assertEqual(alertas.avisar(dados, enviados.append, agora=AGORA), 1)
         texto = enviados[0]
-        self.assertIn("1 seleção da análise diária", texto)
+        self.assertIn("1 seleção", texto)
         self.assertNotIn("seleção(ões)", texto)
-        self.assertIn("RISCO DE PREÇO — sem odd registada", texto)
-        self.assertIn("Última consulta às 15:32: betano_sem_odds_no_evento", texto)
-        self.assertIn("sem cotação válida; VALUE não confirmado", texto)
+        self.assertIn("SEM ODD — VALUE não confirmado", texto)
+        self.assertIn("Última consulta 15:32 · sem odds disponíveis para o jogo", texto)
+        self.assertIn("VALUE não confirmado", texto)
         self.assertNotIn("PREÇO NÃO RECONFIRMADO", texto)
-        self.assertIn("odds históricas ou ausentes", texto)
+        self.assertIn("Odds históricas/ausentes", texto)
         self.assertEqual(dados, originais)
 
     def test_sem_odd_sem_rastreio_nao_inventa_reconfirmacao(self):
         dados = [snapshot(26, odd=None)]
         enviados = []
         self.assertEqual(self.alertas.avisar(dados, enviados.append, agora=AGORA), 1)
-        self.assertIn("SEM COTAÇÃO OBSERVADA", enviados[0])
+        self.assertIn("SEM ODD", enviados[0])
         self.assertNotIn("PREÇO NÃO RECONFIRMADO", enviados[0])
 
     def test_alerta_mostra_preco_nao_reconfirmado_apos_falha_mercado(self):
@@ -259,8 +261,8 @@ class AlertaPreJogoTests(unittest.TestCase):
         alerta = AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path))
         mensagens = []
         self.assertEqual(alerta.avisar(dados, mensagens.append, agora=AGORA), 1)
-        self.assertIn("PREÇO NÃO RECONFIRMADO às 15:48", mensagens[0])
-        self.assertIn("mercado_nao_disponivel", mensagens[0])
+        self.assertIn("Última consulta 15:48", mensagens[0])
+        self.assertIn("mercado indisponível", mensagens[0])
         self.assertIn("Odd registada 2,02", mensagens[0])
         self.assertEqual(dados, original)
         self.assertEqual(rastreio_path.read_bytes(), conteudo)
@@ -280,8 +282,8 @@ class AlertaPreJogoTests(unittest.TestCase):
         AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path)).avisar(
             dados, mensagens.append, agora=AGORA
         )
-        self.assertIn("Última observação 15:43: odd 1,65", mensagens[0])
-        self.assertIn("não confirma disponibilidade agora", mensagens[0])
+        self.assertIn("Última observação 15:43 · odd 1,65", mensagens[0])
+        self.assertIn("não é em direto", mensagens[0])
 
     def test_outro_evento_mercado_e_obs_futura_nao_contaminam_alerta(self):
         dados = [snapshot(23)]
@@ -305,7 +307,7 @@ class AlertaPreJogoTests(unittest.TestCase):
         AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path)).avisar(
             dados, mensagens.append, agora=AGORA
         )
-        self.assertIn("PREÇO HISTÓRICO — sem observação local posterior", mensagens[0])
+        self.assertIn("Sem observação recente", mensagens[0])
         self.assertNotIn("mercado_nao_disponivel", mensagens[0])
 
     def test_rastreio_ilegivel_nao_bloqueia_alerta_e_mantem_integridade(self):
@@ -316,7 +318,7 @@ class AlertaPreJogoTests(unittest.TestCase):
         mensagens = []
         alerta = AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path))
         self.assertEqual(alerta.avisar(dados, mensagens.append, agora=AGORA), 1)
-        self.assertIn("PREÇO HISTÓRICO — sem observação local posterior", mensagens[0])
+        self.assertIn("Sem observação recente — preço pode ter mudado", mensagens[0])
         self.assertEqual(rastreio_path.read_bytes(), original)
 
     def test_comando_owner_sem_envio_e_tarefa_automatica(self):
@@ -340,8 +342,43 @@ class AlertaPreJogoTests(unittest.TestCase):
             self.assertEqual(b._avisar_prejogo_se_devido(), 1)
             self.assertEqual(b._avisar_prejogo_se_devido(), 0)
         self.assertEqual(len(mensagens), 2)
-        self.assertIn("RANKING #3", mensagens[1][1])
+        self.assertIn("Ranking #3", mensagens[1][1])
         self.assertEqual(mensagens[1][0], 43)
+
+
+    def test_cartao_caykur_simples_e_sem_value_na_odd_historica(self):
+        from alertas_prejogo import _card
+        p = snapshot(80, rank=13, prob=.618, odd=1.60,
+                     minima=1.70, mercado="Over 2.5 Golos")
+        p["casa"] = "Caykur Rizespor"
+        p["fora"] = "Kasimpasa"
+        p["liga"] = "Turkish Super Lig"
+        p["confianca_modelo"] = "MÉDIA"
+        ultima = {"timestamp": (AGORA - timedelta(hours=2, minutes=4)).timestamp(),
+                  "preco": 1.60}
+        texto = _card(p, ultima)
+        for esperado in (
+            "⚽ Caykur Rizespor × Kasimpasa",
+            "17:00 · Ranking #13",
+            "Over 2.5 Golos",
+            "Probabilidade 61,8% · Confiança MÉDIA",
+            "Odd registada 1,60 · Mínima 1,70",
+            "🔴 SEM VALUE — odd abaixo da mínima",
+            "Última observação 13:56 · odd 1,60 (não é em direto)",
+        ):
+            self.assertIn(esperado, texto)
+        self.assertNotIn("Odd justa", texto)
+        self.assertNotIn("Dados 81/100", texto)
+        self.assertNotIn("RISCO DE PREÇO", texto)
+        self.assertLess(len(texto), 330)
+
+    def test_sem_odd_minima_nao_indica_sem_value(self):
+        from alertas_prejogo import _card
+        p = snapshot(81, rank=9, odd=1.77)
+        p["odd_minima"] = None
+        msg = _card(p)
+        self.assertIn("VALUE por avaliar — odd mínima indisponível", msg)
+        self.assertNotIn("SEM VALUE — odd abaixo", msg)
 
 
 if __name__ == "__main__":
