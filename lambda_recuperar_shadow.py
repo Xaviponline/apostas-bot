@@ -103,7 +103,15 @@ def _eventos_finais(payload, liga, alvos):
         elif len(bruto) != 1 or len(norm) > 1:
             motivos["id_ambiguo"] += 1
         elif not norm:
-            motivos["nao_normalizado"] += 1
+            # Um jogo ao vivo/futuro deve ser classificado como NÃO FINAL,
+            # e não como falha do normalizador do placar.
+            st = (bruto[0].get("status") or {}).get("type") or {}
+            if (isinstance(st, dict)
+                    and (str(st.get("state") or "").lower() in {"pre", "in"}
+                         or st.get("completed") is False)):
+                motivos["nao_final_regulamentar"] += 1
+            else:
+                motivos["nao_normalizado"] += 1
         elif norm[0].get("final_regulamentar_shadow") is not True:
             motivos["nao_final_regulamentar"] += 1
         elif identidade(norm[0], liga) != k:
