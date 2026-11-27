@@ -398,6 +398,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /lab_platt_prospectivo — teste da calibração pré-registada",
             "ℹ️ /odds_verificacao — EV/fixtures invulgares; /quota_plano — consumo diario",
             "ℹ️ /odds_rastreio_detalhe Estudiantes — origem do preço observado",
+            "ℹ️ /odds_rastreio_evento AAAA-MM-DD Casa vs Fora | Mercado — histórico por evento exato",
             "ℹ️ /odds_confronto — verificar fixture+odds de um jogo visivel na Betano",
             "ℹ️ /odds_payload_audit ID — motivos de exclusao no payload bruto",
             "ℹ️ /fonte_alt — fonte alternativa manual em SHADOW (sem Betano PT)",
@@ -2086,6 +2087,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "⚠️ Auditoria de validade temporariamente indisponível. "
                     "Nenhuma odd ou previsão foi alterada."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/odds_rastreio_evento":
+            if not owner_admin:
+                return
+            try:
+                from odds_rastreio_evento import relatorio_rastreio_evento
+                resposta = relatorio_rastreio_evento(self._rastreio_odds, argumentos)
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError,
+                    ArithmeticError, OverflowError):
+                resposta = (
+                    "⚠️ Pesquisa exata do rastreio indisponível. "
+                    "Nenhum histórico, odd, modelo ou coorte foi alterado."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
