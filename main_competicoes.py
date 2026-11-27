@@ -2295,6 +2295,20 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self.enviar_mensagem(chat_id, resposta)
             return
 
+        if comando == "/v14_calibracao":
+            if not owner_admin:
+                return
+            try:
+                from v14_calibracao_temporal_shadow import relatorio_v14_calibracao_shadow
+                resposta = relatorio_v14_calibracao_shadow(self.previsoes.dados)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError, ArithmeticError, OverflowError):
+                resposta = (
+                    "⚠️ Análise temporal V1.4 SHADOW indisponível. "
+                    "Previsões, odds, V1.3 e gate permanecem intactos."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
         if comando == "/confianca_modelo":
             if not owner_admin:
                 return
