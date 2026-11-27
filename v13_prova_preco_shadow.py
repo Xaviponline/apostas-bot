@@ -92,6 +92,8 @@ def relatorio_prova_preco_v13(registo, rastreio, argumento):
     if not arg.isascii() or not arg.isdecimal() or not 1 <= len(arg) <= 6:
         return "🔎 Uso: /v13_prova_preco 399 — só OWNER (snapshot fixo V1.3)."
     indice = int(arg)
+    if indice < 1:
+        return "🔎 Uso: /v13_prova_preco 399 — só OWNER (snapshot fixo V1.3)."
     metricas = registo.metricas_v13_comercial()
     coorte = metricas.get("coorte")
     originais = registo.dados.get("previsoes") if isinstance(registo.dados, dict) else None
