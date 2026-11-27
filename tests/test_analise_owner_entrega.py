@@ -79,7 +79,7 @@ class EntregaOwnerTests(unittest.TestCase):
         self.assertNotIn("2026-11-26", resumo)
         self.assertIn("Sem previsões", resumo_analises_hoje([p], instante(21)))
 
-    def test_integracao_envio_auto_ao_owner_sem_reexecutar_analise(self):
+    def test_analise_matinal_guarda_sem_difundir_as_20_previsoes(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
             bot = BotPremiumReal(token="teste", gestor=object(), owner_id=1, chat_id=1,
@@ -87,41 +87,32 @@ class EntregaOwnerTests(unittest.TestCase):
                                  previsoes=reg)
             def gerar(tecnica=False):
                 reg.dados["previsoes"] = [previsao()]
-                return "🎯 ANÁLISE PREMIUM\n⚽ Equipa Casa vs Equipa Fora\n📈 Modelo 61%"
+                return "🎯 ANÁLISE PREMIUM"
             bot._executar_analise = Mock(side_effect=gerar)
             bot._guardar_lambda_auto = Mock()
             bot._guardar_lambda_resultados_auto = Mock()
             bot.api = Mock(return_value={"message_id": 1})
             self.assertTrue(bot._executar_analise_auto_se_devida(instante(9)))
-            self.assertEqual(bot.api.call_count, 1)
-            method, payload = bot.api.call_args.args
-            self.assertEqual(method, "sendMessage")
-            self.assertEqual(payload["chat_id"], 1)
-            self.assertIn("Equipa Casa × Equipa Fora", payload["text"])
             self.assertFalse(bot._executar_analise_auto_se_devida(instante(9, 30)))
             self.assertEqual(bot._executar_analise.call_count, 1)
-            self.assertEqual(bot.api.call_count, 1)
-            self.assertEqual(json.loads((Path(tmp) / "analise_owner_entrega.json").read_text())["enviadas"], 1)
+            bot.api.assert_not_called()
+            self.assertEqual(len(reg.dados["previsoes"]), 1)
+            self.assertFalse((Path(tmp) / "analise_owner_entrega.json").exists())
 
-    def test_falha_entrega_nao_repete_analise_auto(self):
+    def test_falha_telegram_nao_altera_execucao_matinal(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
             bot = BotPremiumReal(token="teste", gestor=object(), owner_id=1, chat_id=1,
                                  buscador=object(), odds=object(), analisador=object(),
                                  previsoes=reg)
-            def gerar(tecnica=False):
-                reg.dados["previsoes"] = [previsao()]
-                return "Análise guardada"
-            bot._executar_analise = Mock(side_effect=gerar)
+            bot._executar_analise = Mock(return_value="Análise guardada")
             bot._guardar_lambda_auto = Mock()
             bot._guardar_lambda_resultados_auto = Mock()
-            bot.api = Mock(side_effect=[RuntimeError("falhou"), {"message_id": 2}])
+            bot.api = Mock(side_effect=RuntimeError("telegram indisponível"))
             self.assertTrue(bot._executar_analise_auto_se_devida(instante(9)))
-            self.assertEqual(bot._entrega_analise_owner._ler()["enviadas"], 0)
             self.assertFalse(bot._executar_analise_auto_se_devida(instante(9, 20)))
-            self.assertEqual(bot._entrega_analise_owner._ler()["enviadas"], 1)
             self.assertEqual(bot._executar_analise.call_count, 1)
-            self.assertEqual(bot.api.call_count, 2)
+            bot.api.assert_not_called()
 
     def test_comando_so_owner_e_sem_nova_analise_ou_apis(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -196,26 +187,12 @@ class EntregaOwnerTests(unittest.TestCase):
         self.assertIn("Odd 1,60 · Mín. 1,70 · 🔴 Sem VALUE", texto)
         self.assertNotIn("Ranking Top 5", texto)
 
-    def test_analise_auto_enviada_eh_resumo_curto_sem_odd_api(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
-            bot = BotPremiumReal(token="teste", gestor=object(), owner_id=1, chat_id=1,
-                                 buscador=object(), odds=object(), analisador=object(),
-                                 previsoes=reg)
-            def gerar(tecnica=False):
-                reg.dados["previsoes"] = [previsao()]
-                return "Relatório técnico original extenso que não deve ir ao OWNER"
-            bot._executar_analise = Mock(side_effect=gerar)
-            bot._guardar_lambda_auto = Mock()
-            bot._guardar_lambda_resultados_auto = Mock()
-            bot.api = Mock(return_value={"message_id": 1})
-            self.assertTrue(bot._executar_analise_auto_se_devida(instante(9)))
-            msg = bot.api.call_args.args[1]["text"]
-            self.assertIn("ANÁLISES PREMIUM", msg)
-            self.assertIn("Equipa Casa × Equipa Fora", msg)
-            self.assertNotIn("Relatório técnico original extenso", msg)
-            self.assertIn("sem novas APIs", msg)
-            self.assertEqual(bot._executar_analise.call_count, 1)
+    def test_comando_manual_preserva_formato_premium_sem_envios_automáticos(self):
+        p = previsao()
+        relatorio = resumo_analises_hoje([p], instante(9))
+        self.assertIn("ANÁLISES PREMIUM", relatorio)
+        self.assertIn("Equipa Casa × Equipa Fora", relatorio)
+        self.assertIn("sem novas APIs", relatorio)
 
 
 if __name__ == "__main__":

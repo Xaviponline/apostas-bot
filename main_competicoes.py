@@ -28,6 +28,7 @@ from backup_externo import BackupExterno
 from vigilancia_externa import VigilanciaExterna
 from rotinas_diarias import RotinasDiarias
 from alertas_prejogo import AlertasPreJogo
+from publicacao_faseada_owner import PublicacaoFaseadaOwner
 from scout_shadow import ScoutShadow
 from fixture_guard_shadow import juventude_confirmada_hoje
 
@@ -72,6 +73,10 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             rastreio=self._rastreio_odds,
         )
         self._proximo_check_prejogo = 0.0
+        self._publicacao_faseada_owner = PublicacaoFaseadaOwner(
+            pasta_estado / "publicacoes_owner_faseadas.json" if pasta_estado else None
+        )
+        self._proximo_check_publicacoes_faseadas = 0.0
         self._scout_shadow = ScoutShadow(pasta_estado / "scout_shadow.json" if pasta_estado else None)
         self._proximo_scout_check = 0.0
 
@@ -100,6 +105,29 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         except (requests.RequestException, RuntimeError, ValueError, TypeError, OSError):
             logging.warning("PLATT_SHADOW | export indisponível; produção intacta")
         return resposta
+
+    def _publicar_analises_faseadas_se_devido(self):
+        """Publicações T-150m, máximo cinco/dia, isoladas das rotinas de odds."""
+        if not getattr(self, "owner_id", 0) or not getattr(self, "chat_id", 0):
+            return 0
+        publicador = getattr(self, "_publicacao_faseada_owner", None)
+        if publicador is None:
+            return 0
+        agora = time.monotonic()
+        if agora < getattr(self, "_proximo_check_publicacoes_faseadas", 0):
+            return 0
+        self._proximo_check_publicacoes_faseadas = agora + 30
+        try:
+            n = publicador.avisar(
+                self.previsoes.dados.get("previsoes", []),
+                lambda msg: self.api("sendMessage", {"chat_id": self.chat_id, "text": msg}),
+            )
+            if n:
+                logging.info("PUBLICACAO_FASEADA | %s analise(s) publicadas ao OWNER", n)
+            return n
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError, requests.RequestException):
+            logging.warning("PUBLICACAO_FASEADA | envio indisponivel; historico e coorte intactos")
+            return 0
 
     def _avisar_prejogo_se_devido(self):
         """Avisos OWNER T-60m, sem consultar fornecedores, a cada 30s."""
@@ -145,6 +173,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
 
         # Independente da liquidação e do relatório diário: após polling
         # Telegram, o aviso é avaliado mesmo que a rotina ESPN falhe.
+        self._publicar_analises_faseadas_se_devido()
         self._avisar_prejogo_se_devido()
         self._scout_auto_se_devido()
         self._fonte_alt_auto_se_devido()
@@ -2117,6 +2146,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     "🛡️ Auditoria de consistência indisponível. "
                     "Nenhum snapshot, modelo ou odd foi modificado."
                 )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/publicacoes_prejogo":
+            if not owner_admin:
+                return
+            try:
+                publicador = getattr(self, "_publicacao_faseada_owner", None)
+                resposta = (
+                    publicador.relatorio(self.previsoes.dados.get("previsoes", []))
+                    if publicador is not None
+                    else "📨 Publicações faseadas ainda não configuradas."
+                )
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                resposta = "⚠️ Estado das publicações indisponível; sem alterar previsões."
             self.enviar_mensagem(chat_id, resposta)
             return
 
