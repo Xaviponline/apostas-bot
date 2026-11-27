@@ -412,6 +412,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /v13_cruzamento [under35] — mercado × idade odd, CLV e casos (SHADOW)",
             "ℹ️ /v13_qualidade — integridade da coorte",
             "ℹ️ /v13_idade_odds — comparar ultima mudanca e captura de preços (SHADOW)",
+            "ℹ️ /v13_prova_preco SNAPSHOT — odd entrada, fecho CLV e rastreio (SHADOW)",
             "ℹ️ /v13_impacto_frescura — ROI e CLV por idade da ultima alteracao (SHADOW)",
             "ℹ️ /odds_status — quota",
             "🔒 Somente leitura: nao altera previsoes, odds ou regras comerciais.",
@@ -2393,6 +2394,23 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "⚠️ Auditoria V1.3 Robustez indisponível. "
                     "Sem alterações às previsões, odds, gate ou histórico."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/v13_prova_preco":
+            if not owner_admin:
+                return
+            try:
+                from v13_prova_preco_shadow import relatorio_prova_preco_v13
+                resposta = relatorio_prova_preco_v13(
+                    self.previsoes, self._rastreio_odds, argumentos
+                )
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError,
+                    ArithmeticError, IndexError, OverflowError):
+                resposta = (
+                    "⚠️ Prova de preços/CLV V1.3 indisponível. "
+                    "Nenhum fecho, odd, coorte ou modelo foi alterado."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
