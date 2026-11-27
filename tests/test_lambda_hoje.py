@@ -185,5 +185,58 @@ class TestLambdaHoje(unittest.TestCase):
         self.assertIn("novos gravados: 1", resposta)
         self.assertEqual(len(sessao.calls), 1)
 
+
+    def test_pendentes_aceita_espn_status_full_time_com_final_explicito(self):
+        evento = {
+            "id": "555", "date": "2026-11-27T12:00Z",
+            "status": {"type": {"state": "post", "name": "STATUS_FULL_TIME",
+                                 "completed": True, "detail": "FT"}},
+            "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"id": "12"}, "score": "2"},
+                {"homeAway": "away", "team": {"id": "34"}, "score": "1"},
+            ]}],
+        }
+        original = self.path.read_bytes()
+        sessao = Sessao([evento])
+        resposta = validar_pendentes(self.path, agora=self.agora, session=sessao)
+        self.assertIn("ESPN 1 eventos, 1 finais", resposta)
+        self.assertIn("exatos 1", resposta)
+        self.assertIn("novos gravados: 1", resposta)
+        self.assertEqual(self.path.read_bytes(), original)
+        self.assertEqual(len(sessao.calls), 1)
+        self.assertIn("novos gravados: 0",
+                      validar_pendentes(self.path, agora=self.agora, session=sessao))
+        self.assertEqual(len(sessao.calls), 1)
+
+    def test_full_time_incompleto_ou_nao_post_nao_liquida(self):
+        from estatisticas_espn import EstatisticasESPN
+        original = {
+            "id": "555", "date": "2026-11-27T12:00Z",
+            "status": {"type": {"state": "post", "name": "STATUS_FULL_TIME",
+                                 "completed": True, "detail": "FT"}},
+            "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"id": "12"}, "score": "2"},
+                {"homeAway": "away", "team": {"id": "34"}, "score": "1"},
+            ]}],
+        }
+        for state, completed, name, detail in (
+            ("post", False, "STATUS_FULL_TIME", "FT"),
+            ("in", True, "STATUS_FULL_TIME", "FT"),
+            ("post", True, "STATUS_POSTPONED", "Postponed"),
+            ("post", True, "STATUS_FULL_TIME", "After Extra Time"),
+            ("post", True, "STATUS_FULL_TIME", "AET"),
+        ):
+            with self.subTest(state=state, completed=completed, name=name, detail=detail):
+                evento = dict(original, status={"type": {
+                    "state": state, "completed": completed,
+                    "name": name, "detail": detail}})
+                parsed = EstatisticasESPN._normalizar_resultado(evento, "eng.2")
+                self.assertIsNotNone(parsed)
+                self.assertIs(parsed["final_regulamentar_shadow"], False)
+                sessao = Sessao([evento])
+                resposta = validar_pendentes(self.path, agora=self.agora, session=sessao)
+                self.assertIn("novos gravados: 0", resposta)
+                self.assertFalse(self.path.with_name("lambda_prospectivo_resultados.jsonl").exists())
+
 if __name__ == "__main__":
     unittest.main()
