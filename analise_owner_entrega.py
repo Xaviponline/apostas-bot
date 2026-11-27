@@ -60,9 +60,7 @@ class EntregaAnaliseOwner:
             return False
         if not isinstance(relatorio, str) or not relatorio.strip():
             return False
-        partes = dividir("📩 ANÁLISES DOS JOGOS — ENVIO AUTOMÁTICO OWNER\n"
-                        "🔒 Previsões estatísticas; odds observadas não são preços em direto.\n\n"
-                        + relatorio)
+        partes = dividir("📩 RELATÓRIO DIÁRIO · OWNER\n\n" + relatorio)
         if not partes or not all(isinstance(p, str) and p for p in partes):
             return False
         self._guardar({"dia": dia, "partes": partes, "enviadas": 0})
@@ -90,62 +88,134 @@ class EntregaAnaliseOwner:
 
 
 def resumo_analises_hoje(previsoes, agora=None):
-    """Leitura local das previsões V1.2 por começar, sem novos pedidos externos."""
+    """Vitrine OWNER compacta do Top20 V1.2 guardado, sem consultar APIs.
+
+    Agrupa por preço registado versus mínimo, não por apostas lucrativas.
+    Mantém os índices/rankings originais, sem recalcular previsões ou odds.
+    """
     from alertas_prejogo import AlertasPreJogo
+
     momento = agora or datetime.now(PT)
-    if momento.tzinfo is None:
+    if momento.tzinfo is None or momento.utcoffset() is None:
         raise ValueError("Instante sem fuso horário")
     momento = momento.astimezone(PT)
     itens = AlertasPreJogo._selecoes_do_dia(previsoes, momento)
-    linhas = [
-        f"📊 ANÁLISES GUARDADAS — {momento:%d/%m/%Y}",
-        "🔒 Histórico pré-jogo V1.2; consulta local, zero odds/API.",
-    ]
     futuros = [p for inicio, _, _, p in itens
                if inicio > momento.timestamp() and p.get("estado") == "pendente"]
+    linhas = [f"📊 ANÁLISES PREMIUM · {momento:%d/%m/%Y}"]
     if not futuros:
         return "\n".join(linhas + [
             "⚪ Sem previsões guardadas por começar para hoje.",
-            "O sistema não cria sugestões para preencher a lista.",
+            "Nenhuma aposta é forçada para preencher a lista.",
+            "🔒 Consulta local; sem novas odds ou alterações ao modelo.",
         ])
-    linhas.append(f"⚽ {len(futuros)} " + ("previsão" if len(futuros) == 1 else "previsões") + " ainda por começar (máx. 20 da análise inicial)")
-    for p in sorted(futuros, key=lambda x: (int(x["ranking_modelo"]),
-                                             float(x["timestamp_jogo"]))):
-        ts = float(p["timestamp_jogo"])
-        prob = float(p["probabilidade"])
-        qualidade = p.get("qualidade")
+
+    def odd(valor):
+        if isinstance(valor, bool):
+            return None
         try:
-            qualidade = int(qualidade)
+            n = float(valor)
+            return n if isfinite(n) and 1 < n < 1000 else None
         except (TypeError, ValueError, OverflowError):
-            qualidade = None
-        def odd(v):
-            try:
-                n = float(v)
-                return n if isfinite(n) and 1 < n < 1000 else None
-            except (TypeError, ValueError, OverflowError):
-                return None
+            return None
+
+    def fmt(numero, casas=2):
+        return f"{numero:.{casas}f}".replace(".", ",")
+
+    grupos = {"acima": [], "abaixo": [], "sem_odd": []}
+    for p in futuros:
         minima = odd(p.get("odd_minima"))
-        justa = odd(p.get("odd_justa"))
-        capturada = odd(p.get("odd_valor_confirmado"))
-        if capturada is None:
-            capturada = odd(p.get("odd_real"))
-        if capturada is None:
-            preco = "Sem odd real confirmada; VALUE por verificar"
-        elif minima is not None and capturada >= minima:
-            preco = f"Odd histórica {capturada:.2f} ≥ mínima {minima:.2f}; confirmar preço atual"
+        preco = odd(p.get("odd_valor_confirmado"))
+        if preco is None:
+            preco = odd(p.get("odd_real"))
+        atual = odd(p.get("odd_mercado_atual"))
+        estado = str(p.get("valor_estado") or "")
+        if preco is None or minima is None:
+            categoria = "sem_odd"
+        elif (preco < minima or estado == "expirado"
+              or (estado == "sem_valor" and atual is not None and atual < minima)):
+            categoria = "abaixo"
         else:
-            preco = f"Odd histórica {capturada:.2f}; VALUE não confirmado"
-        linhas.extend([
-            "",
-            f"🏅 #{p['ranking_modelo']} · {datetime.fromtimestamp(ts, PT):%H:%M}",
-            f"⚽ {p.get('casa') or '?'} vs {p.get('fora') or '?'}",
-            f"🏆 {p.get('liga') or 'Competição'}",
-            f"🎯 {p.get('mercado') or 'Mercado'}",
-            f"📈 Prob. {prob*100:.1f}% · Confiança {p.get('confianca_modelo') or 'N/D'}"
-            + (f" · Dados {qualidade}/100" if qualidade is not None else ""),
-            "⚖️ Odd justa " + (f"{justa:.2f}" if justa else "N/D")
-            + " · Mínima " + (f"{minima:.2f}" if minima else "N/D"),
-            "💶 " + preco,
-        ])
-    linhas.append("\n⚠️ Estimativas não garantem acertos ou lucro; snapshots e V1.3 intactos.")
+            categoria = "acima"
+        grupos[categoria].append((p, preco, minima, atual, estado))
+
+    linhas.extend([
+        f"⚽ {len(futuros)} " + ("jogo" if len(futuros) == 1 else "jogos")
+        + " por começar · Rankings da análise inicial",
+        f"🟠 {len(grupos['acima'])} acima da mínima (histórico)"
+        f"  ·  🔴 {len(grupos['abaixo'])} sem valor/expiradas"
+        f"  ·  ⚪ {len(grupos['sem_odd'])} sem cotação/mínima",
+        "ℹ️ Odds guardadas, não são preços em direto.",
+    ])
+
+    secoes = (
+        ("acima", "🟠 ODDS HISTÓRICAS ACIMA DA MÍNIMA"),
+        ("abaixo", "🔴 ABAIXO DA MÍNIMA / VALOR EXPIRADO"),
+        ("sem_odd", "⚪ AGUARDAM COTAÇÃO OU MÍNIMA"),
+    )
+    for categoria, titulo in secoes:
+        entradas = grupos[categoria]
+        if not entradas:
+            continue
+        linhas.extend(["", "━━━━━━━━━━━━━━━━━━━━",
+                       f"{titulo} ({len(entradas)})", "━━━━━━━━━━━━━━━━━━━━"])
+        for p, preco, minima, atual, estado in sorted(
+            entradas, key=lambda a: (int(a[0]["ranking_modelo"]),
+                                    float(a[0]["timestamp_jogo"]))
+        ):
+            hora = datetime.fromtimestamp(float(p["timestamp_jogo"]), PT).strftime("%H:%M")
+            prob = float(p["probabilidade"])
+            confianca = str(p.get("confianca_modelo") or "N/D")
+            qualidade = p.get("qualidade")
+            try:
+                qualidade = int(qualidade) if qualidade is not None else None
+            except (TypeError, ValueError, OverflowError):
+                qualidade = None
+            qualidade_txt = (
+                f" · Dados {qualidade}/100"
+                if qualidade is not None and 0 <= qualidade <= 100 else ""
+            )
+            linhas.extend([
+                "",
+                f"🏅 #{p['ranking_modelo']} · ⏰ {hora} · {p.get('liga') or 'Competição'}",
+                f"⚽ {p.get('casa') or '?'} × {p.get('fora') or '?'}",
+                f"🎯 {p.get('mercado') or 'Mercado'} · {fmt(prob * 100, 1)}% · {confianca}{qualidade_txt}",
+            ])
+            if categoria == "acima":
+                linhas.append(
+                    f"💶 Odd {fmt(preco)} · Mín. {fmt(minima)} · 🟠 Acima do mínimo*"
+                )
+                ev = prob * preco - 1
+                distancia = preco / minima - 1
+                if ev >= .25 or distancia >= .25:
+                    linhas.append("⚠️ EV teórico invulgar — verificar jogo, mercado e preço")
+            elif categoria == "abaixo":
+                if estado == "expirado":
+                    linhas.append(
+                        f"💶 Odd {fmt(preco)} · Mín. {fmt(minima)} · 🔴 VALUE expirado"
+                    )
+                elif estado == "sem_valor" and atual is not None and atual < minima:
+                    linhas.append(
+                        f"💶 Última odd {fmt(atual)} · Mín. {fmt(minima)} · 🔴 Sem VALUE"
+                    )
+                else:
+                    linhas.append(
+                        f"💶 Odd {fmt(preco)} · Mín. {fmt(minima)} · 🔴 Sem VALUE"
+                    )
+            else:
+                if preco is None:
+                    linhas.append(
+                        "💶 Sem cotação · Mín. "
+                        + (fmt(minima) if minima is not None else "N/D")
+                        + " · ⚪ Por verificar"
+                    )
+                else:
+                    linhas.append(
+                        f"💶 Odd {fmt(preco)} · Mín. indisponível · ⚪ Por verificar"
+                    )
+    linhas.append(
+        "\n*Acima do mínimo histórico não significa VALUE executável. "
+        "Confirma sempre a odd atual. Estimativas não garantem acertos ou lucro."
+    )
+    linhas.append("🔒 V1.2, V1.3, ranking e snapshots intactos · sem novas APIs.")
     return "\n".join(linhas)

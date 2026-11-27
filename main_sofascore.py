@@ -585,7 +585,7 @@ class BotPremiumReal:
 
         def tarefa():
             antes = len(self.previsoes.dados.get("previsoes", []))
-            relatorio = self._executar_analise(tecnica=False)
+            self._executar_analise(tecnica=False)
             # Segunda tentativa idempotente após a análise diária.
             self._guardar_lambda_auto()
             self._guardar_lambda_resultados_auto()
@@ -604,7 +604,10 @@ class BotPremiumReal:
             )
             if ha_previsoes_futuras:
                 try:
-                    self._entrega_analise_owner.preparar(dia, relatorio, self._dividir_texto)
+                    resumo = resumo_analises_hoje(
+                        self.previsoes.dados.get("previsoes", []), agora=momento
+                    )
+                    self._entrega_analise_owner.preparar(dia, resumo, self._dividir_texto)
                 except (OSError, RuntimeError, ValueError, TypeError, KeyError):
                     # A falha do Telegram não pode reexecutar a análise nem
                     # reescrever a coorte; os snapshots continuam disponíveis.
