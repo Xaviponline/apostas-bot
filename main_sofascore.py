@@ -30,6 +30,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /publicacoes_prejogo — Estado das publicações faseadas 2h30 antes (admin)
 /resultados_previsoes — Balanços dos jogos liquidados que foram publicados (admin)
 /confianca_modelo — Avaliar taxas de acerto, calibração e Brier por nível de confiança (admin)
+/v14_calibracao — Teste temporal V1.4 SHADOW e cobertura/idade das odds (admin; sem APIs)
 /analisa_full — Relatório técnico completo do mesmo modelo
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /v12_status — Centro de controlo da validação V1.2 (apenas leitura)
