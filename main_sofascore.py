@@ -560,6 +560,9 @@ class BotPremiumReal:
             self._executar_analise(tecnica=False)
             # Segunda tentativa idempotente após a análise diária.
             self._guardar_lambda_auto()
+            # A análise diária ignora o _executar_analise da classe-base;
+            # recolher aqui resultados ESPN já presentes no histórico carregado.
+            self._guardar_lambda_resultados_auto()
             depois = len(self.previsoes.dados.get("previsoes", []))
             logging.info("ANALISE_AUTO | %s novo(s) snapshot(s)", max(depois - antes, 0))
 
