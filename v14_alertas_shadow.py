@@ -168,18 +168,19 @@ def _futuros(originais, agora):
 
 def _detalhe(a):
     alerta = ", ".join(a["alertas"]) or "sem sinal nos limiares deste diagnóstico"
+    prob_txt = f"{a['prob'] * 100:.1f}".replace(".", ",") if a["prob"] is not None else "?"
+    odd_txt = f"{a['odd']:.2f}".replace(".", ",") if a["odd"] is not None else "?"
     linhas = [
         f"#{a['indice']} {a['data']} {_curto(a['jogo'], 68)}",
         f"   {_curto(a['mercado'])} | {_curto(a['liga'])}",
-        f"   Prob. {f'{a['prob'] * 100:.1f}'.replace('.', ',') if a['prob'] is not None else '?'}%"
-        f" | Odd {f'{a['odd']:.2f}'.replace('.', ',') if a['odd'] is not None else '?'}"
-        f" ({a['estado_preco']})",
+        f"   Prob. {prob_txt}% | Odd {odd_txt} ({a['estado_preco']})",
     ]
     if a["gap"] is not None:
+        impl_txt = f"{a['p_implied'] * 100:.1f}".replace(".", ",")
+        gap_txt = f"{a['gap'] * 100:+.1f}".replace(".", ",")
         linhas.append(
-            f"   Implícita bruta {f'{a['p_implied'] * 100:.1f}'.replace('.', ',')}%"
-            f" | gap {a['gap'] * 100:+.1f}pp"
-            f" | EV teórico {_pct(a['ev'])}"
+            f"   Implícita bruta {impl_txt}%"
+            f" | gap {gap_txt}pp | EV teórico {_pct(a['ev'])}"
         )
     linhas.append(f"   ⚠️ {alerta}")
     if a["forma_fonte"] == "multicompeticao":
