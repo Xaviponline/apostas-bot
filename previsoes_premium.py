@@ -624,6 +624,8 @@ class RegistoPrevisoes:
             "amostra_casa_local",
             "amostra_fora_local",
             "amostra_liga",
+            "amostra_casa_efetiva",
+            "amostra_fora_efetiva",
         ):
             try:
                 valor = int(selecao.get(campo))
@@ -643,6 +645,10 @@ class RegistoPrevisoes:
         if probabilidades:
             diagnostico["probabilidades_brutas_mercados"] = probabilidades
 
+        # Proveniência: apenas o enum explícito produzido pelo motor
+        # multicompetição. Não inferir origem de snapshots antigos.
+        if selecao.get("forma_fonte") == "multicompeticao":
+            diagnostico["forma_fonte"] = "multicompeticao"
         # Só grava o bloco quando há telemetria além do número de versão.
         return diagnostico if len(diagnostico) > 1 else None
 

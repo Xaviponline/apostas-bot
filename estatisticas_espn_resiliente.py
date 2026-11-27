@@ -459,6 +459,18 @@ class EstatisticasESPNResiliente(EstatisticasESPN):
             "amostra_casa": len(casa_all),
             "amostra_fora": len(fora_all),
             "amostra_liga": len(partidas),
+            # Apenas telemetria de dados JA calculados nesta analise. Nunca
+            # usados para alterar lambda, selecao, ranking ou qualidade.
+            "amostra_casa_local": len(casa_home),
+            "amostra_fora_local": len(fora_away),
+            "amostra_casa_efetiva": len(amostra_casa),
+            "amostra_fora_efetiva": len(amostra_fora),
+            "media_liga_casa": liga_home,
+            "media_liga_fora": liga_away,
+            "media_modelo_casa_gf": casa_gf,
+            "media_modelo_casa_ga": casa_ga,
+            "media_modelo_fora_gf": fora_gf,
+            "media_modelo_fora_ga": fora_ga,
             "ppg_casa": self._ppg(casa_all[:6]),
             "ppg_fora": self._ppg(fora_all[:6]),
             "forma_fonte": "multicompeticao",
