@@ -49,7 +49,7 @@ class AlertaPreJogoTests(unittest.TestCase):
         mensagens = []
         self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 1)
         self.assertEqual(len(mensagens), 1)
-        for esperado in ("17:00", "RANKING #3", "Peterborough United",
+        for esperado in ("17:00", "Ranking #3", "Peterborough United",
                          "Under 2.5 Golos", "69,6%", "2,02", "Mínima 1,51",
                          "ODD INVULGAR", "EV teórico"):
             self.assertIn(esperado, mensagens[0])
@@ -130,8 +130,8 @@ class AlertaPreJogoTests(unittest.TestCase):
         self.assertEqual(len(mensagens), 2)  # 4 cartões por mensagem
         corpo = "\n".join(mensagens)
         for rank in rankings:
-            self.assertIn(f"RANKING #{rank}", corpo)
-        self.assertIn("máx. 20", corpo)
+            self.assertIn(f"Ranking #{rank}", corpo)
+        self.assertNotIn("máx. 20", corpo)  # detalhe operacional fora do cartão
         self.assertNotIn("Top 5 congeladas", corpo)
         relatorio = self.alertas.relatorio(dados, agora=AGORA)
         self.assertIn("Ranking #1–#20", relatorio)
@@ -172,7 +172,7 @@ class AlertaPreJogoTests(unittest.TestCase):
         self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 6)
         tudo = "\n".join(mensagens)
         for ranking in (5, 13, 14, 17, 19):
-            self.assertIn(f"RANKING #{ranking}", tudo)
+            self.assertIn(f"Ranking #{ranking}", tudo)
         self.assertIn("SEM ODD", tudo)
         self.assertIn("odd abaixo da mínima", tudo)
 
@@ -180,8 +180,8 @@ class AlertaPreJogoTests(unittest.TestCase):
         dados = [snapshot(100, rank=20), snapshot(101, rank=21)]
         mensagens = []
         self.assertEqual(self.alertas.avisar(dados, mensagens.append, agora=AGORA), 1)
-        self.assertIn("RANKING #20", mensagens[0])
-        self.assertNotIn("RANKING #21", mensagens[0])
+        self.assertIn("Ranking #20", mensagens[0])
+        self.assertNotIn("Ranking #21", mensagens[0])
 
     def test_estado_read_only_e_guardado_na_reinicializacao(self):
         self.alertas.avisar([snapshot()], lambda msg: None, agora=AGORA)
@@ -318,7 +318,7 @@ class AlertaPreJogoTests(unittest.TestCase):
         mensagens = []
         alerta = AlertasPreJogo(self.path, rastreio=RastreioOdds(rastreio_path))
         self.assertEqual(alerta.avisar(dados, mensagens.append, agora=AGORA), 1)
-        self.assertIn("PREÇO HISTÓRICO — sem observação local posterior", mensagens[0])
+        self.assertIn("Sem observação recente — preço pode ter mudado", mensagens[0])
         self.assertEqual(rastreio_path.read_bytes(), original)
 
     def test_comando_owner_sem_envio_e_tarefa_automatica(self):
@@ -342,7 +342,7 @@ class AlertaPreJogoTests(unittest.TestCase):
             self.assertEqual(b._avisar_prejogo_se_devido(), 1)
             self.assertEqual(b._avisar_prejogo_se_devido(), 0)
         self.assertEqual(len(mensagens), 2)
-        self.assertIn("RANKING #3", mensagens[1][1])
+        self.assertIn("Ranking #3", mensagens[1][1])
         self.assertEqual(mensagens[1][0], 43)
 
 
