@@ -76,6 +76,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /odds_rastreio — Referencias observadas de fixture/mercado/selecao (admin)
 /odds_rastreio_evento AAAA-MM-DD Casa vs Fora | Mercado — Pesquisar rastreio local exato (admin; sem API)
 /v14_alertas [coorte|futuros|399] — Discrepâncias de probabilidades/odds (admin; SHADOW sem API)
+/v14_favoritismo [coorte|631] — PPG contra golos esperados na V1.3 (admin; SHADOW sem API)
 /add_aposta "Jogo" "Mercado" ODD VALOR — Registar uma aposta já feita
 /resultados — Histórico e contas
 /score ID ganhou|perdeu|anulada — Registar resultado
