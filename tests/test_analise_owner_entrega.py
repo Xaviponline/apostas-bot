@@ -75,7 +75,7 @@ class EntregaOwnerTests(unittest.TestCase):
         self.assertIn("Equipa Casa × Equipa Fora", resumo)
         self.assertIn("61,0%", resumo)
         self.assertIn("Sem cotação", resumo)
-        self.assertIn("1 jogos por começar", resumo)
+        self.assertIn("1 jogo por começar", resumo)
         self.assertNotIn("2026-11-26", resumo)
         self.assertIn("Sem previsões", resumo_analises_hoje([p], instante(21)))
 
