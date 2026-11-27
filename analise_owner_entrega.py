@@ -140,7 +140,8 @@ def resumo_analises_hoje(previsoes, agora=None):
         grupos[categoria].append((p, preco, minima, atual, estado))
 
     linhas.extend([
-        f"⚽ {len(futuros)} jogos por começar · Rankings da análise inicial",
+        f"⚽ {len(futuros)} " + ("jogo" if len(futuros) == 1 else "jogos")
+        + " por começar · Rankings da análise inicial",
         f"🟠 {len(grupos['acima'])} acima da mínima (histórico)"
         f"  ·  🔴 {len(grupos['abaixo'])} sem valor/expiradas"
         f"  ·  ⚪ {len(grupos['sem_odd'])} sem cotação/mínima",
