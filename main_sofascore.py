@@ -27,6 +27,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /analisa — Relatório premium compacto dos jogos de hoje
 /analise_auto_status — Estado do agendamento diário das 09:00 (admin)
 /analises_hoje — Análises guardadas dos jogos por começar, sem novas APIs (admin)
+/publicacoes_prejogo — Estado das publicações faseadas 2h30 antes (admin)
 /analisa_full — Relatório técnico completo do mesmo modelo
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /v12_status — Centro de controlo da validação V1.2 (apenas leitura)
@@ -559,63 +560,22 @@ class BotPremiumReal:
             logging.warning("CLV_TARDIO | recolha indisponível; nova tentativa se ainda for pré-jogo")
             return 0
 
-    def _enviar_analise_owner_se_devida(self, agora=None):
-        """Entrega autónoma pós-sucesso da análise, sem mexer no gate nem na agenda."""
-        if not getattr(self, 'owner_id', 0) or not getattr(self, 'chat_id', 0):
-            return 0
-        momento = self._agenda_analise_diaria._local(agora)
-        # Não enviar relatórios matinais desatualizados ao final do dia.
-        if not 9 <= momento.hour < 12:
-            return 0
-        try:
-            if self._agenda_analise_diaria._ler_estado().get("data") != momento.date().isoformat():
-                return 0
-            return self._entrega_analise_owner.enviar_pendentes(
-                momento.date().isoformat(),
-                lambda parte: self.api("sendMessage", {"chat_id": self.chat_id, "text": parte}),
-            )
-        except (OSError, RuntimeError, ValueError, TypeError, KeyError, requests.RequestException):
-            logging.warning("ANALISE_OWNER | entrega indisponível; análise e snapshots intactos")
-            return 0
-
     def _executar_analise_auto_se_devida(self, agora=None):
-        """Execução matinal; relatório ao OWNER, clientes sem notificações automáticas."""
-        momento = AgendadorAnaliseDiaria._local(agora)
-        dia = momento.date().isoformat()
+        """Gerar snapshots matinais sem enviar os 20 jogos de uma só vez.
 
+        A publicação OWNER é agora escalonada por jogo em T-150m, pela
+        rotina independente PublicacaoFaseadaOwner (em main_competicoes).
+        /analises_hoje continua disponível por pedido explícito.
+        """
         def tarefa():
             antes = len(self.previsoes.dados.get("previsoes", []))
             self._executar_analise(tecnica=False)
-            # Segunda tentativa idempotente após a análise diária.
             self._guardar_lambda_auto()
             self._guardar_lambda_resultados_auto()
             depois = len(self.previsoes.dados.get("previsoes", []))
             logging.info("ANALISE_AUTO | %s novo(s) snapshot(s)", max(depois - antes, 0))
-            if not getattr(self, 'owner_id', 0) or not getattr(self, 'chat_id', 0):
-                return
-            # Só enviar relatórios com jogos ainda por começar. Não repetir
-            # notificações de conclusão sem conteúdo útil para o OWNER.
-            ha_previsoes_futuras = any(
-                isinstance(p, dict) and p.get("data_jogo") == dia
-                and p.get("estado") == "pendente"
-                and isinstance(p.get("timestamp_jogo"), (int, float))
-                and p["timestamp_jogo"] > momento.timestamp()
-                for p in self.previsoes.dados.get("previsoes", [])
-            )
-            if ha_previsoes_futuras:
-                try:
-                    resumo = resumo_analises_hoje(
-                        self.previsoes.dados.get("previsoes", []), agora=momento
-                    )
-                    self._entrega_analise_owner.preparar(dia, resumo, self._dividir_texto)
-                except (OSError, RuntimeError, ValueError, TypeError, KeyError):
-                    # A falha do Telegram não pode reexecutar a análise nem
-                    # reescrever a coorte; os snapshots continuam disponíveis.
-                    logging.warning("ANALISE_OWNER | não foi possível preparar a entrega")
 
-        executada = self._agenda_analise_diaria.executar_se_devido(tarefa, agora=momento)
-        self._enviar_analise_owner_se_devida(agora=momento)
-        return executada
+        return self._agenda_analise_diaria.executar_se_devido(tarefa, agora=agora)
 
     def _capturar_odds_se_devida(self):
         """Executa no máximo uma ronda a cada 2 horas para poupar quota."""
