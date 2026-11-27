@@ -72,10 +72,10 @@ class EntregaOwnerTests(unittest.TestCase):
     def test_resumo_owner_usa_so_snapshots_hoje_e_futuros(self):
         p = previsao()
         resumo = resumo_analises_hoje([p, dict(p), {**p, "data_jogo": "2026-11-26"}], instante(9))
-        self.assertIn("Equipa Casa vs Equipa Fora", resumo)
-        self.assertIn("61.0%", resumo)
-        self.assertIn("Sem odd real confirmada", resumo)
-        self.assertIn("1 previsão ainda por começar", resumo)
+        self.assertIn("Equipa Casa × Equipa Fora", resumo)
+        self.assertIn("61,0%", resumo)
+        self.assertIn("Sem cotação", resumo)
+        self.assertIn("1 jogos por começar", resumo)
         self.assertNotIn("2026-11-26", resumo)
         self.assertIn("Sem previsões", resumo_analises_hoje([p], instante(21)))
 
@@ -97,7 +97,7 @@ class EntregaOwnerTests(unittest.TestCase):
             method, payload = bot.api.call_args.args
             self.assertEqual(method, "sendMessage")
             self.assertEqual(payload["chat_id"], 1)
-            self.assertIn("Equipa Casa vs Equipa Fora", payload["text"])
+            self.assertIn("Equipa Casa × Equipa Fora", payload["text"])
             self.assertFalse(bot._executar_analise_auto_se_devida(instante(9, 30)))
             self.assertEqual(bot._executar_analise.call_count, 1)
             self.assertEqual(bot.api.call_count, 1)
@@ -143,6 +143,79 @@ class EntregaOwnerTests(unittest.TestCase):
             bot.api.reset_mock()
             bot.processar_comando(2, "/analises_hoje", user_id=2)
             bot.api.assert_not_called()
+
+
+    def test_analises_hoje_separadas_por_preco_historico_sem_mudar_snapshot(self):
+        import copy
+        base = previsao()
+        acima = dict(base, event_id=101, ranking_modelo=1,
+                     casa="Jong Ajax", fora="Heracles Almelo",
+                     mercado="Under 3.5 Golos", probabilidade=.694,
+                     odd_real=1.87, odd_minima=1.51, valor_estado="confirmado")
+        abaixo = dict(base, event_id=102, ranking_modelo=2,
+                      casa="Brest", fora="Paris FC",
+                      odd_real=1.31, odd_minima=1.53)
+        sem = dict(base, event_id=103, ranking_modelo=3,
+                   casa="Vila Nova", fora="Atlético Goianiense",
+                   odd_real=None, odd_minima=1.64)
+        snapshots = [abaixo, sem, acima]
+        original = copy.deepcopy(snapshots)
+        texto = resumo_analises_hoje(snapshots, instante(9))
+        self.assertIn("3 jogos por começar", texto)
+        self.assertIn("🟠 1 acima da mínima (histórico)", texto)
+        self.assertIn("🔴 1 sem valor/expiradas", texto)
+        self.assertIn("⚪ 1 sem cotação/mínima", texto)
+        self.assertIn("Jong Ajax × Heracles Almelo", texto)
+        self.assertIn("🎯 Under 3.5 Golos · 69,4%", texto)
+        self.assertIn("💶 Odd 1,87 · Mín. 1,51 · 🟠 Acima do mínimo*", texto)
+        self.assertIn("EV teórico invulgar", texto)
+        self.assertIn("💶 Odd 1,31 · Mín. 1,53 · 🔴 Sem VALUE", texto)
+        self.assertIn("💶 Sem cotação · Mín. 1,64 · ⚪ Por verificar", texto)
+        self.assertLess(texto.index("Jong Ajax"), texto.index("Brest"))
+        self.assertLess(texto.index("Brest"), texto.index("Vila Nova"))
+        self.assertNotIn("Odd justa", texto)
+        self.assertEqual(snapshots, original)
+
+    def test_analises_nao_confundem_preco_expirado_com_value(self):
+        p = previsao()
+        p.update(odd_real=1.90, odd_minima=1.60, valor_estado="expirado",
+                 odd_mercado_atual=1.40)
+        texto = resumo_analises_hoje([p], instante(9))
+        self.assertIn("🔴 1 sem valor/expiradas", texto)
+        self.assertIn("VALUE expirado", texto)
+        self.assertNotIn("🟠 1 acima da mínima", texto)
+
+    def test_analises_podem_mostrar_ranking_13_e_nao_promovem_top5(self):
+        p = previsao()
+        p.update(ranking_modelo=13, event_id=313, odd_real=1.60,
+                 odd_minima=1.70, probabilidade=.618,
+                 casa="Caykur Rizespor", fora="Kasimpasa")
+        texto = resumo_analises_hoje([p], instante(9))
+        self.assertIn("🏅 #13", texto)
+        self.assertIn("61,8%", texto)
+        self.assertIn("Odd 1,60 · Mín. 1,70 · 🔴 Sem VALUE", texto)
+        self.assertNotIn("Ranking Top 5", texto)
+
+    def test_analise_auto_enviada_eh_resumo_curto_sem_odd_api(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg = RegistoPrevisoes(Path(tmp) / "previsoes.json")
+            bot = BotPremiumReal(token="teste", gestor=object(), owner_id=1, chat_id=1,
+                                 buscador=object(), odds=object(), analisador=object(),
+                                 previsoes=reg)
+            def gerar(tecnica=False):
+                reg.dados["previsoes"] = [previsao()]
+                return "Relatório técnico original extenso que não deve ir ao OWNER"
+            bot._executar_analise = Mock(side_effect=gerar)
+            bot._guardar_lambda_auto = Mock()
+            bot._guardar_lambda_resultados_auto = Mock()
+            bot.api = Mock(return_value={"message_id": 1})
+            self.assertTrue(bot._executar_analise_auto_se_devida(instante(9)))
+            msg = bot.api.call_args.args[1]["text"]
+            self.assertIn("ANÁLISES PREMIUM", msg)
+            self.assertIn("Equipa Casa × Equipa Fora", msg)
+            self.assertNotIn("Relatório técnico original extenso", msg)
+            self.assertIn("sem novas APIs", msg)
+            self.assertEqual(bot._executar_analise.call_count, 1)
 
 
 if __name__ == "__main__":
