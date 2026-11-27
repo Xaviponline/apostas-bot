@@ -408,6 +408,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /scout_hoje e /scout_performance — carteira prospetiva, zero HTTP",
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
             "ℹ️ /v14_alertas [coorte|futuros|399] — divergencias de probabilidade e odds (SHADOW)",
+            "ℹ️ /v14_favoritismo [coorte|631] — PPG vs golos esperados em vitórias (SHADOW)",
             "ℹ️ /v13_comercial — gate completo; /v13_calibracao — probabilidades vs acertos",
             "ℹ️ /v13_mercados — ROI, Brier e CLV por mercado da mesma coorte (SHADOW)",
             "ℹ️ /v13_cruzamento [under35] — mercado × idade odd, CLV e casos (SHADOW)",
@@ -2309,6 +2310,21 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível executar a Shadow Top 5. "
                     "O histórico e a V1.2 não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/v14_favoritismo":
+            if not owner_admin:
+                return
+            try:
+                from v14_favoritismo_shadow import relatorio_v14_favoritismo
+                resposta = relatorio_v14_favoritismo(self.previsoes, argumentos)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError,
+                    ArithmeticError, IndexError, OverflowError):
+                resposta = (
+                    "⚠️ Diagnóstico V1.4 de favoritismo indisponível. "
+                    "Previsões, odds, V1.2, V1.3, ROI e CLV intactos."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
