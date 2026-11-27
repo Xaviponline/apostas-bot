@@ -73,23 +73,47 @@ def _analise(p):
     qualidade = _numero(p.get("qualidade"))
     if qualidade is not None and 0 <= qualidade <= 100:
         linhas.append(f"📚 Qualidade dos dados: {int(qualidade)}/100")
+    linhas.extend(["", "🧠 BASE ESTATÍSTICA DA PREVISÃO"])
 
     diag = p.get("diagnostico_modelo")
+    com_contexto = False
     if isinstance(diag, dict):
         casa = _numero(diag.get("lambda_casa"))
         fora = _numero(diag.get("lambda_fora"))
         if casa is not None and fora is not None and 0 < casa < 15 and 0 < fora < 15:
+            com_contexto = True
             linhas.append(f"⚽ Golos esperados pelo modelo: casa {_fmt(casa,2)} · fora {_fmt(fora,2)}")
+            mercado = str(p.get("mercado") or "")
+            if "Golos" in mercado or mercado == "Ambas Marcam":
+                linhas.append(f"🔎 Expectativa total: {_fmt(casa+fora,2)} golos (modelo Poisson).")
+            elif mercado == "Vitória Casa" and casa > fora:
+                linhas.append("🔎 O modelo projeta mais golos da equipa da casa.")
+            elif mercado == "Vitória Fora" and fora > casa:
+                linhas.append("🔎 O modelo projeta mais golos da equipa visitante.")
+        ppg_casa = _numero(diag.get("ppg_casa"))
+        ppg_fora = _numero(diag.get("ppg_fora"))
+        if (ppg_casa is not None and ppg_fora is not None
+                and 0 <= ppg_casa <= 3 and 0 <= ppg_fora <= 3):
+            com_contexto = True
+            linhas.append(f"📈 Pontos médios/jogo no histórico: casa {_fmt(ppg_casa,2)} · fora {_fmt(ppg_fora,2)}")
         n_casa = _numero(diag.get("amostra_casa"))
         n_fora = _numero(diag.get("amostra_fora"))
         if (n_casa is not None and n_fora is not None
                 and 0 < n_casa <= 2000 and 0 < n_fora <= 2000):
+            com_contexto = True
             linhas.append(f"📚 Amostra estatística: casa {int(n_casa)} · fora {int(n_fora)}")
+            if min(n_casa, n_fora) < 5:
+                linhas.append("⚠️ Amostra reduzida numa das equipas; maior incerteza.")
+    if not com_contexto:
+        linhas.append("🔎 O snapshot guarda a probabilidade, mas não dados adicionais para explicar o mercado.")
 
     linhas.append("")
     minimo_txt = _fmt(minima, 2) if minima is not None else "N/D"
     preco_txt = _fmt(preco, 2) if preco is not None else "—"
     linhas.append(f"💶 Odd registada {preco_txt} · Odd mínima {minimo_txt}")
+    justa = _odd(p.get("odd_justa"))
+    if justa is not None:
+        linhas.append(f"⚖️ Odd justa do modelo: {_fmt(justa,2)} (não é preço de mercado)")
 
     estado = str(p.get("valor_estado") or "")
     atual = _odd(p.get("odd_mercado_atual"))

@@ -28,6 +28,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /analise_auto_status — Estado do agendamento diário das 09:00 (admin)
 /analises_hoje — Análises guardadas dos jogos por começar, sem novas APIs (admin)
 /publicacoes_prejogo — Estado das publicações faseadas 2h30 antes (admin)
+/resultados_previsoes — Balanços dos jogos liquidados que foram publicados (admin)
 /analisa_full — Relatório técnico completo do mesmo modelo
 /performance — Liquidar previsões passadas e mostrar auditoria do modelo
 /v12_status — Centro de controlo da validação V1.2 (apenas leitura)

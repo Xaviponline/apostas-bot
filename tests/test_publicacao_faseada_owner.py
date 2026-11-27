@@ -136,8 +136,30 @@ class PublicacaoFaseadaTests(unittest.TestCase):
         m=_analise(p)
         self.assertIn("Golos esperados pelo modelo: casa 1,68 · fora 1,11",m)
         self.assertIn("Amostra estatística: casa 10 · fora 12",m)
+        self.assertIn("BASE ESTATÍSTICA DA PREVISÃO",m)
+        self.assertIn("Expectativa total: 2,79 golos",m)
         self.assertIn("SEM COTAÇÃO",m)
         self.assertIn("Probabilidade do modelo: 61,8%",m)
+
+    def test_analise_nao_inventa_forma_ou_golos_sem_diagnostico(self):
+        p = previsao(1, preco=1.60)
+        p["odd_justa"] = 1.64
+        msg = _analise(p)
+        self.assertIn("Odd justa do modelo: 1,64", msg)
+        self.assertIn("snapshot guarda a probabilidade, mas não dados adicionais", msg)
+        self.assertNotIn("Pontos médios/jogo", msg)
+        self.assertNotIn("Golos esperados pelo modelo", msg)
+
+    def test_analise_inclui_forma_se_houver_dados_reais(self):
+        p = previsao(1, preco=1.60)
+        p["diagnostico_modelo"] = {
+            "lambda_casa": 1.6, "lambda_fora": 1.2,
+            "ppg_casa": 2.1, "ppg_fora": 1.4,
+            "amostra_casa": 3, "amostra_fora": 10,
+        }
+        msg = _analise(p)
+        self.assertIn("Pontos médios/jogo no histórico: casa 2,10 · fora 1,40", msg)
+        self.assertIn("Amostra reduzida", msg)
 
     def test_preco_expirado_e_anomalia_sao_informados_nao_ocultados(self):
         exp=previsao(1,preco=1.90,minima=1.60)
