@@ -196,6 +196,7 @@ def validar_pendentes(caminho_snapshots, agora=None, session=None):
             historicos.setdefault(liga, []).extend(finais)
             por_id = {str(p["id"]): p for p in normalizados}
             motivos = Counter()
+            estados_nao_finais = Counter()
             deltas_min = []
             contagem = 0
             for (_, ident), grupo in por_resolver.items():
@@ -211,6 +212,12 @@ def validar_pendentes(caminho_snapshots, agora=None, session=None):
                     motivos["nao_normalizado"] += 1
                 elif candidato.get("final_regulamentar_shadow") is not True:
                     motivos["nao_final"] += 1
+                    status_tipo = ((bruto.get("status") or {}).get("type") or {})
+                    if isinstance(status_tipo, dict):
+                        nome = str(status_tipo.get("name") or "sem_nome")[:40]
+                        estado = str(status_tipo.get("state") or "sem_estado")[:20]
+                        completo = str(status_tipo.get("completed"))[:5]
+                        estados_nao_finais[(nome, estado, completo)] += 1
                 elif identidade(candidato, liga) == ident:
                     motivos["identidade_exata"] += 1
                 elif (candidato["casa_id"], candidato["fora_id"]) != ident[2:4]:
@@ -229,6 +236,11 @@ def validar_pendentes(caminho_snapshots, agora=None, session=None):
             )
             if deltas_min:
                 parte += f" | desvios de {min(deltas_min)}–{max(deltas_min)} min"
+            if estados_nao_finais:
+                parte += " | estados: " + ", ".join(
+                    f"{nome}/{estado}/completed={comp} ×{n}"
+                    for (nome, estado, comp), n in estados_nao_finais.most_common(3)
+                )
             diagnosticos.append(parte)
         except (requests.RequestException, TypeError, KeyError, ValueError):
             falhas.append(f"{liga}/{dia:%d-%m}")

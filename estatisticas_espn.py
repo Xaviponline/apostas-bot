@@ -220,7 +220,18 @@ class EstatisticasESPN:
                 "fora": str(fora_team.get("displayName") or fora_team.get("name") or "").strip(),
                 "golos_casa": gc,
                 "golos_fora": gf,
-                "final_regulamentar_shadow": status.get("name") == "STATUS_FINAL" and status.get("completed") is True,
+                # Soccer ESPN pode terminar em STATUS_FULL_TIME (além de
+                # STATUS_FINAL). Esta flag é usada APENAS na liquidação Shadow;
+                # a selecção/modelo oficial não depende dela.
+                # Requer confirmação explícita, fase post e exclui prolongamentos.
+                "final_regulamentar_shadow": (
+                    str(status.get("name") or "").upper() in {"STATUS_FINAL", "STATUS_FULL_TIME"}
+                    and str(status.get("state") or "").lower() == "post"
+                    and status.get("completed") is True
+                    and not any(marca in detalhe for marca in (
+                        "after extra time", "extra time", "extra-time", "aet", "ft-et",
+                    ))
+                ),
             }
         except (KeyError, TypeError, ValueError):
             return None
