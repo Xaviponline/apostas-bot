@@ -60,9 +60,7 @@ class EntregaAnaliseOwner:
             return False
         if not isinstance(relatorio, str) or not relatorio.strip():
             return False
-        partes = dividir("📩 ANÁLISES DOS JOGOS — ENVIO AUTOMÁTICO OWNER\n"
-                        "🔒 Previsões estatísticas; odds observadas não são preços em direto.\n\n"
-                        + relatorio)
+        partes = dividir("📩 RELATÓRIO DIÁRIO · OWNER\n\n" + relatorio)
         if not partes or not all(isinstance(p, str) and p for p in partes):
             return False
         self._guardar({"dia": dia, "partes": partes, "enviadas": 0})
