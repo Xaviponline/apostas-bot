@@ -97,7 +97,7 @@ class AuditoriaConfiancaTests(unittest.TestCase):
             p["event_id"] = 51000 + i
         txt = relatorio_confianca_modelo(data)
         self.assertIn("IC95% acerto", txt)
-        self.assertIn("não valida V1.3", txt)
+        self.assertIn("nem valida V1.3", txt)
         self.assertNotIn("promoção aprovada", txt)
 
     def test_historico_vazio_e_data_invalida(self):
