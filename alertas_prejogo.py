@@ -70,79 +70,72 @@ def _chave(p):
 
 
 def _card(p, ultima=None):
+    """Cartão curto e legível. Mantém as verificações de preço e risco."""
     ts = float(p["timestamp_jogo"])
     rank = int(p["ranking_modelo"])
     prob = float(p["probabilidade"])
     minima = _odd(p.get("odd_minima"))
-    justa = _odd(p.get("odd_justa"))
-    qualidade = _numero(p.get("qualidade"))
     odd_atual = _odd(p.get("odd_mercado_atual"))
     odd_reg = _odd(p.get("odd_valor_confirmado"))
     if odd_reg is None:
         odd_reg = _odd(p.get("odd_real"))
     estado = str(p.get("valor_estado") or "")
+
     linhas = [
-        f"🏅 RANKING #{rank}  ·  ⏰ {_hora(ts)}",
-        f"⚽ {p.get('casa') or '?'} vs {p.get('fora') or '?'}",
-        f"🏆 {p.get('liga') or 'Competição'}",
+        f"⚽ {p.get('casa') or '?'} × {p.get('fora') or '?'}",
+        f"🏆 {p.get('liga') or 'Competição'} · ⏰ {_hora(ts)} · Ranking #{rank}",
         f"🎯 {p.get('mercado') or 'Mercado'}",
-        f"📈 Modelo {_virgula(prob * 100)}% · Confiança {str(p.get('confianca_modelo') or 'N/D')}",
-        ("💶 Odd registada " + (_virgula(odd_reg, 2) if odd_reg else "—")
-         + " | Mín. " + (_virgula(minima, 2) if minima else "—")),
-        ("⚖️ Odd justa " + (_virgula(justa, 2) if justa else "—")
-         + " | Dados " + (f"{int(qualidade)}/100" if qualidade is not None and 0 <= qualidade <= 100 else "N/D")),
+        f"📊 Probabilidade {_virgula(prob * 100)}% · Confiança {str(p.get('confianca_modelo') or 'N/D')}",
+        f"💶 Odd registada {_virgula(odd_reg, 2) if odd_reg is not None else '—'}"
+        f" · Mínima {_virgula(minima, 2) if minima is not None else '—'}",
     ]
 
-    # EV é apenas do MODELO, que ainda não tem calibração comprovada.
+    # As odds são históricas. Não apresentar VALUE como oportunidade executável.
     if odd_reg is not None and minima is not None and odd_reg >= minima:
         ev = odd_reg * prob - 1
-        desvio = odd_reg / minima - 1
-        if ev >= 0.25 or desvio >= 0.25:
+        distancia = odd_reg / minima - 1
+        if ev >= 0.25 or distancia >= 0.25:
             linhas.append(
-                f"🔴 RISCO MUITO ELEVADO — odd/EV invulgar ({_virgula(ev * 100)}% EV do modelo); confirmar jogo/mercado"
+                f"🔴 ODD INVULGAR — EV teórico {_virgula(ev * 100)}%; verificar jogo e mercado"
             )
         elif estado == "expirado" or (
-            estado == "sem_valor" and odd_atual is not None and minima is not None and odd_atual < minima
+            estado == "sem_valor" and odd_atual is not None and odd_atual < minima
         ):
-            linhas.append("🔴 RISCO DE PREÇO — VALUE histórico expirado; não confirmado agora")
+            linhas.append("🔴 VALUE EXPIRADO — preço atual não confirmado")
         elif estado == "confirmado":
-            linhas.append("🟠 RISCO NÃO VALIDADO — VALUE registado, mas odds não são em direto")
+            linhas.append("🟠 VALUE registado — confirmar odd atual")
         else:
-            linhas.append("🟠 RISCO NÃO VALIDADO — odd histórica acima do mínimo; confirmar cotação")
+            linhas.append("🟠 Acima da mínima — VALUE por confirmar")
     elif odd_reg is None:
-        linhas.append("🔴 RISCO DE PREÇO — sem odd registada; VALUE não confirmado")
+        linhas.append("⚪ SEM ODD — VALUE não confirmado")
+    elif minima is None:
+        linhas.append("⚪ VALUE por avaliar — odd mínima indisponível")
     else:
-        linhas.append("🔴 RISCO DE PREÇO — odd registada inferior à mínima; sem VALUE")
+        linhas.append("🔴 SEM VALUE — odd abaixo da mínima")
+
     if ultima is None:
-        if odd_reg is None:
-            linhas.append("⚪ SEM COTAÇÃO OBSERVADA — não há preço registado para validar VALUE")
-        else:
-            linhas.append("⚪ PREÇO HISTÓRICO — sem observação local posterior que o reconfirme")
+        if odd_reg is not None:
+            linhas.append("🕒 Sem observação recente — preço pode ter mudado")
     else:
         hora_obs = _hora(ultima["timestamp"])
         obs_preco = _odd(ultima.get("preco"))
         motivo = str(ultima.get("diagnostico") or "").strip()
         if obs_preco is not None:
             linhas.append(
-                f"🔎 Última observação {hora_obs}: odd {_virgula(obs_preco, 2)}"
-                " — não confirma disponibilidade agora"
+                f"🕒 Última observação {hora_obs} · odd {_virgula(obs_preco, 2)} (não é em direto)"
             )
         elif motivo:
-            if odd_reg is None:
-                linhas.append(
-                    f"📡 Última consulta às {hora_obs}: {motivo}"
-                    " — sem cotação válida; VALUE não confirmado"
-                )
-            else:
-                linhas.append(
-                    f"🔴 PREÇO NÃO RECONFIRMADO às {hora_obs}: {motivo}"
-                    " — confirmar na Betano"
-                )
+            motivos = {
+                "betano_sem_odds_no_evento": "sem odds disponíveis para o jogo",
+                "mercado_nao_disponivel": "mercado indisponível",
+                "linha_ou_selecao_nao_disponivel": "linha ou seleção indisponível",
+                "odd_nao_extraida": "odd não disponível",
+            }
+            explicacao = motivos.get(motivo, motivo.replace("_", " ")[:70])
+            linhas.append(f"🕒 Última consulta {hora_obs} · {explicacao} (preço não confirmado)")
         else:
-            linhas.append(f"⚪ Última recolha {hora_obs} sem cotação ou motivo conclusivo")
-    linhas.append("ℹ️ Probabilidade do modelo pode estar sobrestimada; não representa garantia.")
+            linhas.append(f"🕒 Última consulta {hora_obs} · sem preço confirmado")
     return "\n".join(linhas)
-
 
 class AlertasPreJogo:
     def __init__(self, path, rastreio=None):
@@ -249,9 +242,8 @@ class AlertasPreJogo:
                 continue
             primeiro = _hora(lote[0][0])
             header = [
-                "🔔 ALERTA PRÉ-JOGO — ~1 HORA ANTES",
-                f"⏰ Próximos jogos a partir das {primeiro} (Portugal)",
-                f"🏅 {len(lote)} {'seleção' if len(lote) == 1 else 'seleções'} da análise diária (máx. 20)",
+                "🔔 ALERTA PRÉ-JOGO · ~1 HORA ANTES",
+                f"⏰ {primeiro} (Portugal) · {len(lote)} {'seleção' if len(lote) == 1 else 'seleções'}",
                 "━━━━━━━━━━━━━━━━━━━━",
             ]
             mensagem = "\n\n".join(
@@ -262,7 +254,7 @@ class AlertasPreJogo:
                     for _, _, _, p in lote
                 ]
             )
-            mensagem += "\n\n🔒 Alerta informativo: odds históricas ou ausentes, sem novas consultas nem garantia de acerto."
+            mensagem += "\n\nℹ️ Odds históricas/ausentes. Confirma o preço antes de apostar; previsões sem garantia."
             enviar(mensagem)
             for _, _, chave, _ in lote:
                 estado["avisados"][chave] = dt.astimezone(timezone.utc).isoformat()
