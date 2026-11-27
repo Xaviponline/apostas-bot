@@ -215,7 +215,10 @@ def relatorio_v14_alertas(registo, argumento="", agora=None):
             return ("🔎 Uso: /v14_alertas [coorte|futuros|399|snapshot 399]\n"
                     "🔒 OWNER — SHADOW local, não altera apostas.")
         i = int(raw)
-        if i < 1 or i > len(originais) or not isinstance(originais[i - 1], dict):
+        if i < 1:
+            return ("🔎 Uso: /v14_alertas [coorte|futuros|399|snapshot 399]\n"
+                    "🔒 OWNER — SHADOW local, não altera apostas.")
+        if i > len(originais) or not isinstance(originais[i - 1], dict):
             return f"⚪ Snapshot #{i} inexistente. Nenhum dado foi alterado."
         p = originais[i - 1]
         if p.get("modelo_versao") != "V1.2":
@@ -257,11 +260,11 @@ def relatorio_v14_alertas(registo, argumento="", agora=None):
                 a["indice"],
             )
         )[:MAX_DETALHES]
+    if not fortes:
+        cab.append("⚪ Sem discrepâncias acima dos limiares neste universo.")
     if amostra:
         cab.append("\n🔍 CASOS DE ATENÇÃO (não são recomendações de aposta)")
         cab.extend(_detalhe(a) for a in amostra)
-    else:
-        cab.append("⚪ Sem discrepâncias acima dos limiares neste universo.")
     cab.extend([
         "",
         "ℹ️ 1/odd é probabilidade implícita BRUTA; não desconta margem da casa.",
