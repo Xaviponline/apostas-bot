@@ -241,8 +241,8 @@ class TestLambdaHoje(unittest.TestCase):
     def test_pendentes_exibe_estado_bruto_quando_nao_final(self):
         evento = {
             "id": "555", "date": "2026-11-27T12:00Z",
-            "status": {"type": {"state": "in", "name": "STATUS_IN_PROGRESS",
-                                 "completed": False}},
+            "status": {"type": {"state": "post", "name": "STATUS_POSTPONED",
+                                 "completed": True}},
             "competitions": [{"competitors": [
                 {"homeAway": "home", "team": {"id": "12"}, "score": "0"},
                 {"homeAway": "away", "team": {"id": "34"}, "score": "0"},
@@ -250,7 +250,7 @@ class TestLambdaHoje(unittest.TestCase):
         }
         resposta = validar_pendentes(self.path, agora=self.agora, session=Sessao([evento]))
         self.assertIn("estados:", resposta)
-        self.assertIn("STATUS_IN_PROGRESS/in/completed=False ×1", resposta)
+        self.assertIn("STATUS_POSTPONED/post/completed=True ×1", resposta)
         self.assertIn("novos gravados: 0", resposta)
 
 
