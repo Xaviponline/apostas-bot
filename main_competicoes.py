@@ -410,6 +410,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /v14_alertas [coorte|futuros|399] — divergencias de probabilidade e odds (SHADOW)",
             "ℹ️ /v14_favoritismo [coorte|631] — PPG vs golos esperados em vitórias (SHADOW)",
             "ℹ️ /lambda_cobertura — motivos de faltarem resultados independentes 1X2 (SHADOW)",
+            "ℹ️ /lambda_recuperar [N] — plano local; executar N: até 6 consultas ESPN só SHADOW",
             "ℹ️ /v13_comercial — gate completo; /v13_calibracao — probabilidades vs acertos",
             "ℹ️ /v13_mercados — ROI, Brier e CLV por mercado da mesma coorte (SHADOW)",
             "ℹ️ /v13_cruzamento [under35] — mercado × idade odd, CLV e casos (SHADOW)",
@@ -2311,6 +2312,22 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível executar a Shadow Top 5. "
                     "O histórico e a V1.2 não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/lambda_recuperar":
+            if not owner_admin:
+                return
+            try:
+                from lambda_recuperar_shadow import relatorio_lambda_recuperar
+                caminho = Path(self.previsoes.path).with_name("lambda_prospectivo_shadow.jsonl")
+                resposta = relatorio_lambda_recuperar(caminho, argumentos)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError,
+                    ArithmeticError, IndexError, OverflowError):
+                resposta = (
+                    "⚠️ Recuperação histórica Lambda indisponível. "
+                    "Snapshots, odds, V1.2, V1.3, ROI e CLV intactos."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
