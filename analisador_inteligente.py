@@ -218,7 +218,25 @@ class AnalisadorInteligente:
             if analise is None:
                 continue
             com_dados += 1
-            self.ultimas_analises_shadow.append(analise)
+            # Só a telemetria Shadow recebe médias omitidas pela via
+            # multicompetição. A análise usada nas seleções oficiais não muda.
+            shadow = dict(analise)
+            if (shadow.get("media_liga_casa") is None or
+                    shadow.get("media_liga_fora") is None) and shadow.get("forma_fonte") == "multicompeticao":
+                try:
+                    if shadow.get("contexto_partida") == "neutro":
+                        media_casa = media_fora = float(shadow["baseline_neutro"])
+                    else:
+                        media_casa = sum(float(p["golos_casa"]) for p in partidas) / len(partidas)
+                        media_fora = sum(float(p["golos_fora"]) for p in partidas) / len(partidas)
+                    if media_casa > 0 and media_fora > 0:
+                        if shadow.get("media_liga_casa") is None:
+                            shadow["media_liga_casa"] = media_casa
+                        if shadow.get("media_liga_fora") is None:
+                            shadow["media_liga_fora"] = media_fora
+                except (KeyError, ValueError, TypeError, ZeroDivisionError, OverflowError):
+                    pass
+            self.ultimas_analises_shadow.append(shadow)
             melhor = self._melhor_selecao(analise)
             if melhor is not None:
                 selecoes.append(melhor)
