@@ -561,7 +561,7 @@ class BotPremiumReal:
 
     def _enviar_analise_owner_se_devida(self, agora=None):
         """Entrega autónoma pós-sucesso da análise, sem mexer no gate nem na agenda."""
-        if not self.owner_id or not self.chat_id:
+        if not getattr(self, 'owner_id', 0) or not getattr(self, 'chat_id', 0):
             return 0
         momento = self._agenda_analise_diaria._local(agora)
         # Não enviar relatórios matinais desatualizados ao final do dia.
@@ -580,7 +580,7 @@ class BotPremiumReal:
 
     def _executar_analise_auto_se_devida(self, agora=None):
         """Execução matinal; relatório ao OWNER, clientes sem notificações automáticas."""
-        momento = self._agenda_analise_diaria._local(agora)
+        momento = AgendadorAnaliseDiaria._local(agora)
         dia = momento.date().isoformat()
 
         def tarefa():
@@ -591,7 +591,7 @@ class BotPremiumReal:
             self._guardar_lambda_resultados_auto()
             depois = len(self.previsoes.dados.get("previsoes", []))
             logging.info("ANALISE_AUTO | %s novo(s) snapshot(s)", max(depois - antes, 0))
-            if not self.owner_id or not self.chat_id:
+            if not getattr(self, 'owner_id', 0) or not getattr(self, 'chat_id', 0):
                 return
             # Só enviar relatórios com jogos ainda por começar. Não repetir
             # notificações de conclusão sem conteúdo útil para o OWNER.
