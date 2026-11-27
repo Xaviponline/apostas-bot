@@ -167,6 +167,7 @@ def validar_pendentes(caminho_snapshots, agora=None, session=None):
     consultar = grupos[:TETO_LIGAS]
     historicos = {}
     falhas = []
+    diagnosticos = []
     cliente = session or requests.Session()
     for dia, liga in consultar:
         try:
@@ -180,11 +181,55 @@ def validar_pendentes(caminho_snapshots, agora=None, session=None):
             eventos = payload.get("events") if isinstance(payload, dict) else None
             if not isinstance(eventos, list):
                 raise ValueError("Resposta ESPN sem lista de eventos")
-            historicos.setdefault(liga, []).extend(
+
+            # Diagnóstico passivo feito sobre o MESMO payload: zero pedidos extra.
+            # Nunca infere ou grava resultados por nome/horário aproximado.
+            brutos_por_id = {
+                str(evento["id"]): evento for evento in eventos
+                if isinstance(evento, dict) and evento.get("id") is not None
+            }
+            normalizados = [
                 p for evento in eventos
                 if (p := EstatisticasESPN._normalizar_resultado(evento, liga)) is not None
-                and p.get("final_regulamentar_shadow") is True
+            ]
+            finais = [p for p in normalizados if p.get("final_regulamentar_shadow") is True]
+            historicos.setdefault(liga, []).extend(finais)
+            por_id = {str(p["id"]): p for p in normalizados}
+            motivos = Counter()
+            deltas_min = []
+            contagem = 0
+            for (_, ident), grupo in por_resolver.items():
+                if grupo != (dia, liga):
+                    continue
+                contagem += 1
+                id_esportivo = str(ident[1])
+                bruto = brutos_por_id.get(id_esportivo)
+                candidato = por_id.get(id_esportivo)
+                if bruto is None:
+                    motivos["id_ausente"] += 1
+                elif candidato is None:
+                    motivos["nao_normalizado"] += 1
+                elif candidato.get("final_regulamentar_shadow") is not True:
+                    motivos["nao_final"] += 1
+                elif identidade(candidato, liga) == ident:
+                    motivos["identidade_exata"] += 1
+                elif (candidato["casa_id"], candidato["fora_id"]) != ident[2:4]:
+                    motivos["equipas_diferentes"] += 1
+                else:
+                    motivos["horarios_diferentes"] += 1
+                    deltas_min.append(round(abs(candidato["timestamp"] - ident[4]) / 60))
+            parte = (
+                f"• {dia:%d/%m} {liga}: {contagem} snapshots | ESPN {len(eventos)} eventos, "
+                f"{len(finais)} finais | IDs ausentes {motivos['id_ausente']} | "
+                f"não normalizados {motivos['nao_normalizado']} | "
+                f"não finais {motivos['nao_final']} | "
+                f"equipas ≠ {motivos['equipas_diferentes']} | "
+                f"horários ≠ {motivos['horarios_diferentes']} | "
+                f"exatos {motivos['identidade_exata']}"
             )
+            if deltas_min:
+                parte += f" | desvios de {min(deltas_min)}–{max(deltas_min)} min"
+            diagnosticos.append(parte)
         except (requests.RequestException, TypeError, KeyError, ValueError):
             falhas.append(f"{liga}/{dia:%d-%m}")
 
@@ -199,5 +244,8 @@ def validar_pendentes(caminho_snapshots, agora=None, session=None):
     ])
     if falhas:
         linhas.append("⚠️ Falhas ESPN: " + ", ".join(falhas))
+    if diagnosticos:
+        linhas.append("🔎 Diagnóstico de associação (sem pedidos extra):")
+        linhas.extend(diagnosticos)
     linhas.append("ℹ️ Só jogos com identidade e STATUS_FINAL exatos. Sem alterações aos snapshots originais.")
     return "\n".join(linhas)
