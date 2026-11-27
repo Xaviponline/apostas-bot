@@ -1,8 +1,8 @@
 """Publicações de análises OWNER faseadas a T-150m (somente leitura).
 
-Não envia uma vitrine de 20 jogos às 09h. Publica até 5 análises
-com VALUE pré-jogo *registado* e verificável apenas no snapshot/estado local.
-Não constitui confirmação de cotação em direto nem altera V1.3.
+Não envia uma vitrine de 20 jogos às 09h. Publica TODAS as primeiras 20
+previsões do dia ao OWNER, com ou sem VALUE, individualmente e por ordem
+de início. A seleção comercial é futura; a V1.3 permanece intacta.
 """
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ from math import isfinite
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from alertas_prejogo import AlertasPreJogo, _chave
+from alertas_prejogo import AlertasPreJogo
 
 PT = ZoneInfo("Europe/Lisbon")
 ANTECEDENCIA_ALVO = 150 * 60  # 2h30
-ANTECEDENCIA_MIN = 120 * 60  # tolerância até 2h
-MAX_ANALISES_DIA = 5
-MAX_POR_LOTE = 2
-INTERVALO_LOTES_SEG = 10 * 60
+ANTECEDENCIA_MIN = 90 * 60  # margem de recuperação quando muitos jogos coincidem
+MAX_ANALISES_DIA = 20
+MAX_POR_LOTE = 1  # um jogo por mensagem
+INTERVALO_LOTES_SEG = 60  # notificação faseada, sem rajadas
 VERSAO_ESTADO = 1
 
 
@@ -53,31 +53,13 @@ def _preco_guardado(p):
     return preco if preco is not None else _odd(p.get("odd_real"))
 
 
-def _elegivel_preco(p):
-    """Não transforma odds antigas/anómalas em VALUE publicável."""
-    prob = _numero(p.get("probabilidade"))
-    minima = _odd(p.get("odd_minima"))
-    preco = _preco_guardado(p)
-    atual = _odd(p.get("odd_mercado_atual"))
-    if (str(p.get("valor_estado") or "") != "confirmado"
-            or prob is None or not 0 < prob < 1
-            or minima is None or preco is None or preco < minima):
-        return False
-    if atual is not None and atual < minima:
-        return False
-    # Guardas idênticas à sinalização de odds/EV invulgares dos alertas.
-    ev_teorico = preco * prob - 1
-    distancia_min = preco / minima - 1
-    return ev_teorico < .25 and distancia_min < .25
-
-
 def _analise(p):
     """Construir argumentos apenas a partir de snapshots pré-jogo existentes."""
     prob = _numero(p.get("probabilidade"))
     preco = _preco_guardado(p)
     minima = _odd(p.get("odd_minima"))
-    if prob is None or preco is None or minima is None:
-        raise ValueError("Análise não tem probabilidade/odds válidas")
+    if prob is None or not 0 < prob < 1:
+        raise ValueError("Previsão sem probabilidade válida")
     ts = float(p["timestamp_jogo"])
     confianca = str(p.get("confianca_modelo") or "N/D")
     linhas = [
@@ -104,18 +86,38 @@ def _analise(p):
                 and 0 < n_casa <= 2000 and 0 < n_fora <= 2000):
             linhas.append(f"📚 Amostra estatística: casa {int(n_casa)} · fora {int(n_fora)}")
 
+    linhas.append("")
+    minimo_txt = _fmt(minima, 2) if minima is not None else "N/D"
+    preco_txt = _fmt(preco, 2) if preco is not None else "—"
+    linhas.append(f"💶 Odd registada {preco_txt} · Odd mínima {minimo_txt}")
+
+    estado = str(p.get("valor_estado") or "")
+    atual = _odd(p.get("odd_mercado_atual"))
+    if preco is None:
+        linhas.append("⚪ SEM COTAÇÃO — VALUE por verificar")
+    elif minima is None:
+        linhas.append("⚪ MÍNIMO INDISPONÍVEL — VALUE por verificar")
+    elif (estado == "expirado" or (estado == "sem_valor"
+            and atual is not None and atual < minima)):
+        linhas.append("🔴 VALUE EXPIRADO / PREÇO INFERIOR — não confirmado agora")
+    elif preco < minima:
+        linhas.append("🔴 SEM VALUE — preço registado abaixo da mínima")
+    else:
+        ev = preco * prob - 1
+        distancia = preco / minima - 1
+        if ev >= .25 or distancia >= .25:
+            linhas.append("🔴 PREÇO INVULGAR — verificar identidade, mercado e odd")
+        else:
+            linhas.append("🟠 ACIMA DA MÍNIMA HISTÓRICA — confirmar preço disponível")
     linhas.extend([
-        "",
-        f"💶 Odd registada {_fmt(preco, 2)} · Odd mínima {_fmt(minima, 2)}",
-        "🟠 VALUE registado no histórico — verificar preço disponível agora",
-        "ℹ️ O preço pode ter mudado. Não é uma confirmação em direto.",
-        "🔒 Estimativas estatísticas, sem garantia de acerto ou lucro.",
+        "ℹ️ Odds guardadas, não são cotações em direto.",
+        "🔒 Previsão experimental, sem garantia de acerto ou lucro.",
     ])
     return "\n".join(linhas)
 
 
 class PublicacaoFaseadaOwner:
-    """Um máximo de cinco previsões novas/dia, com estado persistente."""
+    """Até 20 previsões originais/dia, sem filtro de odds, com estado persistente."""
 
     def __init__(self, path=None):
         self.path = Path(path) if path is not None else None
@@ -165,10 +167,10 @@ class PublicacaoFaseadaOwner:
         for inicio, rank, chave, p in AlertasPreJogo._selecoes_do_dia(previsoes, agora):
             restante = inicio - agora.timestamp()
             if (not ANTECEDENCIA_MIN <= restante <= ANTECEDENCIA_ALVO
-                    or p.get("estado") != "pendente" or not _elegivel_preco(p)):
+                    or p.get("estado") != "pendente"):
                 continue
             lista.append((rank, inicio, chave, p))
-        return sorted(lista, key=lambda x: (x[0], x[1], x[2]))
+        return sorted(lista, key=lambda x: (x[1], x[0], x[2]))
 
     def avisar(self, previsoes, enviar, agora=None):
         """Publicar lote pequeno, marcar apenas após confirmação do Telegram."""
@@ -224,9 +226,9 @@ class PublicacaoFaseadaOwner:
         faltam = sum(chave not in estado["publicadas"] for _, _, chave, _ in janela)
         return "\n".join([
             "📨 PUBLICAÇÕES FASEADAS — OWNER",
-            "🕒 Envio entre 2h30 e 2h antes de cada jogo (Portugal)",
+            "🕒 Envio a partir de 2h30 antes; até 1h30 para recuperar acumulações (Portugal)",
             f"✅ Publicadas hoje: {enviados}/{MAX_ANALISES_DIA}",
             f"⏳ Elegíveis agora, ainda não publicadas: {faltam}",
-            "🎯 Apenas VALUE registado, com preço acima da mínima e sem anomalias EV graves.",
+            "🎯 Todas as primeiras 20 previsões do dia, com ou sem VALUE, uma de cada vez.",
             "🔒 Odds históricas; zero novas APIs; V1.2/V1.3 intactas.",
         ])
