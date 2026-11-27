@@ -123,5 +123,67 @@ class TestLambdaHoje(unittest.TestCase):
         self.assertIn("Ainda sem final confirmado: 1", msg)
         self.assertFalse(self.path.with_name("lambda_prospectivo_resultados.jsonl").exists())
 
+    def test_pendentes_diagnostica_id_ausente_sem_forcar_associacao(self):
+        evento = {
+            "id": "999", "date": "2026-11-27T12:00Z",
+            "status": {"type": {"state": "post", "name": "STATUS_FINAL", "completed": True}},
+            "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"id": "12"}, "score": "2"},
+                {"homeAway": "away", "team": {"id": "34"}, "score": "1"},
+            ]}],
+        }
+        sessao = Sessao([evento])
+        original = self.path.read_bytes()
+        resposta = validar_pendentes(self.path, agora=self.agora, session=sessao)
+        self.assertIn("ESPN 1 eventos, 1 finais", resposta)
+        self.assertIn("IDs ausentes 1", resposta)
+        self.assertIn("novos gravados: 0", resposta)
+        self.assertEqual(self.path.read_bytes(), original)
+        self.assertFalse(self.path.with_name("lambda_prospectivo_resultados.jsonl").exists())
+        self.assertEqual(len(sessao.calls), 1)
+
+    def test_pendentes_diagnostica_horario_divergente_sem_associar(self):
+        evento = {
+            "id": "555", "date": "2026-11-27T12:05Z",
+            "status": {"type": {"state": "post", "name": "STATUS_FINAL", "completed": True}},
+            "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"id": "12"}, "score": "2"},
+                {"homeAway": "away", "team": {"id": "34"}, "score": "1"},
+            ]}],
+        }
+        resposta = validar_pendentes(self.path, agora=self.agora, session=Sessao([evento]))
+        self.assertIn("horários ≠ 1", resposta)
+        self.assertIn("desvios de 5–5 min", resposta)
+        self.assertIn("exatos 0", resposta)
+        self.assertIn("novos gravados: 0", resposta)
+
+    def test_pendentes_diagnostica_resultado_nao_normalizado(self):
+        evento = {
+            "id": "555", "date": "2026-11-27T12:00Z",
+            "status": {"type": {"state": "post", "name": "STATUS_FINAL", "completed": True}},
+            "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"id": "12"}, "score": {"value": 2}},
+                {"homeAway": "away", "team": {"id": "34"}, "score": {"value": 1}},
+            ]}],
+        }
+        resposta = validar_pendentes(self.path, agora=self.agora, session=Sessao([evento]))
+        self.assertIn("não normalizados 1", resposta)
+        self.assertIn("novos gravados: 0", resposta)
+
+    def test_pendentes_diagnostica_id_completo_e_grava_sem_pedidos_adicionais(self):
+        evento = {
+            "id": "555", "date": "2026-11-27T12:00Z",
+            "status": {"type": {"state": "post", "name": "STATUS_FINAL", "completed": True}},
+            "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"id": "12"}, "score": "2"},
+                {"homeAway": "away", "team": {"id": "34"}, "score": "1"},
+            ]}],
+        }
+        sessao = Sessao([evento])
+        resposta = validar_pendentes(self.path, agora=self.agora, session=sessao)
+        self.assertIn("exatos 1", resposta)
+        self.assertIn("novos gravados: 1", resposta)
+        self.assertEqual(len(sessao.calls), 1)
+
 if __name__ == "__main__":
     unittest.main()
