@@ -26,7 +26,10 @@ AJUDA = (
 def _normalizar(valor):
     if not isinstance(valor, str):
         return ""
-    t = unicodedata.normalize("NFKD", valor).casefold()
+    # Algumas letras nórdicas não se decompõem em NFKD (Tromsø/Tromso).
+    transliteracoes = str.maketrans({"ø": "o", "Ø": "O", "æ": "ae", "Æ": "AE",
+                                      "œ": "oe", "Œ": "OE", "ł": "l", "Ł": "L"})
+    t = unicodedata.normalize("NFKD", valor.translate(transliteracoes)).casefold()
     t = "".join(c for c in t if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", " ", t).strip()
 
