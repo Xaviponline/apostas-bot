@@ -29,6 +29,7 @@ from vigilancia_externa import VigilanciaExterna
 from rotinas_diarias import RotinasDiarias
 from alertas_prejogo import AlertasPreJogo
 from publicacao_faseada_owner import PublicacaoFaseadaOwner
+from resultados_publicados_owner import ResultadosPublicadosOwner
 from scout_shadow import ScoutShadow
 from fixture_guard_shadow import juventude_confirmada_hoje
 
@@ -77,6 +78,10 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             pasta_estado / "publicacoes_owner_faseadas.json" if pasta_estado else None
         )
         self._proximo_check_publicacoes_faseadas = 0.0
+        self._resultados_publicados_owner = ResultadosPublicadosOwner(
+            pasta_estado / "resultados_owner_enviados.json" if pasta_estado else None
+        )
+        self._proximo_check_resultados_owner = 0.0
         self._scout_shadow = ScoutShadow(pasta_estado / "scout_shadow.json" if pasta_estado else None)
         self._proximo_scout_check = 0.0
 
@@ -107,7 +112,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         return resposta
 
     def _publicar_analises_faseadas_se_devido(self):
-        """Publicações T-150m, máximo cinco/dia, isoladas das rotinas de odds."""
+        """Publicações T-150m, até vinte/dia, isoladas das rotinas de odds."""
         if not getattr(self, "owner_id", 0) or not getattr(self, "chat_id", 0):
             return 0
         publicador = getattr(self, "_publicacao_faseada_owner", None)
@@ -127,6 +132,31 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             return n
         except (OSError, RuntimeError, ValueError, TypeError, KeyError, requests.RequestException):
             logging.warning("PUBLICACAO_FASEADA | envio indisponivel; historico e coorte intactos")
+            return 0
+
+    def _avisar_resultados_owner_se_devido(self):
+        """Resultados de previsões publicadas, apenas após liquidação já registada."""
+        if not getattr(self, "owner_id", 0) or not getattr(self, "chat_id", 0):
+            return 0
+        monitor = getattr(self, "_resultados_publicados_owner", None)
+        publicador = getattr(self, "_publicacao_faseada_owner", None)
+        if monitor is None or publicador is None:
+            return 0
+        agora = time.monotonic()
+        if agora < getattr(self, "_proximo_check_resultados_owner", 0):
+            return 0
+        self._proximo_check_resultados_owner = agora + 60
+        try:
+            n = monitor.avisar(
+                self.previsoes.dados.get("previsoes", []),
+                publicador,
+                lambda msg: self.api("sendMessage", {"chat_id": self.chat_id, "text": msg}),
+            )
+            if n:
+                logging.info("RESULTADOS_OWNER | %s resultado(s) comunicados", n)
+            return n
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError, requests.RequestException):
+            logging.warning("RESULTADOS_OWNER | entrega indisponivel; snapshots e V1.3 intactos")
             return 0
 
     def _avisar_prejogo_se_devido(self):
@@ -175,6 +205,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
         # Telegram, o aviso é avaliado mesmo que a rotina ESPN falhe.
         self._publicar_analises_faseadas_se_devido()
         self._avisar_prejogo_se_devido()
+        self._avisar_resultados_owner_se_devido()
         self._scout_auto_se_devido()
         self._fonte_alt_auto_se_devido()
 
@@ -2146,6 +2177,22 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                     "🛡️ Auditoria de consistência indisponível. "
                     "Nenhum snapshot, modelo ou odd foi modificado."
                 )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/resultados_previsoes":
+            if not owner_admin:
+                return
+            try:
+                monitor = getattr(self, "_resultados_publicados_owner", None)
+                publicador = getattr(self, "_publicacao_faseada_owner", None)
+                resposta = (
+                    monitor.relatorio(self.previsoes.dados.get("previsoes", []), publicador)
+                    if monitor is not None and publicador is not None
+                    else "🏁 Balanços de jogos ainda não configurados."
+                )
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                resposta = "⚠️ Balanços indisponíveis; sem alterar previsões."
             self.enviar_mensagem(chat_id, resposta)
             return
 
