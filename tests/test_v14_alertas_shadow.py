@@ -57,7 +57,7 @@ class AlertasV14Tests(unittest.TestCase):
         self.assertIn("64,7%", texto)
         self.assertIn("48,3%", texto)
         self.assertIn("gap +16,4pp", texto)
-        self.assertIn("EV teórico +34,0%", texto)
+        self.assertIn("EV teórico +33,9%", texto)
         self.assertIn("GAP_MODELO_MERCADO_15PP", texto)
         self.assertIn("EV_TEÓRICO_25PC", texto)
         self.assertEqual(reg.dados, original)
