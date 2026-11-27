@@ -2295,6 +2295,20 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             self.enviar_mensagem(chat_id, resposta)
             return
 
+        if comando == "/confianca_modelo":
+            if not owner_admin:
+                return
+            try:
+                from auditoria_confianca_v12_shadow import relatorio_confianca_modelo
+                resposta = relatorio_confianca_modelo(self.previsoes.dados)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError, ArithmeticError, OverflowError):
+                resposta = (
+                    "⚠️ Auditoria de confiança temporariamente indisponível. "
+                    "Não houve alterações a resultados, odds, previsões ou V1.3."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
         if comando == "/v13_calibracao":
             if not owner_admin:
                 return
