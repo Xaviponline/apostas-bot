@@ -6,7 +6,7 @@ independente JSONL, com identidade de evento estrita.
 """
 import re
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -116,4 +116,88 @@ def validar_hoje(caminho_snapshots, agora=None, session=None):
     if falhas:
         linhas.append("⚠️ ESPN indisponível: " + ", ".join(falhas))
     linhas.append("ℹ️ Um jogo só é liquidado no Shadow com IDs, horário e STATUS_FINAL exatos. O Brier fica dependente dos resultados concluídos.")
+    return "\n".join(linhas)
+
+
+def validar_pendentes(caminho_snapshots, agora=None, session=None):
+    """Recupera até três dias de resultados Shadow, incluindo após a meia-noite.
+
+    Apenas o OWNER chama esta função. No máximo 12 consultas públicas ESPN,
+    zero odds. Todos os resultados são estritamente reconciliados com os
+    snapshots originais capturados antes do início dos jogos.
+    """
+    agora = agora or datetime.now(PORTUGAL)
+    if agora.tzinfo is None:
+        raise ValueError("agora deve incluir fuso horário")
+    hoje = agora.astimezone(PORTUGAL).date()
+    inicio = hoje - timedelta(days=2)
+    caminho = Path(caminho_snapshots)
+    destino = caminho.with_name("lambda_prospectivo_resultados.jsonl")
+    linhas = [f"🧪 LAMBDA PENDENTES — {inicio:%d/%m} a {hoje:%d/%m/%Y}",
+              "🔒 ESPN independente, zero odds pagas; V1.3 intacta."]
+    if not caminho.is_file():
+        return "\n".join(linhas + ["📭 Sem snapshots Shadow guardados."])
+
+    elegiveis = {}
+    precoces = 0
+    for r in ler(caminho):
+        try:
+            j, liga, chave = r["jogo"], r["liga_codigo"], r["chave"]
+            k = identidade(j, liga)
+            captura = datetime.fromisoformat(r["capturado_em_utc"])
+            if (r.get("versao") != 1 or k is None or not chave
+                    or not isinstance(liga, str) or not LIGA_SEGURA.fullmatch(liga)
+                    or captura.tzinfo is None or captura.timestamp() >= k[-1]):
+                continue
+            dia = datetime.fromtimestamp(k[-1], PORTUGAL).date()
+            if not inicio <= dia <= hoje:
+                continue
+            if k[-1] > agora.timestamp() - ESPERA_MINUTOS * 60:
+                precoces += 1
+                continue
+            elegiveis[(chave, k)] = (dia, liga)
+        except (KeyError, TypeError, ValueError, OverflowError, OSError):
+            continue
+
+    confirmados_antes = _finais_existentes(destino)
+    por_resolver = {k: valor for k, valor in elegiveis.items()
+                    if k not in confirmados_antes}
+    # Uma chamada para cada dia/competição, nunca um pedido por partida.
+    grupos = sorted(set(por_resolver.values()))
+    consultar = grupos[:TETO_LIGAS]
+    historicos = {}
+    falhas = []
+    cliente = session or requests.Session()
+    for dia, liga in consultar:
+        try:
+            resposta = cliente.get(
+                f"{EstatisticasESPN.BASE}/{liga}/scoreboard",
+                params={"dates": dia.strftime("%Y%m%d"), "limit": 500},
+                timeout=(5, 25),
+            )
+            resposta.raise_for_status()
+            payload = resposta.json()
+            eventos = payload.get("events") if isinstance(payload, dict) else None
+            if not isinstance(eventos, list):
+                raise ValueError("Resposta ESPN sem lista de eventos")
+            historicos.setdefault(liga, []).extend(
+                p for evento in eventos
+                if (p := EstatisticasESPN._normalizar_resultado(evento, liga)) is not None
+                and p.get("final_regulamentar_shadow") is True
+            )
+        except (requests.RequestException, TypeError, KeyError, ValueError):
+            falhas.append(f"{liga}/{dia:%d-%m}")
+
+    novos = guardar_resultados(caminho, destino, historicos) if historicos else 0
+    finais_depois = _finais_existentes(destino)
+    confirmados = len(set(elegiveis) & finais_depois)
+    linhas.extend([
+        f"📚 Snapshots elegíveis (últimos 3 dias): {len(elegiveis)} | demasiado recentes: {precoces}",
+        f"✅ Resultados ESPN confirmados: {confirmados} | novos gravados: {novos}",
+        f"⏳ Ainda sem final confirmado: {len(elegiveis) - confirmados}",
+        f"🌐 Consultas ESPN: {len(consultar)} | falhas: {len(falhas)} | grupos adiados: {max(0, len(grupos)-TETO_LIGAS)}",
+    ])
+    if falhas:
+        linhas.append("⚠️ Falhas ESPN: " + ", ".join(falhas))
+    linhas.append("ℹ️ Só jogos com identidade e STATUS_FINAL exatos. Sem alterações aos snapshots originais.")
     return "\n".join(linhas)

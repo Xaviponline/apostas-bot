@@ -36,6 +36,7 @@ AJUDA = '''🤖 BOT DE APOSTAS — PREMIUM BETA
 /v13_robustez — Incerteza e concentração de risco da coorte V1.3 (admin; sem API)
 /lab_export — Enviar cópia sanitizada dos snapshots para o Research Lab (admin)
 /lambda_hoje — Validar resultados ESPN dos jogos de hoje, sem odds (admin; máx. 12 ligas)
+/lambda_pendentes — Verificar resultados ESPN dos últimos 3 dias (admin; máx. 12 consultas)
 /lab_status — Champion vs Challengers, drift e MLflow (admin)
 /lab_drift — Diagnóstico detalhado de drift por variável, mercado e liga (admin)
 /lab_drift_segmentado — Drift dentro dos mesmos mercados/ligas, Brier e cobertura (admin)
@@ -681,6 +682,12 @@ class BotPremiumReal:
                 from lambda_hoje import validar_hoje
                 caminho = getattr(self.previsoes, "path", None)
                 resposta = (validar_hoje(
+                    Path(caminho).with_name("lambda_prospectivo_shadow.jsonl")
+                ) if caminho else "📭 Sem caminho persistente para Lambda Shadow.")
+            elif comando == '/lambda_pendentes':
+                from lambda_hoje import validar_pendentes
+                caminho = getattr(self.previsoes, "path", None)
+                resposta = (validar_pendentes(
                     Path(caminho).with_name("lambda_prospectivo_shadow.jsonl")
                 ) if caminho else "📭 Sem caminho persistente para Lambda Shadow.")
             elif comando == '/lambda_prospectivo':

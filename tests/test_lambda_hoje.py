@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from lambda_hoje import validar_hoje
+from lambda_hoje import validar_hoje, validar_pendentes
 
 
 class Resposta:
@@ -83,6 +83,45 @@ class TestLambdaHoje(unittest.TestCase):
         self.assertIn("snapshot pré-jogo: 0", texto)
         self.assertEqual(sessao.calls, [])
 
+
+    def test_pendentes_recupera_jogo_de_ontem_apos_meia_noite(self):
+        # A consulta do dia 28 recupera um snapshot de 27/11 já terminado.
+        event = {
+            "id": "555", "date": "2026-11-27T12:00Z",
+            "status": {"type": {"state": "post", "name": "STATUS_FINAL", "completed": True}},
+            "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"id": "12"}, "score": "2"},
+                {"homeAway": "away", "team": {"id": "34"}, "score": "1"},
+            ]}],
+        }
+        sessao = Sessao([event])
+        original = self.path.read_bytes()
+        agora = datetime(2026, 11, 28, 1, 0, tzinfo=timezone.utc)
+        msg = validar_pendentes(self.path, agora=agora, session=sessao)
+        self.assertIn("novos gravados: 1", msg)
+        self.assertEqual(sessao.calls[0][1]["dates"], "20261127")
+        self.assertEqual(original, self.path.read_bytes())
+        msg2 = validar_pendentes(self.path, agora=agora, session=sessao)
+        self.assertIn("novos gravados: 0", msg2)
+        self.assertEqual(len(sessao.calls), 1)
+
+    def test_pendentes_exclui_inicio_futuro_e_captura_tardia(self):
+        sessao = Sessao([])
+        msg = validar_pendentes(self.path, agora=datetime(2026, 11, 27, 11,
+                                                          tzinfo=timezone.utc), session=sessao)
+        self.assertIn("demasiado recentes: 1", msg)
+        self.assertEqual(sessao.calls, [])
+        self.snapshot["capturado_em_utc"] = "2026-11-27T13:00:00+00:00"
+        self.path.write_text(json.dumps(self.snapshot) + "\n")
+        msg = validar_pendentes(self.path, agora=self.agora, session=sessao)
+        self.assertIn("Snapshots elegíveis (últimos 3 dias): 0", msg)
+        self.assertEqual(sessao.calls, [])
+
+    def test_pendentes_sem_final_continua_pendente(self):
+        sessao = Sessao([])
+        msg = validar_pendentes(self.path, agora=self.agora, session=sessao)
+        self.assertIn("Ainda sem final confirmado: 1", msg)
+        self.assertFalse(self.path.with_name("lambda_prospectivo_resultados.jsonl").exists())
 
 if __name__ == "__main__":
     unittest.main()
