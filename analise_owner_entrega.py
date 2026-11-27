@@ -108,7 +108,7 @@ def resumo_analises_hoje(previsoes, agora=None):
             "⚪ Sem previsões guardadas por começar para hoje.",
             "O sistema não cria sugestões para preencher a lista.",
         ])
-    linhas.append(f"⚽ {len(futuros)} previsões ainda por começar (máx. 20 da análise inicial)")
+    linhas.append(f"⚽ {len(futuros)} " + ("previsão" if len(futuros) == 1 else "previsões") + " ainda por começar (máx. 20 da análise inicial)")
     for p in sorted(futuros, key=lambda x: (int(x["ranking_modelo"]),
                                              float(x["timestamp_jogo"]))):
         ts = float(p["timestamp_jogo"])
