@@ -104,7 +104,7 @@ class CalibracaoV14Tests(unittest.TestCase):
         self.assertEqual(len(validas),17)
         self.assertEqual(pend,1)
         self.assertEqual(inco,2)
-        self.assertNotIn("V1.3",relatorio_v14_calibracao_shadow({"previsoes":items}))
+        self.assertIn("Previsões: 20 | Liquidadas válidas: 17",relatorio_v14_calibracao_shadow({"previsoes":items}))
 
     def test_mercado_liga_confiança_separados_sem_inventar(self):
         self.assertEqual(_tipo_mercado("Under 3.5 Golos"),"Under")
@@ -176,7 +176,7 @@ class CalibracaoV14Tests(unittest.TestCase):
         cont,_=_auditar_odds([row])
         self.assertEqual(cont["hora_desconhecida"],1)
         texto=relatorio_v14_calibracao_shadow({"previsoes":[row]})
-        self.assertIn("não confirmam disponibilidade atual",texto)
+        self.assertIn("NÃO confirmam disponibilidade atual",texto)
         self.assertIn("Hora de captura desconhecida: 1",texto)
         self.assertIn("Com cotação guardada: 1",texto)
         self.assertNotIn("oportunidade garantida",texto)
