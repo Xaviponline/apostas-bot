@@ -409,6 +409,7 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
             "ℹ️ /odds_validade — preços históricos sem reconfirmação posterior",
             "ℹ️ /v14_alertas [coorte|futuros|399] — divergencias de probabilidade e odds (SHADOW)",
             "ℹ️ /v14_favoritismo [coorte|631] — PPG vs golos esperados em vitórias (SHADOW)",
+            "ℹ️ /lambda_validacao — acompanhar apenas novos jogos desde 28/11/2026 (SHADOW)",
             "ℹ️ /lambda_robustez — Brier emparelhado, IC bootstrap e sensibilidade por liga (SHADOW)",
             "ℹ️ /lambda_cobertura — motivos de faltarem resultados independentes 1X2 (SHADOW)",
             "ℹ️ /lambda_recuperar [N] — plano local; executar N: até 6 consultas ESPN só SHADOW",
@@ -2313,6 +2314,22 @@ class BotPremiumDiarioCompeticoes(BotPremiumDiarioDiagnostico):
                 resposta = (
                     "Não foi possível executar a Shadow Top 5. "
                     "O histórico e a V1.2 não foram alterados."
+                )
+            self.enviar_mensagem(chat_id, resposta)
+            return
+
+        if comando == "/lambda_validacao":
+            if not owner_admin:
+                return
+            try:
+                from lambda_validacao_shadow import relatorio_lambda_validacao
+                caminho = Path(self.previsoes.path).with_name("lambda_prospectivo_shadow.jsonl")
+                resposta = relatorio_lambda_validacao(caminho)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError,
+                    ArithmeticError, IndexError, OverflowError):
+                resposta = (
+                    "⚠️ Validação futura Lambda indisponível. "
+                    "Snapshots, odds, V1.2, V1.3, ROI e CLV intactos."
                 )
             self.enviar_mensagem(chat_id, resposta)
             return
